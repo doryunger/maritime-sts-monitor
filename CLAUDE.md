@@ -1,8 +1,9 @@
 # Working conventions for this repo
 
-For what the code does and where things live, see `README.md` — this file is about *how to work
-on it*. The staged plan, feasibility findings and open gaps live in `PLAN.md`; keep it current as
-stages finish.
+For what the project is (input, processing, output, decisions), see `README.md` — this file is
+about *how to work on it*. `PLAN.md` holds only the operative stages and open gaps; keep it current
+as stages finish. Measured research goes in `docs/feasibility.md`. Where tips come from is out of
+scope here (vessel collection lives in the separate `raw_vessels_aggregator` repo).
 
 **No comments in code files, anywhere in this repo** — no inline `#`/`//` comments, no explanatory
 docstrings, in any language, in any part of the tree. For the "why" behind a non-obvious design
