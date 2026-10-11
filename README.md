@@ -135,7 +135,7 @@ overlay.
 ## Decisions
 
 - **Tip producer is out of scope** (2026-10-11). The app's contract is the tip; vessel-data
-  collection lives in the separate `raw_vessels_aggregator` repo. aisstream dropped: no coverage in
+  collection lives in the separate `vessels-aggregator` repo. aisstream dropped: no coverage in
   the focus regions.
 - **Focus regions** (2026-10-11): Middle East, where recent incidents are. Used to pick stage 0
   test scenes and to measure imagery availability; tips outside them are still processed.
