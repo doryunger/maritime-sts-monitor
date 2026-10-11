@@ -1,0 +1,14 @@
+websockets
+psycopg[binary]
+pyyaml
+fastapi
+uvicorn
+numpy
+scipy
+shapely
+pillow
+rasterio
+pystac-client
+planetary-computer
+pytest
+ruff
