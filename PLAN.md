@@ -141,11 +141,11 @@ identity checks work on name / flag / size per `SHIP_ID`, and draught-based chec
 Rows in the sample are ordered by DWT, largest first, which suggests a per-request row cap; see
 gaps.
 
-#### How a round is captured (`raw_vessels_aggregator`, gitignored)
+#### How a round is captured (separate repo: `../raw_vessels_aggregator`)
 
 `run_flow.py` opens the map page in Edge (Playwright attached over CDP),
 records every data tile the page loads, merges rows by `SHIP_ID` (latest wins) and writes
-`<time>_raw.json` + `<time>_vessels.csv` via `naval_tip_cue.positions`. The view is set by the map
+`<time>_raw.json` + `<time>_vessels.csv` via its `positions.py`. The view is set by the map
 URL (centre and zoom, default `centerx:53.4/centery:25.4/zoom:5`); the page loads the tiles for that
 view by itself, no manual panning. A ROI is therefore one or more fixed map URLs.
 
