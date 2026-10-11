@@ -141,6 +141,33 @@ identity checks work on name / flag / size per `SHIP_ID`, and draught-based chec
 Rows in the sample are ordered by DWT, largest first, which suggests a per-request row cap; see
 gaps.
 
+#### How a round is captured (`raw_vessels_aggregator`, gitignored)
+
+`run_flow.py` opens the map page in Edge (Playwright attached over CDP),
+records every data tile the page loads, merges rows by `SHIP_ID` (latest wins) and writes
+`<time>_raw.json` + `<time>_vessels.csv` via `naval_tip_cue.positions`. The view is set by the map
+URL (centre and zoom, default `centerx:53.4/centery:25.4/zoom:5`); the page loads the tiles for that
+view by itself, no manual panning. A ROI is therefore one or more fixed map URLs.
+
+Sample round `20261011T160036Z` (one capture):
+
+| Measure | Value |
+|---|---|
+| Vessels | 3,070 (705 `[SAT-AIS]`, 23%) |
+| Extent | lat −4.3 to 56.5, lon 20.6 to 92.9 (whole western Indian Ocean and Middle East) |
+| Report age (`ELAPSED`) | median 24 min, p90 792 min, max 1,439; 896 rows (29%) older than 3 h, 352 (11%) older than 12 h |
+| Estimated state | underway 1,442, stale 896, at anchor 345, stopped 283, slow 72, unknown 32 |
+| Type labels | Named and `[SAT-AIS]` rows use different labels ("Cargo" vs "Cargo Vessel"); normalize |
+
+Consequences for the design:
+- **Stale is normal:** 29% of vessels are over 3 h old in any round, so going dark must be judged
+  against the vessel's own reporting history, not an absolute `ELAPSED` threshold.
+- **Completeness depends on zoom:** 3,070 vessels for that extent at zoom 5 is well below real
+  traffic, so zoomed-out tiles likely return a subset (largest ships first). A vessel can be missing because of
+  zoom, not because it went dark. Rounds need a fixed area and zoom so they are comparable.
+- **Automation:** the hourly run opens the ROI's fixed URLs in a real browser; running that
+  browser on headless Linux (Lightsail) is untested.
+
 #### Key processing functions (one round)
 
 | # | Function | Does |
@@ -351,6 +378,8 @@ reference only; Suez / northern Red Sea and the Arabian Sea are not measured yet
 
 | Area | Gap | Needs | By stage |
 |---|---|---|---|
+| Round automation | Opening the ROI URLs on a schedule; running a real browser on Lightsail (headless Linux) | Test on Lightsail | 1 |
+| Round completeness | Vessel count per round depends on zoom; pick ROI views and zoom that return all vessels, and verify by comparing counts across zoom levels | Measure | 1 |
 | Vessel data source | Fields known from the sample. Still open: per-request row cap (no known cap; sample is DWT-ordered, so check whether dense ROIs return a round-number count and split the ROI if so), how fresh rounds can be, ROI size limits. `[SAT-AIS]` ids expected stable across rounds (verify on the first recorded rounds); terms of use | Details from you | 1 |
 | ROI exits | A vessel sailing out of the ROI or into port is in the gone set but isn't dark | Rule from last position, course and speed + port list | 2 |
 | Credentials | Landsat needs AWS keys (requester-pays); S1 needs a free Copernicus account | `COPERNICUS_USERNAME` / `COPERNICUS_PASSWORD`, AWS keys in `.env` | 0 |

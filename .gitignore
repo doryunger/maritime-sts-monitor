@@ -2,4 +2,4 @@
 .venv/
 __pycache__/
 data/
-sniffer/
+raw_vessels_aggregator/
