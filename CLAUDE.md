@@ -1,7 +1,8 @@
 # Working conventions for this repo
 
 For what the code does and where things live, see `README.md` — this file is about *how to work
-on it*.
+on it*. The staged plan, feasibility findings and open gaps live in `PLAN.md`; keep it current as
+stages finish.
 
 **No comments in code files, anywhere in this repo** — no inline `#`/`//` comments, no explanatory
 docstrings, in any language, in any part of the tree. For the "why" behind a non-obvious design
@@ -18,9 +19,10 @@ starting a new one.
 
 ## Reply style
 
-Keep chat replies concise and informative — dense with actual information, not padded. Default to
-short; expand only for something that genuinely needs the space (a real tradeoff, a bug
-explanation).
+Keep chat replies short and informative: answer first, a few lines at most, no padding. Use one
+small table or a short list only when it carries real data. Skip the background, the source lists
+and the fallback options unless asked. Put long material (plans, research) in a repo file and link
+to it rather than pasting it into chat.
 
 ## Git commits
 
