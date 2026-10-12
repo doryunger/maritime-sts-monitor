@@ -89,7 +89,7 @@ installed editable so the patch takes effect. PyTorch 2.11 + CUDA 12.8 wheels.
 | Hormuz | `S2C_MSIL1C_20261011T063811_N0513_R120_T40REP_20261011T084717` (Jask, Gulf of Oman, 0% cloud) | 175 s | 3.6 GB | 30 |
 
 Time per scene: download ~45 s, materialize ~40–80 s, detection ~55 s (1.6 tiles/s), attribute
-model ~10 s. The Hormuz scene (captured 06:38 UTC, product generated 08:47 UTC) was on the public GCS bucket the same evening; first-availability delay not measured.
+model ~10 s. The Hormuz scene (tile sensed 06:52 UTC, product generated 08:47 UTC) was on the public GCS bucket the same evening; first-availability delay not measured.
 
 Output per ship: position, score, length, width, heading, speed, type (from a second, attribute
 model), 128×128 px crop.
@@ -100,7 +100,7 @@ with a long wake, a 145 m cargo ship on the scene edge); 2 are 1–2 px dots, po
 possibly noise (lowest scores, 0.81 and 0.91). Most of the scene is cloud, so misses aren't
 measured here.
 
-**Hormuz vs the demo vessel CSV** (16:00 UTC snapshot, 9 h after the pass; only stopped/anchored
+**Hormuz vs the demo vessel CSV** (16:00 UTC snapshot, ~9 h after the pass; only stopped/anchored
 ships count as truth) (`images\hormuz_40REP_overview.jpg`,
 `images\hormuz_40REP_spots.jpg`):
 
@@ -110,7 +110,7 @@ ships count as truth) (`images\hormuz_40REP_overview.jpg`,
 | BLACK STORM, tug | stopped | found | 0.02 km | 29 → 38 m |
 | DARYA MAHER, tug, Jask harbour | stopped | found | 0.76 km | 60 → 50 m |
 | TRONE, tanker | at anchor | not checkable: in the scene's no-data edge | — | — |
-| STAR NINA, cargo | at anchor | not there at 06:38 (empty water in full-res crop); anchored later | — | — |
+| STAR NINA, cargo | at anchor | not there at 06:52 (empty water in full-res crop); anchored later | — | — |
 
 3 of 3 checkable ships found. The CSV holds only 6 ships in this tile, so 27 of 30 detections have
 no CSV counterpart; on the overview they are mostly 270–330 m tankers anchored off Jask plus small
@@ -167,7 +167,7 @@ each was moved back to 15:18:35 by its speed and course (12–16 km) before matc
 
 No same-day pair exists over the Jask anchorage; closest: S1
 `S1C_IW_GRDH_1SDV_20261010T020602_…_0138DB` (2026-10-10 02:06 UTC, historical 2026-08-11) vs the
-Hormuz S2 run (2026-10-11 06:38 UTC), **29 h apart**. S1 run: 1,549 s, 187 detections over the whole
+Hormuz S2 run (2026-10-11 06:52 UTC), **29 h apart**. S1 run: 1,549 s, 187 detections over the whole
 scene. Stationary threshold (< 1 kn) and match distance (1 km) read from `rules/evidence_graph.json`.
 Overlay: `images\jask_s1_on_s2.jpg` (red S2, cyan S1).
 
@@ -185,8 +185,27 @@ Overlay: `images\jask_s1_on_s2.jpg` (red S2, cyan S1).
 Set from this: stationary pairing `max_gap_hours` 30 and `max_length_diff_m` 30 in
 `rules/evidence_graph.json` (`basis: stage0`).
 
+### Landsat vs Sentinel-2 (Hormuz, 12 min apart)
+
+`LC09_L1TP_159042_20261011_20261011_02_T1` (06:40 UTC, 1% cloud) vs the Hormuz S2 tile (06:52 UTC).
+Read from AWS `usgs-landsat` (requester-pays; key with an inline read policy on that bucket, in
+`.env`). The pipeline now also runs a classifier built on OlmoEarth
+(`landsat_vessel_classification_v2/olmoearth_base_layerdecay_20260908d`, not in Ai2's docs), which
+needs `olmoearth_pretrain`; that package pins torch < 2.10 and pip replaced the CUDA build with a
+CPU one, so torch 2.9.1+cu128 / torchvision 0.24.1+cu128 were force-reinstalled. Run: 768 s, peak
+GPU 4.6 GB, 464 detections over the 185 km scene (27 inside the S2 tile, vs S2's 30).
+
+- **Position:** 18 of 22 stationary S2 ships matched within 1 km, almost all at 0.01–0.09 km.
+- **Small craft missed:** 6 of 7 moving S2 ships unmatched, all 16–88 m (also unmatched with no
+  time shift); the one large moving ship (180 m) matched. Consistent with 15–30 m pixels.
+- **Length unusable for large ships:** 330 m tankers read ~200 m; no Landsat length above 224 m;
+  Landsat minus S2 on matches −137 to −9 m, median −91 m. The 15 m pan crop shows only ~10 px
+  (~150 m) of bright hull, so the image, not the model, limits it.
+
+Set from this in `rules/evidence_graph.json`: Landsat `use_length: false`, `min_ship_length_m: 100`,
+and Landsat ↔ S1 pairs `compare_length: false` (`basis: stage0`): Landsat matches on position only.
+
 ### Still to run
 
-- Landsat (needs AWS keys).
 - Systematic by-eye count of missed and false detections on a crop.
 - Go / adjust / fall back decision.

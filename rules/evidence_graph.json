@@ -11,7 +11,7 @@
     "match_subject": { "kind": "step", "max_distance_km": 1.0, "basis": "stage0" },
 
     "sentinel2": { "kind": "sensor", "role": "optical", "product": "L1C", "pixel_m": 10, "max_cloud_pct": 30, "length_tolerance_m": null, "basis": { "max_cloud_pct": "decision", "length_tolerance_m": "tbd" } },
-    "landsat": { "kind": "sensor", "role": "optical", "product": "L1", "pixel_m": 15, "max_cloud_pct": 30, "length_tolerance_m": null, "basis": { "max_cloud_pct": "decision", "length_tolerance_m": "tbd" } },
+    "landsat": { "kind": "sensor", "role": "optical", "product": "L1", "pixel_m": 15, "max_cloud_pct": 30, "min_ship_length_m": 100, "use_length": false, "basis": { "max_cloud_pct": "decision", "min_ship_length_m": "stage0", "use_length": "stage0" } },
     "sentinel1": { "kind": "sensor", "role": "radar", "product": "GRD IW", "pixel_m": 10, "min_score": 0.7, "length_tolerance_m": null, "basis": { "min_score": "model", "length_tolerance_m": "tbd" } },
     "s1_reference_image": { "kind": "reference", "orbit_direction": "same_as_capture", "min_days_before": 30, "max_days_before": 90, "max_matches": 1, "basis": "model" },
 
@@ -48,9 +48,9 @@
     { "relation": "searches", "from": "scene_search", "to": "sentinel1" },
 
     { "relation": "pairs", "from": "sentinel2", "to": "sentinel1", "state": "moving", "max_gap_hours": "match_subject.max_distance_km / speed", "max_length_diff_m": 30, "basis": { "max_gap_hours": "decision", "max_length_diff_m": "stage0" } },
-    { "relation": "pairs", "from": "landsat", "to": "sentinel1", "state": "moving", "max_gap_hours": "match_subject.max_distance_km / speed", "max_length_diff_m": 30, "basis": { "max_gap_hours": "decision", "max_length_diff_m": "stage0" } },
+    { "relation": "pairs", "from": "landsat", "to": "sentinel1", "state": "moving", "max_gap_hours": "match_subject.max_distance_km / speed", "compare_length": false, "basis": { "max_gap_hours": "decision", "compare_length": "stage0" } },
     { "relation": "pairs", "from": "sentinel2", "to": "sentinel1", "state": "stationary", "max_gap_hours": 30, "max_length_diff_m": 30, "basis": "stage0" },
-    { "relation": "pairs", "from": "landsat", "to": "sentinel1", "state": "stationary", "max_gap_hours": 30, "max_length_diff_m": 30, "basis": "stage0" },
+    { "relation": "pairs", "from": "landsat", "to": "sentinel1", "state": "stationary", "max_gap_hours": 30, "compare_length": false, "basis": "stage0" },
 
     { "relation": "grants", "from": "match_subject", "to": "confirmed", "requires": ["optical_match", "radar_match", "paired", "position_and_length_agree"] },
     { "relation": "grants", "from": "match_subject", "to": "sar_only", "requires": ["radar_match"], "excludes": ["optical_match"] },
