@@ -163,7 +163,30 @@ each was moved back to 15:18:35 by its speed and course (12–16 km) before matc
 - 39 of the 46 detections have no CSV ship to check against; on the overview they line the
   shipping lane.
 
+### Sentinel-1 vs Sentinel-2 on stationary ships (Jask)
+
+No same-day pair exists over the Jask anchorage; closest: S1
+`S1C_IW_GRDH_1SDV_20261010T020602_…_0138DB` (2026-10-10 02:06 UTC, historical 2026-08-11) vs the
+Hormuz S2 run (2026-10-11 06:38 UTC), **29 h apart**. S1 run: 1,549 s, 187 detections over the whole
+scene. Stationary threshold (< 1 kn) and match distance (1 km) read from `rules/evidence_graph.json`.
+Overlay: `images\jask_s1_on_s2.jpg` (red S2, cyan S1).
+
+- **18 of 20** stationary S2 detections inside the S1 footprint have an S1 detection within 1 km,
+  at 0.09–0.54 km. The 14 ships ≥ 170 m all matched at 0.09–0.29 km.
+- The 2 misses: the inland-reservoir false detection from the S2 run (no radar target there, so the
+  cross-check rejects it) and a 35 m service craft 1.6 km off (small craft move).
+- Length, S1 minus S2, on the 14 large ships: −29 to +13 m, median −9 m (S1 reads slightly shorter).
+- The S2 duplicate (two detections on one ~320 m tanker) matched one S1 detection: radar sees one
+  ship.
+- No anchored tanker was missing from S1, so no sign of the long-anchored ship being cancelled by
+  the 30–90-day reference image.
+- S1 also showed a cluster of detections inside Jask harbour and one on the shoreline.
+
+Set from this: stationary pairing `max_gap_hours` 30 and `max_length_diff_m` 30 in
+`rules/evidence_graph.json` (`basis: stage0`).
+
 ### Still to run
 
-- S1 / S2 agreement on anchored ships seen by both the same day.
 - Landsat (needs AWS keys).
+- Systematic by-eye count of missed and false detections on a crop.
+- Go / adjust / fall back decision.

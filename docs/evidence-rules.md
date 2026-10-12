@@ -45,10 +45,10 @@ them and how to read the graph; values are not repeated here.
 | `feeds` | Order of steps; `when` gives the branch condition |
 | `searches` | Which sensors the scene search queries |
 | `classifies` | Tip → state, from the subject's last speed |
-| `pairs` | Optical sensor ↔ radar sensor for a given `state`: the largest time gap at which their matches confirm each other |
+| `pairs` | Optical sensor ↔ radar sensor for a given `state`: the largest time gap, and the largest length difference, at which their matches confirm each other |
 | `grants` | Which match results give which grade (`requires` all, `excludes` any) |
 
 `basis` says how solid a value is (a string, or per field when a node mixes them): `decision`
 agreed choice, `model` fixed by Ai2's model or API, `stage0` derived from the stage 0 detector test
 ([feasibility](feasibility.md)), `guess` placeholder, `tbd` not set yet (`null`). Still `tbd`: the
-per-sensor length tolerance and the stationary pairing gap.
+per-sensor length tolerance against the tip's reported length.
