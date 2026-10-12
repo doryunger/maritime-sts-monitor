@@ -81,7 +81,9 @@ since they lower match confidence.
 
 The assumptions, decision flow, grades and parameters are in
 [docs/evidence-rules.md](docs/evidence-rules.md). How tips are produced upstream is in
-[docs/tip-rules.md](docs/tip-rules.md).
+[docs/tip-rules.md](docs/tip-rules.md). The suspicious activities this has to handle, seen in recorded
+vessel snapshots, and the data and imagery sources behind them are in
+[docs/use-cases.md](docs/use-cases.md).
 
 ## Output
 
