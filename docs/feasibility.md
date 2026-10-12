@@ -209,3 +209,30 @@ and Landsat ↔ S1 pairs `compare_length: false` (`basis: stage0`): Landsat matc
 
 - Systematic by-eye count of missed and false detections on a crop.
 - Go / adjust / fall back decision.
+
+## Columnar storage for alerts and findings (measured 2026-10-12)
+
+Option for stages 4 and 6: keep alerts, findings and vessel positions as GeoParquet partitioned by
+date (`date=YYYY-MM-DD/`), query them with DuckDB, and serve the map either as tiles generated
+from those files or as query results. No database server, which matches the "files in S3"
+decision.
+
+Measured in `vessels-aggregator` (DuckDB 1.5.6 with the spatial extension):
+
+| Step | Data | Time |
+|---|---|---|
+| Rule check over all stored snapshots (group by vessel, compare positions) | 43 parquet files, 92,528 rows, on the 1 GB Lightsail host | 0.08 s (+ 0.18 s startup) |
+| Write rows as date-partitioned parquet | ~65k rows, 2 dates | 0.13 s |
+| Read one date | 34,330 rows | 0.02 s |
+| One vector tile (`ST_AsMVT`) for one date, straight from the parquet files | z5 tile, 64 KB | 0.03 s |
+
+- Parquet is columnar: a query reads only the columns it uses, and DuckDB filters by the `date`
+  partition before reading, so cost follows the dates asked for, not the archive size.
+- One file per write (per job, per snapshot) and no appends: parquet can't be appended to; a day's
+  files can be compacted later.
+- Map display, two ways: tiles pre-generated per date into S3 next to `index.json` (fully static
+  viewer), or a small endpoint on the intake host running DuckDB per tile request (no
+  pre-generation, dates and filters chosen freely). DuckDB-Wasm can also read the parquet straight
+  from S3 in the browser.
+- Not measured yet: the same queries over S3 instead of local disk, and tile generation at higher
+  zoom levels and over months of data.

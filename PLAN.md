@@ -42,3 +42,4 @@ Later: re-run a job when a later pass lands (see gaps), VIIRS night lights as a 
 | Later imagery | The first job usually sees only a pre-event image; post-event scenes arrive with the next pass and catalog delay | Decide: one-shot, or re-run the job at fixed re-checks | 5 |
 | Cost guard | A stuck GPU instance runs up cost | Watchdog + billing alarm | 5 |
 | Viewer | S3 static hosting (+ CloudFront) vs Lightsail; public or authenticated | Decision | 6 |
+| Alert / finding storage | JSON per finding vs date-partitioned GeoParquet queried with DuckDB; map as pre-generated vector tiles per date or tiles served on request ([measured](docs/feasibility.md#columnar-storage-for-alerts-and-findings-measured-2026-10-12)) | Decision; check DuckDB over S3 | 4, 6 |
