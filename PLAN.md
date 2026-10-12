@@ -25,9 +25,11 @@ Later: re-run a job when a later pass lands (see gaps), VIIRS night lights as a 
 
 | Area | Gap | Needs | By stage |
 |---|---|---|---|
-| Credentials | Landsat needs AWS keys (requester-pays). S1 works without any account via Planetary Computer; Ai2's own S1 download path is AWS requester-pays | AWS keys in `.env` for Landsat; decide S1 source for deploy | 0 |
+| Credentials | Landsat needs AWS keys (requester-pays). S1 works without any account via Planetary Computer; Ai2's own S1 download path is AWS requester-pays | AWS keys in `.env` for Landsat | 0 |
 | Detector output cleanup | S2 test: one detection on an inland reservoir; one ship detected twice ~100 m apart (see feasibility) | Sea mask; merge overlapping detections | 3 |
 | Whole-scene processing | Ai2's pipelines download and reproject the full scene (S1: ~250 × 170 km, ~3.5 min reprojection per image on one process), though a tip needs at most ~120 × 120 km | Check the pipelines accept a cropped input with correct georeferencing and give the same detections as the full scene on that area | 3 |
+| Ships in port | S1 test: a 170 m ship anchored in harbour (ADAM A) was not detected; only small detections among the berths. Either lost in clutter or dropped by Ai2's near-infrastructure filter | Check which, on a port scene with known berthed ships; decide how tips near ports are reported | 3 |
+| S1 data source | Ai2's scene-ID mode reads AWS `sentinel-s1-l1c` (requester-pays); the test used Planetary Computer's free copies via local-file mode | Pick one for deploy: availability delay, rate limits, cost | 3 |
 | GPU instance | Instance type, OS, CUDA, RAM and disk for the detectors installed natively; time per scene there (Shadow PC timings don't transfer) | Check | 5 |
 | SAR validation | Real rate of optical + SAR pairs and their gaps per region; matching tolerance; what counts as "stopped" | Measure on catalog data; tune in stage 0 | 0 |
 | Tip delivery | How producers send tips: HTTP endpoint on the intake, or drop into S3 / SQS | Decision | 1 |
