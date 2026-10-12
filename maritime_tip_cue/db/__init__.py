@@ -3,7 +3,7 @@ from pathlib import Path
 import psycopg
 from psycopg.rows import dict_row
 
-from naval_tip_cue.config import env
+from maritime_tip_cue.config import env
 
 SCHEMA = Path(__file__).with_name("schema.sql")
 

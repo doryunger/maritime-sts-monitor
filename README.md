@@ -1,4 +1,4 @@
-# naval-tip-cue
+# maritime-tip-cue
 
 Given a **tip** (one or more vessels involved in an event at a known place and time), search free
 satellite imagery for them, detect ships in the captures, match the detections to the tip's
