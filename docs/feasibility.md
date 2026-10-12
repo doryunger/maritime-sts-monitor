@@ -68,14 +68,15 @@ referenced below (`images\`); its `README.md` lists what each is for.
 
 ### Setup on Windows
 
-Ai2's code assumes Linux. Three local patches, kept in `ai2-detectors\patches\` (apply with `git apply` in each
-clone):
+Ai2's code assumes Linux. Four local patches, kept in `ai2-detectors\patches\` (apply with `git apply` in each
+clone). None is needed on the Linux deploy target:
 
 | Symptom | Cause | Patch |
 |---|---|---|
 | Crash at start: `cannot find context for 'forkserver'` | `rslp/utils/mp.py` forces the Linux-only `forkserver` start method | Use `spawn` on Windows |
 | Hang at the ingest step, 0% CPU for 10 min | `multiprocessing.Pool(32)` deadlocks on `join()` under `spawn` (py-spy: parent in `pool.join`, idle worker on the queue lock) | Worker count from `RSLP_APPLY_WORKERS` (default 32); run with `RSLP_APPLY_WORKERS=0 RSLEARN_NUM_DATA_LOADER_WORKERS=0` |
 | `Distributed package doesn't have NCCL built in` | `rslearn` defaults every Lightning run to DDP; NCCL doesn't exist on Windows | Strategy `auto` on Windows (`rslearn/lightning_cli.py`) |
+| `FileExistsError: [WinError 183]` saving `items.json` (S1) | `open_atomic` uses `os.rename`, which won't overwrite on Windows | `os.replace` (`rslearn/utils/fsspec.py`) |
 
 Also needed: `pip install -r requirements-extra.txt` (the pipeline imports `beaker`), and `rslearn`
 installed editable so the patch takes effect. PyTorch 2.11 + CUDA 12.8 wheels.
@@ -121,9 +122,48 @@ Flaws seen:
 - **Duplicate:** one ~320 m tanker produced two detections ~100 m apart (328 and 313 m). Needs
   merging of overlapping detections before matching.
 
+### Sentinel-1 results
+
+**Data access without credentials.** The pipeline's scene-ID mode downloads from AWS
+`sentinel-s1-l1c`, which is requester-pays (AWS keys, ~$0.30 per run for target + historical).
+Instead, VV/VH GRD files were taken from Microsoft Planetary Computer (free, no account; same raw
+format: uint16, 210 GCPs, EPSG:4326) and fed to the pipeline's local-file mode. The CLI also
+requires `--score_threshold` (not in Ai2's docs); 0.7 is their API default. The model needs one
+historical image of the same orbit direction 30–90 days earlier; chosen: same track, 60 days
+before, full overlap.
+
+| Run | Target / historical | Time | Peak GPU | Detections |
+|---|---|---|---|---|
+| Bab el-Mandeb | `S1C_IW_GRDH_1SDV_20261011T151835_…_0139B0` / `…20260812T151833_…_011C89` | 1,254 s | 8.5 GB | 46 |
+
+Time breakdown: download 2 × ~1 GB, ~1 min; ingest ~7 min (each image reprojected from radar
+geometry onto a 10 m UTM grid, 25k × 17k → 28k × 22k px, ~3.5 min per scene on one process);
+materialize ~4 min; detection ~10 min (GPU at 100%); attribute model <1 min.
+
+**Vs the demo vessel CSV.** 7 CSV ships in the footprint, all reported 37–41 min after the pass;
+each was moved back to 15:18:35 by its speed and course (12–16 km) before matching
+(`images\s1_bab_151835_overview.jpg`, `images\s1_bab_151835_spots.jpg`):
+
+| CSV ship | Speed | Nearest detection | Length CSV → detected |
+|---|---|---|---|
+| GARDA, tanker | 11.3 kn | 0.42 km | 250 → 248 m |
+| RC VENUS, cargo | 9.6 kn | 0.61 km | 229 → 222 m |
+| POP, tanker | 10.5 kn | 0.30 km | 228 → 206 m |
+| MYRA BAY, cargo | 10.5 kn | 0.37 km | 189 → 175 m |
+| DA LIANG, cargo | 9.6 kn | 0.19 km | 179 → 178 m |
+| SAFEEN PRISM, cargo | 12.6 kn | 3.05 km | 208 → 197 m |
+| ADAM A, cargo, at anchor in port | 0 | 0.49 km, but a 28 m object | 170 → — |
+
+- 5 of 5 moving ships matched within 0.6 km; length within 1–22 m (median ~9 m). Better than the
+  expected SAR overstatement.
+- SAFEEN PRISM: radar crop shows nothing at the projected point; the nearest detection is 3 km
+  away with a matching length, likely the same ship off a straight-line course over 40 min.
+- ADAM A: in a harbour among berths; several small detections there, none 170 m. Either missed
+  in clutter or removed by the near-infrastructure filter. Port scenes need their own check.
+- 39 of the 46 detections have no CSV ship to check against; on the overview they line the
+  shipping lane.
+
 ### Still to run
 
-- Sentinel-1 Bab el-Mandeb, 2026-10-11 15:18 UTC: 25 CSV ships reported within 1 h of the pass
-  (18 ≥ 100 m). Detection rate by length, S1 length error, Windows issues, credentials.
 - S1 / S2 agreement on anchored ships seen by both the same day.
 - Landsat (needs AWS keys).
