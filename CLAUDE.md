@@ -43,3 +43,6 @@ pushing.
 - Visually verify anything touching coordinate/geometry math (search areas, crops, footprints)
   before trusting it — plot it or burn it onto the image and eyeball it.
 - Secrets (API keys, account credentials) go in a gitignored `.env`, never in code or commits.
+- Only what the deployed app needs to run belongs in the repo. Test-only material (test scripts,
+  local patches, result images, scratch analysis) lives outside it, with a pointer in the repo docs
+  saying where it is and what it's for (e.g. `C:\Users\Shadow\projects\ai2-detectors\`).
