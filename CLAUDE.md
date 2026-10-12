@@ -18,6 +18,12 @@ file that still has comments in it, or adding logic that would otherwise need on
 out as part of that edit, folding the note into the component's existing context file instead of
 starting a new one.
 
+**Rule parameters live in `rules/*.json`, never in code.** Every threshold or condition the code
+applies (tip rules, evidence steps, sensor limits, grading) is read from `rules/tip_graph.json` or
+`rules/evidence_graph.json`; code only evaluates the graph. Unknown values stay `null` with
+`basis: "tbd"` rather than being filled in as code defaults. `config.yaml` is for deployment
+settings (regions, paths), not rules.
+
 ## Reply style
 
 Keep chat replies short and informative: answer first, a few lines at most, no padding. Use one

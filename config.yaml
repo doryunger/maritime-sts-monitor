@@ -18,22 +18,3 @@ regions:
 track_retention_hours: 72
 coverage_cell_deg: 0.1
 coverage_window_hours: 24
-
-dark:
-  silent_hours: 2.0
-  min_sog_knots: 2.0
-  min_msgs_last_hour: 10
-  covered_cell_min_msgs: 200
-  implausible_speed_knots: 30.0
-
-correlate:
-  promote_score: 1.0
-  nearby_km: 20.0
-  nearby_hours: 6.0
-  repeat_days: 30
-
-imagery:
-  before_hours: 6.0
-  after_hours: 24.0
-  max_radius_km: 60.0
-  min_radius_km: 5.0
