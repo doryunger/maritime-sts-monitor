@@ -62,9 +62,9 @@ since they lower match confidence.
 ## Processing
 
 1. **Time window**: `[event.time − before_hours, event.time + after_hours]`, default −6 h / +24 h
-   (`config.yaml`, `imagery`).
+   (`rules/evidence_graph.json`, `time_window`).
 2. **Search area**: around the subject's last track point, radius = last speed × time from that
-   point to the capture, plus `uncertainty_km`, clamped to 5–60 km (`config.yaml`). Computed per
+   point to the capture, plus `uncertainty_km`, clamped to 5–60 km (`search_area`). Computed per
    capture time, so an early capture gets a small box.
 3. **Scene search**: Sentinel-2 L1C, Landsat 8/9 L1 and Sentinel-1 GRD scenes that cover the area
    inside the window, via STAC. A capture before the event is used too: it shows the vessel while
@@ -74,30 +74,14 @@ since they lower match confidence.
 5. **Matching**: project each tip vessel's track to the capture time; candidates are detections
    of compatible length and heading near the projected position. Context vessels at their own
    projected positions are matched first and removed, so they aren't mistaken for the subject.
-6. **Evidence grade** (rules below).
+6. **Evidence grade** ([evidence rules](docs/evidence-rules.md)).
 7. **Publish** the finding, images and updated index.
 
 ### Evidence rules
 
-Optical (Sentinel-2 or Landsat) shows the object; SAR (Sentinel-1) confirms it is a real hard target
-and not a wake, cloud or whitecap.
-
-1. Among the optical captures, take the one closest in time to a SAR pass over the area.
-2. SAR validation counts only if `speed × gap` between the two captures stays within the matching
-   tolerance (position and length must agree).
-3. A vessel known to be stationary (near-zero last speed, loitering, alongside another) allows a
-   longer gap.
-4. Otherwise drop SAR validation and report optical only.
-
-| Grade | Meaning |
-|---|---|
-| **Confirmed** | Optical and SAR agree on position (after allowing for movement) and length |
-| **SAR only** | Real hard target; no usable optical |
-| **Optical only** | Seen, not validated; could be a false target |
-| **None** | No capture, or nothing found |
-
-Sentinel-2 and Landsat both pass around 10:00–11:00 local time; Sentinel-1 at other hours, so
-typical optical–SAR gaps are several hours.
+The assumptions, decision flow, grades and parameters are in
+[docs/evidence-rules.md](docs/evidence-rules.md). How tips are produced upstream is in
+[docs/tip-rules.md](docs/tip-rules.md).
 
 ## Output
 
