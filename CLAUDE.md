@@ -20,7 +20,7 @@ starting a new one.
 
 **Rule parameters live in `rules/*.json`, never in code.** Every threshold or condition the code
 applies (tip rules, evidence steps, sensor limits, grading) is read from `rules/tip_graph.json` or
-`rules/evidence_graph.json`; code only evaluates the graph. Unknown values stay `null` with
+`rules/evidence_graph.json`, and the STS pair-check rules from `rules/sts_graph.json`; code only evaluates the graph. Unknown values stay `null` with
 `basis: "tbd"` rather than being filled in as code defaults. `config.yaml` is for deployment
 settings (regions, paths), not rules.
 
