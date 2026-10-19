@@ -934,5 +934,16 @@
       "unit": "m",
       "basis": "guess: a detection within this of a charted structure is dropped; covers a platform's own size and a tanker of up to ~250 m moored to a buoy."
     }
+  },
+  "publish": {
+    "dedupe_time_s": {
+      "value": 120,
+      "unit": "s",
+      "basis": "Two findings of the same source captured within this time are one capture: S2 tiles of one sensing share a time, S1 slices of one datatake are seconds apart; a later pass is a new finding (decision, user 2026-10-19: duplicates only make sense at different times)."
+    },
+    "dedupe_length_share": {
+      "value": 0.5,
+      "basis": "Two findings of one capture are the same vessel when their centres are within this share of the longer hull's length."
+    }
   }
 }

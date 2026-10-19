@@ -65,7 +65,8 @@ create table if not exists outputs (
     run_id integer
 );
 create table if not exists captures (
-    finding_id text primary key, local_path text, s3_uri text, format text
+    finding_id text, format text, local_path text, s3_uri text, run_id integer, created_utc text, uploaded_utc text,
+    primary key (finding_id, format)
 );
 create table if not exists qa_flags (
     hull_id text primary key, scene_id text, source text, verdict text, lat real, lon real, status text,

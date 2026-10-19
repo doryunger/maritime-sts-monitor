@@ -36,10 +36,11 @@ Conventions are in CLAUDE.md (already loaded). Read docs by section only: `grep 
 - `.venv/Scripts/python -m maritime_tip_cue.watch.run --site <hot spot> --end <ISO> --days 7 [--run N] [--reanalyse]` a run; a new one gets the next run number (long: launch detached with a log file; resumes from `state.db` with `--run N`). `watch.registry list|adopt` lists runs / renames finished legacy folders to their number.
 - `.venv/Scripts/python -m maritime_tip_cue.ais.match <run folder>` match AIS to the after-QA pair hulls (`--all-checked --stats` for limit measurements).
 - `.venv/Scripts/python -m maritime_tip_cue.watch.recheck <run numbers>` re-runs the S2 pair check of runs from their stored windows (after a rule change; no detector).
+- `.venv/Scripts/python -m maritime_tip_cue.publish <runs> [--upload]` builds the GeoParquet and captures from the runs' after-QA pairs (dedupe across tiles and hot spots) into `data/publish/`, and uploads with `--upload`. Why notes: `maritime_tip_cue/context/publish.md`.
 - `app\start.cmd` runs app at http://127.0.0.1:8765/ (runs table, run pages, QA saved to `qa_flags`).
 - `.venv/Scripts/python -m maritime_tip_cue.watch.state summary <run folder>` per-scene counts.
 - `.venv/Scripts/python -m maritime_tip_cue.hotspots [publish <file>]` print (or replace) the S3 hot-spot list.
 
 ## Where work stands (2026-10-19)
-- Runs 1-5 (12-19 Oct 2026): 1 and 2 fujairah_outer (2 reviewed, 1 unresolved: the moving card), 3 off_sohar (not reviewed), 4 johor_east_scs and 5 malaysia_eopl still in folders `johor_east_scs_week` / `malaysia_eopl_week`: EOPL running detached, Johor rerun queued after it (`run.log` in each). When they finish: `watch.registry adopt 4 5`, then `ais.match`, then QA in the app.
-- Next stage: 6, publish from `findings` (GeoParquet per date/hot spot/source and raw captures to S3, recorded in `outputs`/`captures`).
+- Runs 1-5 (Fujairah 9 Oct and 12-19 Oct, off_sohar, Johor, EOPL; 12-19 Oct 2026) reviewed, re-checked with the S1 and S2 shape rules, AIS-matched and published to S3 (45 findings, 8 parquet files). Johor and EOPL have one pair each; their singles are largely unreviewed.
+- Next: the web viewer on the S3 tree; open points in `PLAN.md`.

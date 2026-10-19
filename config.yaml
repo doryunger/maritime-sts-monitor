@@ -22,6 +22,7 @@ coverage_window_hours: 24
 s3:
   hotspots_key: hotspots/sts_hotspots.json
   findings_prefix: sts/
+  captures_prefix: captures/
 
 land:
   - data/land/ne_10m_land.geojson
