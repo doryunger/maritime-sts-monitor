@@ -618,6 +618,18 @@
     "overlap_min_possible": {
       "value": 0.5,
       "basis": "frozen: same as overlap_min, no possible band"
+    },
+    "fill_min": {
+      "value": 0.0,
+      "basis": "frozen rules: disabled."
+    },
+    "overlap_min_boxy": {
+      "value": 0.5,
+      "basis": "frozen rules: disabled."
+    },
+    "fill_min_boxy": {
+      "value": 0.0,
+      "basis": "frozen rules: disabled."
     }
   },
   "scene": {

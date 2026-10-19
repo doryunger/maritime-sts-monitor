@@ -49,12 +49,23 @@ def light_separation(obj: dict, quantile: float) -> float | None:
     return None if sep is None else float(sep / width)
 
 
+def fill(d: dict, pixel: float) -> float:
+    _, length, width = d["rect"]
+    return len(d["xy"]) * pixel * pixel / max(length * width, 1e-9)
+
+
 def verdict(rec: dict, c: dict) -> str:
-    length, wb, sep, ov = rec["length_m"], rec["width_beams"], rec["light_separation"], rec["overlap"]
-    if None in (length, wb, sep, ov):
+    length, wb, sep, ov, fl = rec["length_m"], rec["width_beams"], rec["light_separation"], rec["overlap"], rec.get("fill")
+    if None in (length, wb, sep, ov, fl):
         return "single"
-    base = c["length_min_m"] <= length <= c["length_max_m"] and sep >= c["light_separation_min"] and wb <= c["width_max_beams"]
-    if base and wb >= c["width_min_beams"] and ov >= c["overlap_min"]:
+    base = (
+        c["length_min_m"] <= length <= c["length_max_m"]
+        and sep >= c["light_separation_min"]
+        and wb <= c["width_max_beams"]
+        and fl >= c["fill_min"]
+    )
+    lines = ov >= c["overlap_min"] or (ov >= c["overlap_min_boxy"] and fl >= c["fill_min_boxy"])
+    if base and wb >= c["width_min_beams"] and lines:
         return "pair"
     if base and wb >= c["width_min_beams_possible"] and ov >= c["overlap_min_possible"]:
         return "possible_pair"
@@ -66,7 +77,7 @@ def evaluate(objects: list[dict], rules: dict) -> list[dict]:
     bl = blur(objects, c)
     rows = []
     for obj in objects:
-        rec = {"length_m": None, "width_beams": None, "light_separation": None, "overlap": None, "blur_m": bl}
+        rec = {"length_m": None, "width_beams": None, "light_separation": None, "overlap": None, "fill": None, "blur_m": bl}
         d = obj["d"]
         if d is not None and obj["straight"]:
             _, length, width = d["rect"]
@@ -75,6 +86,7 @@ def evaluate(objects: list[dict], rules: dict) -> list[dict]:
                 overlap=overlap(d, c["pixel_m"]),
                 width_beams=(width - bl) / (length / c["hull_length_to_beam"]),
                 light_separation=light_separation(obj, c["bright_quantile"]),
+                fill=fill(d, c["pixel_m"]),
             )
         rec["verdict"] = verdict(rec, c)
         rows.append(rec)

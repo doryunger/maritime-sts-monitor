@@ -271,3 +271,19 @@ Re-check of runs 1 and 2 against the QA: 18 of 18 confirmed S2 pairs called pair
 (49844_-275454, a ship with a haze trail beside it). The 6 S2 `moving` hulls the user judged stationary are a
 separate error (Ai2 speed 3.4-7.4 kn near cloud, no wake) and are not touched by this test.
 
+## Sentinel-1 outline shape (measured 2026-10-19)
+Set: 52 labelled pairs and 306 non-pairs: QA of runs 2, 3 and 5 (fujairah_outer, off_sohar, malaysia_eopl) and the
+S1 fixtures of Hormuz 2026-10-04 and Fujairah 2026-10-16. Against the 92 wide non-pairs (at least 1.4 beams), AUC:
+light-line separation 0.94, fill 0.83, width variation 0.78 (lower for pairs), overlap 0.73, width in beams 0.70,
+edge straightness 0.60, centreline 0.56.
+
+| Rule | Pairs called pair | False pairs |
+|---|---|---|
+| before (width >= 1.65 beams, overlap >= 0.72, separation >= 0.28, width <= 3.0) | 47 / 52 | 1 / 306 |
+| shape (width 1.55-2.5 beams, separation >= 0.26, fill >= 0.6, overlap >= 0.72 or >= 0.45 with fill >= 0.7) | 51 / 52 | 0 / 306 |
+
+Held out per source (fit on the other four): Hormuz 17/17 (was 15), off_sohar 17/17 and 0 false (was 15 and 1),
+Fujairah fixture 7/8, EOPL 1/1, run 2 9/9 with 3 false when its labels are left out (the fill limit then drops to
+0.58): the fill margin is thin. Re-check of runs 2-5 against the QA: 27 of 27 reviewed pairs called pair, no false
+pair; the 3 hulls left in the possible band (run 2) are all non-pairs.
+

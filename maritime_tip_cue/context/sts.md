@@ -57,3 +57,11 @@ the pass's own radar blur in beams of its own length, separation of the two ligh
 overlap of the two lines along the hull. The blur is the median excess width of the narrowest third of the
 objects of the pass, so it is computed over all objects of the pass together. VH is used. All four must hold
 for `pair`; anything else is `single`.
+The outline is rebuilt from the radar pixels around the detection (grown from the local peak, thin rays opened
+away); the Ai2 box only seeds it. Fill is the share of the outline's own fitted rectangle that it covers: a vessel or
+a pair alongside is a filled box, while radar streak crosses from a bright reflector and smudge leave a sparse,
+cross-shaped or ragged outline (fill 0.51-0.59 against 0.59-0.84 for pairs). A clearly boxy outline (fill at least
+`fill_min_boxy`) is allowed a lower light-line overlap, since two hulls of different length overlap less. Tried and
+not used (2026-10-19): edge straightness and centreline symmetry of the binary outline (pairs are bigger and
+scatter more in pixel units, no separation), width variation along the hull (weak), spill outside the box (about 0
+for everything, the opening already removes thin rays). The 150-400 m length window stays the only absolute limit.

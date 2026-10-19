@@ -596,20 +596,22 @@
       "basis": "Longest possible tanker; longer outlines are merged objects."
     },
     "width_min_beams": {
-      "value": 1.65,
-      "basis": "Outline width minus the pass's own radar blur, in beams of its own length, at least this. Raised from 1.5: QA of the fujairah_outer run 2026-10-12..19 (user, 2026-10-19), 18 S1/S2 pairs reviewed; fitted on one hot spot, to verify on the others; the three pairs judged wrong and a small vessel alongside a ship measured 1.50-1.62, the 11 confirmed pairs 1.68-2.44."
+      "value": 1.55,
+      "basis": "Sentinel-1 outline shape, fitted 2026-10-19 on 52 labelled pairs and 306 non-pairs (QA of runs 2, 3 and 5: fujairah_outer, off_sohar, malaysia_eopl; S1 fixtures of Hormuz 2026-10-04 and Fujairah 2026-10-16): 51 of 52 pairs called pair and 0 false pairs, against 47 and 1 before; held-out per source equal or better for 4 of 5 sources, the fill limit has a thin margin (lowest pairs 0.59-0.61, boxiest non-pairs 0.61-0.63). Was 1.65.",
+      "unit": "beams"
     },
     "light_separation_min": {
-      "value": 0.28,
-      "basis": "Distance between the two bright-pixel class centres over the outline width, at least this."
+      "value": 0.26,
+      "basis": "Sentinel-1 outline shape, fitted 2026-10-19 on 52 labelled pairs and 306 non-pairs (QA of runs 2, 3 and 5: fujairah_outer, off_sohar, malaysia_eopl; S1 fixtures of Hormuz 2026-10-04 and Fujairah 2026-10-16): 51 of 52 pairs called pair and 0 false pairs, against 47 and 1 before; held-out per source equal or better for 4 of 5 sources, the fill limit has a thin margin (lowest pairs 0.59-0.61, boxiest non-pairs 0.61-0.63). Was 0.28."
     },
     "overlap_min": {
       "value": 0.72,
       "basis": "The two light lines overlap along the hull by at least this share of the shorter one. Raised from 0.5: QA of the fujairah_outer run 2026-10-12..19 (user, 2026-10-19), 18 S1/S2 pairs reviewed; fitted on one hot spot, to verify on the others; a pair judged wrong measured 0.69, confirmed pairs 0.74-0.97."
     },
     "width_max_beams": {
-      "value": 3.0,
-      "basis": "Outline width in beams at most this; a wider, near-square object is a rig, barge or platform, not two tankers side by side. QA of the fujairah_outer run 2026-10-12..19 (user, 2026-10-19), 18 S1/S2 pairs reviewed; fitted on one hot spot, to verify on the others; the two objects flagged as platforms measured 3.16 and 4.22, confirmed pairs at most 2.44."
+      "value": 2.5,
+      "basis": "Sentinel-1 outline shape, fitted 2026-10-19 on 52 labelled pairs and 306 non-pairs (QA of runs 2, 3 and 5: fujairah_outer, off_sohar, malaysia_eopl; S1 fixtures of Hormuz 2026-10-04 and Fujairah 2026-10-16): 51 of 52 pairs called pair and 0 false pairs, against 47 and 1 before; held-out per source equal or better for 4 of 5 sources, the fill limit has a thin margin (lowest pairs 0.59-0.61, boxiest non-pairs 0.61-0.63). Was 3.0; a wider outline is a smudge or radar streak cross, not two hulls.",
+      "unit": "beams"
     },
     "width_min_beams_possible": {
       "value": 1.5,
@@ -618,6 +620,18 @@
     "overlap_min_possible": {
       "value": 0.5,
       "basis": "Below overlap_min but at least this gives possible_pair instead of single. The earlier pair limit; at Hormuz (4 Oct 2026 pass) a labelled pair measured 0.51."
+    },
+    "fill_min": {
+      "value": 0.6,
+      "basis": "Sentinel-1 outline shape, fitted 2026-10-19 on 52 labelled pairs and 306 non-pairs (QA of runs 2, 3 and 5: fujairah_outer, off_sohar, malaysia_eopl; S1 fixtures of Hormuz 2026-10-04 and Fujairah 2026-10-16): 51 of 52 pairs called pair and 0 false pairs, against 47 and 1 before; held-out per source equal or better for 4 of 5 sources, the fill limit has a thin margin (lowest pairs 0.59-0.61, boxiest non-pairs 0.61-0.63). Share of the outline's own fitted rectangle that the outline fills: a vessel or a pair is a filled box, radar streak crosses and smudge are not."
+    },
+    "overlap_min_boxy": {
+      "value": 0.45,
+      "basis": "Sentinel-1 outline shape, fitted 2026-10-19 on 52 labelled pairs and 306 non-pairs (QA of runs 2, 3 and 5: fujairah_outer, off_sohar, malaysia_eopl; S1 fixtures of Hormuz 2026-10-04 and Fujairah 2026-10-16): 51 of 52 pairs called pair and 0 false pairs, against 47 and 1 before; held-out per source equal or better for 4 of 5 sources, the fill limit has a thin margin (lowest pairs 0.59-0.61, boxiest non-pairs 0.61-0.63). Light-line overlap accepted for a clearly boxy outline (fill at least fill_min_boxy)."
+    },
+    "fill_min_boxy": {
+      "value": 0.7,
+      "basis": "Sentinel-1 outline shape, fitted 2026-10-19 on 52 labelled pairs and 306 non-pairs (QA of runs 2, 3 and 5: fujairah_outer, off_sohar, malaysia_eopl; S1 fixtures of Hormuz 2026-10-04 and Fujairah 2026-10-16): 51 of 52 pairs called pair and 0 false pairs, against 47 and 1 before; held-out per source equal or better for 4 of 5 sources, the fill limit has a thin margin (lowest pairs 0.59-0.61, boxiest non-pairs 0.61-0.63). Fill above which a lower light-line overlap is accepted."
     }
   },
   "scene": {
