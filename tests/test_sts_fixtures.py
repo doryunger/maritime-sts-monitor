@@ -79,5 +79,5 @@ def test_s1_scores(s1_live):
     name, results = s1_live
     c = counts([(o["label_user"], r["verdict"]) for o, r in results])
     got = tuple(c.get(k, 0) for k in (("pair", "pair"), ("pair", "possible_pair"), ("pair", "single"), ("single", "pair"), ("single", "possible_pair")))
-    want = {"hormuz_2026-10-04": (17, 0, 0, 0, 0), "fujairah_2026-10-16": (7, 0, 1, 0, 1)}[name]
+    want = {"hormuz_2026-10-04": (17, 0, 0, 0, 0), "fujairah_2026-10-16": (7, 0, 1, 0, 0)}[name]
     assert got == want

@@ -111,6 +111,7 @@ def stage_two_s1(store: Store, pass_id: str, members: list[tuple[dict, Path, lis
                 "light_separation": r["light_separation"],
                 "overlap": r["overlap"],
                 "fill": r["fill"],
+                "weak_evidence": r["weak_evidence"],
                 "blur_m": r["blur_m"],
                 "object": o,
             }

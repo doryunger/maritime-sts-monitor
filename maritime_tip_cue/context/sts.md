@@ -64,4 +64,5 @@ cross-shaped or ragged outline (fill 0.51-0.59 against 0.59-0.84 for pairs). A c
 `fill_min_boxy`) is allowed a lower light-line overlap, since two hulls of different length overlap less. Tried and
 not used (2026-10-19): edge straightness and centreline symmetry of the binary outline (pairs are bigger and
 scatter more in pixel units, no separation), width variation along the hull (weak), spill outside the box (about 0
-for everything, the opening already removes thin rays). The 150-400 m length window stays the only absolute limit.
+for everything, the opening already removes thin rays). The 150-400 m length window stays the only absolute limit. The old possible band (`width_min_beams_possible`, `overlap_min_possible`) now only sets `weak_evidence`; the
+verdict is `single` (`weak_pair_verdict`), as for Sentinel-2.

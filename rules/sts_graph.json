@@ -632,6 +632,10 @@
     "fill_min_boxy": {
       "value": 0.7,
       "basis": "Sentinel-1 outline shape, fitted 2026-10-19 on 52 labelled pairs and 306 non-pairs (QA of runs 2, 3 and 5: fujairah_outer, off_sohar, malaysia_eopl; S1 fixtures of Hormuz 2026-10-04 and Fujairah 2026-10-16): 51 of 52 pairs called pair and 0 false pairs, against 47 and 1 before; held-out per source equal or better for 4 of 5 sources, the fill limit has a thin margin (lowest pairs 0.59-0.61, boxiest non-pairs 0.61-0.63). Fill above which a lower light-line overlap is accepted."
+    },
+    "weak_pair_verdict": {
+      "value": "single",
+      "basis": "decision (user, 2026-10-19): Sentinel-1 has no possible_pair; the possible band (width_min_beams_possible, overlap_min_possible) is kept only as weak_evidence in the record. On the QA of runs 2-5 all 4 hulls left in the band were judged not pairs."
     }
   },
   "scene": {

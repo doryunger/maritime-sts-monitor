@@ -350,6 +350,20 @@
   "imported_utc": "2026-10-19T14:50:42Z"
  },
  {
+  "hull_id": "S1D_IW_GRDH_1SDV_20261016T020641_20261016T020706_005034_009840__w0_46855_271492",
+  "scene_id": "S1D_IW_GRDH_1SDV_20261016T020641_20261016T020706_005034_009840",
+  "source": "s1",
+  "verdict": "pair",
+  "lat": 24.5478825123616,
+  "lon": 56.68951100796084,
+  "status": "ok",
+  "correct_verdict": null,
+  "note": "",
+  "reviewer": "local",
+  "updated_utc": "2026-10-19T20:40:18Z",
+  "imported_utc": "2026-10-19T20:40:18Z"
+ },
+ {
   "hull_id": "S1D_IW_GRDH_1SDV_20261016T020641_20261016T020706_005034_009840__w0_47014_271522",
   "scene_id": "S1D_IW_GRDH_1SDV_20261016T020641_20261016T020706_005034_009840",
   "source": "s1",
@@ -437,15 +451,15 @@
   "hull_id": "S1D_IW_GRDH_1SDV_20261016T020641_20261016T020706_005034_009840__w0_47368_271249",
   "scene_id": "S1D_IW_GRDH_1SDV_20261016T020641_20261016T020706_005034_009840",
   "source": "s1",
-  "verdict": "possible_pair",
+  "verdict": "pair",
   "lat": 24.526093354318064,
   "lon": 56.740213956676975,
   "status": "ok",
   "correct_verdict": null,
-  "note": "pair",
+  "note": "pair (confirmed when it was possible_pair)",
   "reviewer": "local",
-  "updated_utc": "2026-10-19T14:50:28Z",
-  "imported_utc": "2026-10-19T14:50:28Z"
+  "updated_utc": "2026-10-19T20:43:03Z",
+  "imported_utc": "2026-10-19T20:43:03Z"
  },
  {
   "hull_id": "S1D_IW_GRDH_1SDV_20261016T020641_20261016T020706_005034_009840__w0_47483_271156",

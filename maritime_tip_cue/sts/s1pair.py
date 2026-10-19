@@ -88,6 +88,8 @@ def evaluate(objects: list[dict], rules: dict) -> list[dict]:
                 light_separation=light_separation(obj, c["bright_quantile"]),
                 fill=fill(d, c["pixel_m"]),
             )
-        rec["verdict"] = verdict(rec, c)
+        v = verdict(rec, c)
+        rec["weak_evidence"] = v == "possible_pair"
+        rec["verdict"] = c["weak_pair_verdict"] if v == "possible_pair" else v
         rows.append(rec)
     return rows

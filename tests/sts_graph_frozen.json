@@ -630,6 +630,10 @@
     "fill_min_boxy": {
       "value": 0.0,
       "basis": "frozen rules: disabled."
+    },
+    "weak_pair_verdict": {
+      "value": "possible_pair",
+      "basis": "frozen rules: old behaviour."
     }
   },
   "scene": {
