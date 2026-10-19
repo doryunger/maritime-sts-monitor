@@ -21,7 +21,7 @@ Conventions are in CLAUDE.md (already loaded). Read docs by section only: `grep 
 
 ## Data (gitignored `data/`)
 - `data/sts_fixtures/s1`, `data/sts_fixtures/s2`: labelled hulls and passes with their expected verdicts.
-- `data/runs/<name>/`: one folder per run (`state.db`, scene windows/chips, `report/`).
+- `data/runs/<name>/`: one folder per run (`state.db`, scene windows/chips). Its report and QA page are in the tracked `reports/<name>/`.
 - `data/earlier_runs/`: outputs of earlier runs of this method, reference only.
 - Stage 0 detector bench (outside the repo): `C:\Users\Shadow\projects\ai2-detectors\` (README there).
 
@@ -35,6 +35,6 @@ Conventions are in CLAUDE.md (already loaded). Read docs by section only: `grep 
 - `.venv/Scripts/python -m maritime_tip_cue.watch.run --site <hot spot> --end <ISO> --days 7 --out data/runs/<name> [--reanalyse]` a run (long: launch detached with a log file; resumes from `state.db`).
 - `.venv/Scripts/python -m maritime_tip_cue.ais.match <run folder>` match AIS to pair hulls (`--all-checked --stats` for limit measurements).
 - `.venv/Scripts/python -m maritime_tip_cue.watch.state summary <run folder>` per-scene counts.
-- `.venv/Scripts/python -m maritime_tip_cue.watch.report <run folder> --qa` also writes `report/qa.html` (QA page to publish); `watch.state qa-import <run folder> <flags dir>` loads reviewed flags into `qa_flags`.
-- `.venv/Scripts/python -m maritime_tip_cue.watch.report <run folder> [--singles N] [--seed S]` static report (`report/index.html`, `data.json`, `img/`) from a run's `state.db`; runs without the detector.
+- `.venv/Scripts/python -m maritime_tip_cue.watch.report <run folder> --qa` also writes `reports/<run>/qa.html` (QA page to publish); `watch.state qa-import <run folder> <flags dir>` loads reviewed flags into `qa_flags`.
+- `.venv/Scripts/python -m maritime_tip_cue.watch.report <run folder> [--singles N] [--seed S]` static report (`reports/<run>/index.html`, `data.json`, `img/`, committed to git) from a run's `state.db`; runs without the detector.
 - `.venv/Scripts/python -m maritime_tip_cue.hotspots [publish <file>]` print (or replace) the S3 hot-spot list.

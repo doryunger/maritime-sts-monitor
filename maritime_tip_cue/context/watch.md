@@ -73,7 +73,7 @@ not from the threshold. The fixture verdict is the one the fixture rules give, w
 fixture that the run calls `moving` counts as a difference.
 
 ## qa
-`report.py --qa` (or `--qa-only` on an existing `report/data.json`) writes `report/qa.html`, a page meant to be
+`report.py --qa` (or `--qa-only` on an existing `reports/<run>/data.json`) writes `reports/<run>/qa.html`, a page meant to be
 published as a private artifact with the `db` and `user` capabilities: one card per listed hull with a flag
 (OK, wrong verdict with the correct one, bad geometry, other; unmeasured hulls take single, single moving or
 pair directly) and a note, stored in the page's `flags` collection keyed by hull id. Flags are pulled back with
@@ -89,3 +89,9 @@ scene id twice under `work/scratch/tiles/sentinel1/`; with a run folder name lik
 passed 260 characters and Sentinel-1 ingest failed with WinError 3. `config.yaml` `ai2.scratch_root` puts the
 per-scene work folder under a short root keyed by a hash of the scene id; left empty (Linux) it stays in the
 scene folder.
+
+
+## reports in git
+Reports and QA pages are written to `reports/<run>/` (config `reports.path`) and committed, about 2 MB per run,
+so every reviewed run stays readable without the run folder; `state.db`, windows and chips stay in the gitignored
+`data/runs/<run>/`.

@@ -42,3 +42,6 @@ ais_archive:
 structures:
   path: data/structures/osm_structures.geojson
   overpass_url: https://overpass-api.de/api/interpreter
+
+reports:
+  path: reports

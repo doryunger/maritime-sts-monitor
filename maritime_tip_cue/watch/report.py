@@ -10,6 +10,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 from rasterio.warp import transform as warp_transform
 
+from maritime_tip_cue.config import ROOT, settings
 from maritime_tip_cue.sts import fixtures, rules as rules_mod
 from maritime_tip_cue.watch import review, s1 as s1mod
 from maritime_tip_cue.watch.geo import Shore, haversine_m
@@ -297,11 +298,16 @@ def fixture_section(store: Store, scenes: list[dict], hulls: list[dict], listed:
     return {"passes": passes, "totals": total}
 
 
+def report_dir(folder: Path) -> Path:
+    root = settings().get("reports", {}).get("path")
+    return ROOT / root / folder.name if root else folder / "report"
+
+
 def build(folder: Path, n_singles: int, seed: int) -> dict:
     store = Store(folder / "state.db")
     rules = rules_mod.load()
     scenes = store.scenes()
-    out = folder / "report"
+    out = report_dir(folder)
     (out / "img").mkdir(parents=True, exist_ok=True)
     taken: set = set()
     all_hulls = []
@@ -347,7 +353,7 @@ def build(folder: Path, n_singles: int, seed: int) -> dict:
 
 
 def write_qa(folder: Path) -> Path:
-    out = folder / "report"
+    out = report_dir(folder)
     doc = json.loads((out / "data.json").read_text(encoding="utf-8"))
     site = doc["run"].get("hot_spot") or next((s["site"] for s in doc["scenes"] if s.get("site")), "")
     title = (site.split("_")[0].title() + " STS QA").strip()
@@ -377,7 +383,7 @@ def main() -> int:
     by = {}
     for h in doc["hulls"]:
         by[h["verdict"]] = by.get(h["verdict"], 0) + 1
-    print(f"report in {Path(args.folder) / 'report'}: {len(doc['scenes'])} scenes, listed {by}, fixtures {doc['fixtures']['totals']}")
+    print(f"report in {report_dir(folder)}: {len(doc['scenes'])} scenes, listed {by}, fixtures {doc['fixtures']['totals']}")
     return 0
 
 
