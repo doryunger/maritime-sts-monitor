@@ -29,4 +29,5 @@ and review status, all sortable; a row opens the run's QA filtered to that scene
 the cached run document, warmed in a thread when the server starts.
 Run page: facts,
 run vs after-QA verdict counts, and tabs for QA cards, scenes and the fixture comparison; tab and filter live in
-the URL so a view can be linked.
+the URL so a view can be linked. Each card is headed by its detection ID (the hull id within the scene); `&hull=<id>`
+scrolls to that card and outlines it, and the card's link button copies that URL.

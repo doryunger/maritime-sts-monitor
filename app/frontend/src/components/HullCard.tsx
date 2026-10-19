@@ -17,11 +17,12 @@ const NAMES: Record<string, string> = { pair: "Pair", single: "Single", moving: 
 interface Props {
   run: number;
   hull: Hull;
+  focused?: boolean;
   flag?: Flag;
   onSaved: (f: Flag) => void;
 }
 
-export default function HullCard({ run, hull, flag, onSaved }: Props) {
+export default function HullCard({ run, hull, flag, onSaved, focused }: Props) {
   const [status, setStatus] = useState(flag?.status ?? "");
   const [fix, setFix] = useState(flag?.correct_verdict ?? "");
   const [note, setNote] = useState(flag?.note ?? "");
@@ -55,7 +56,17 @@ export default function HullCard({ run, hull, flag, onSaved }: Props) {
   const changed = hull.final_verdict !== hull.verdict;
 
   return (
-    <article className={`card ${flag ? `flag-${flag.status}` : ""}`}>
+    <article id={`hull-${hull.hull_id}`} className={`card ${flag ? `flag-${flag.status}` : ""} ${focused ? "focused" : ""}`}>
+      <div className="hid">
+        <span className="mono" title={hull.id}>ID {hull.hull_id}</span>
+        <button
+          className="copy"
+          title="Copy a link to this card"
+          onClick={() => navigator.clipboard?.writeText(`${location.origin}/runs/${run}?scene=${encodeURIComponent(hull.scene_id)}&hull=${encodeURIComponent(hull.hull_id)}`)}
+        >
+          link
+        </button>
+      </div>
       <div className="pics">
         {hull.image ? (
           <>
@@ -130,7 +141,6 @@ export default function HullCard({ run, hull, flag, onSaved }: Props) {
           <span className="muted small">{state || (flag ? `Saved ${when(flag.updated_utc)}` : "")}</span>
         </div>
       </div>
-      <div className="muted mono tiny">{hull.id}</div>
       {zoom && (
         <div className="zoom" onClick={() => setZoom(null)} role="dialog" aria-label="Enlarged image">
           <img src={api.image(run, hull.id, zoom as "raw" | "overlay")} alt="" />

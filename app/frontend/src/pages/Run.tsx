@@ -25,6 +25,7 @@ export default function Run() {
   const tab = params.get("tab") || "qa";
   const filter = params.get("filter") || "all";
   const scene = params.get("scene");
+  const focus = params.get("hull");
   const [doc, setDoc] = useState<RunDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,6 +33,10 @@ export default function Run() {
     setDoc(null);
     api.run(no).then(setDoc).catch((e) => setError(e.message));
   }, [no]);
+
+  useEffect(() => {
+    if (doc && focus) document.getElementById(`hull-${focus}`)?.scrollIntoView({ block: "center" });
+  }, [doc, focus]);
 
   const flags = useMemo(() => Object.fromEntries((doc?.flags || []).map((f) => [f.hull_id, f])), [doc]);
 
@@ -116,7 +121,7 @@ export default function Run() {
               <div key={sec}>
                 <h2>{label(sec)} <span className="muted">({hulls.length})</span></h2>
                 <div className="grid">
-                  {hulls.map((h) => <HullCard key={h.id} run={no} hull={h} flag={flags[h.id]} onSaved={onSaved} />)}
+                  {hulls.map((h) => <HullCard key={h.id} run={no} hull={h} flag={flags[h.id]} onSaved={onSaved} focused={h.hull_id === focus} />)}
                 </div>
               </div>
             );
