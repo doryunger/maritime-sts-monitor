@@ -43,5 +43,10 @@ structures:
   path: data/structures/osm_structures.geojson
   overpass_url: https://overpass-api.de/api/interpreter
 
-reports:
-  path: reports
+runs:
+  path: data/runs
+
+app:
+  host: 127.0.0.1
+  port: 8765
+  reviews: reviews

@@ -51,9 +51,12 @@ transaction, so a run killed mid-scene leaves the scene unmarked and it is redon
 are loaded once with `python -m maritime_tip_cue.watch.state import <run folder>` (old files are left in place).
 
 ## report
-`python -m maritime_tip_cue.watch.report <run folder>` reads only `state.db` and the stored windows and chips, so it can
-run on a finished run without the detector. `index.html` is `report.html` with the document inlined, so the page
-needs no server. Presentation constants live in `report.py`: crop and upscale are `rules/sts_graph.json` `review`
+`report.py` is the data layer of the runs app (`app/`): `collect` builds a run's document (run, scenes, listed hulls,
+AIS parties, fixture comparison) from `state.db` and the stored windows and chips, so it works on a finished run
+without the detector, and `render` draws one hull's raw or overlay tile on request. The listed singles are the
+already-flagged singles first, then a seeded random sample up to 24, so a review never drops out of the list when a
+reanalysis changes the singles. The shore reason in the fixture comparison uses the run's stored hot-spot settings.
+Presentation constants live in `report.py`: crop and upscale are `rules/sts_graph.json` `review`
 (300 m half side) with the scale raised to 6 (360 px tiles); Sentinel-2 true colour maps L1C digital number 0-2550
 to 0-255 (`review.s2_stretch_max`); Sentinel-1 VH is shown as 10 log10 of the stored power between 22 and 50 dB
 (uncalibrated units, sea sits at 22-26 dB, ships reach 45-55 dB), the same range for every chip so tiles compare.
@@ -73,20 +76,16 @@ not from the threshold. The fixture verdict is the one the fixture rules give, w
 fixture that the run calls `moving` counts as a difference.
 
 ## qa
-`report.py --qa` (or `--qa-only` on an existing `reports/<run>/data.json`) writes `reports/<run>/qa.html`: one card
-per listed hull with a flag (OK, wrong verdict with the correct one, bad geometry, other; unmeasured hulls take
-single, single moving or pair directly) and a note. The review lives in `state.db` `qa_flags` (one row per hull,
-upserted, never deleted: the page has no delete) and is mirrored to the committed `reports/<run>/qa_flags.json`,
-since `state.db` is gitignored; with no `state.db`, `--qa-only` reloads the JSON into a new one.
-The page saves in one of three ways, picked on load: `watch.qa <run>` serves it on 127.0.0.1 and each Save is a
-POST that writes `qa_flags` and the JSON at once (the main way); published as an artifact with `db` and `user` it
-saves to the page's `flags` collection, pulled back with the artifact tools into `<run>/qa_export/` and loaded with
-`report.py <run> --qa-import <dir>`; opened from disk it is read-only. Flags are baked into the page when built.
+QA is done in the runs app (`app/context/app.md`): one card per listed hull with a flag (OK, wrong verdict with the
+correct one, bad geometry, other; unmeasured hulls take single, single moving or pair directly) and a note. A Save
+writes `state.db` `qa_flags` (one row per hull, upserted) and rewrites the committed `reviews/<run>.json`, since
+`state.db` is gitignored; `state.py qa-import <run> <reviews/<run>.json>` reloads it into a fresh database.
 QA changes the findings through the `findings` view: its `verdict` is the reviewer's correct verdict for
 `wrong_verdict` (`unresolved` while none is picked), the labelled one for unmeasured hulls, `excluded` for
 `bad_geometry` and `other` (rigs, barges, broken outlines), else the run verdict, kept as `run_verdict`. AIS
-matching and publishing read `findings`; the QA cards keep the run verdict, since that is what is judged, and
-show "after QA" where it changed.
+matching and publishing read `findings`; the cards keep the run verdict, since that is what is judged, and show
+"after QA" where it changed. The view is created only if missing, so opening a run that is still being written
+needs no write lock.
 First use (fujairah_outer 12-19 Oct 2026, 64 hulls): 11 of 18 pairs OK, 4 wrong, 2 rigs or barges, 1 small
 craft alongside; all 10 unmeasured were single ships.
 
@@ -98,7 +97,8 @@ per-scene work folder under a short root keyed by a hash of the scene id; left e
 scene folder.
 
 
-## reports in git
-Reports and QA pages are written to `reports/<run>/` (config `reports.path`) and committed, about 2 MB per run,
-so every reviewed run stays readable without the run folder; `state.db`, windows and chips stay in the gitignored
-`data/runs/<run>/`.
+## registry
+Runs are numbered, not named: `data/runs/registry.db` maps run number to folder and creation time, and a new run
+gets the next number and the folder `data/runs/<number>`. `watch.run --run <n>` resumes one; `--out` still
+registers an existing folder (runs launched before numbering). `registry adopt` renames a registered folder to its
+number once its last invocation has ended (an unfinished one is left alone, since a queued resume names it).

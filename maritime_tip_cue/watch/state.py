@@ -17,8 +17,7 @@ create table if not exists ais_matches (
 """
 
 FINDINGS = """
-drop view if exists findings;
-create view findings as
+create view if not exists findings as
 select h.scene_id, h.site, h.hull_id, s.source, s.capture_utc, h.lat, h.lon, h.role, h.verdict as run_verdict,
     f.status as qa_status, f.correct_verdict as qa_correct_verdict, f.note as qa_note, f.updated_utc as qa_updated_utc,
     case

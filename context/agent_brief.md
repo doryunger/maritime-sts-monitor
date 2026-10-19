@@ -8,7 +8,8 @@ Conventions are in CLAUDE.md (already loaded). Read docs by section only: `grep 
   `s1pair.py` (Sentinel-1 outline pair), `ai2point.py` (Ai2 point half-pixel shift), `rules.py` (reads
   `rules/sts_graph.json`), `fixtures.py` (fixture loaders and tallies), `score.py` (CLI summary).
   Why notes: `maritime_tip_cue/context/sts.md`.
-- `maritime_tip_cue/watch/`: hot-spot run. `run.py` (CLI: passes -> detector -> shore filter -> pair check), `detector.py` + `ai2_runner.py` (Ai2 in the ai2-detectors venv; ai2_runner is re-read per scene), `s1.py`, `s2.py` (chips / windows from the detector scratch), `state.py` (SQLite run state, `import`, `summary`), `report.py` (static report). Why notes: `maritime_tip_cue/context/watch.md`.
+- `maritime_tip_cue/watch/`: hot-spot run. `run.py` (CLI: passes -> detector -> shore filter -> pair check), `detector.py` + `ai2_runner.py` (Ai2 in the ai2-detectors venv; ai2_runner is re-read per scene), `s1.py`, `s2.py` (chips / windows from the detector scratch), `state.py` (SQLite run state, `findings` view, `import`, `summary`), `registry.py` (run numbers), `report.py` (run document and tiles for the app). Why notes: `maritime_tip_cue/context/watch.md`.
+- `app/`: runs app, FastAPI `backend/` + React `frontend/`. Why notes: `app/context/app.md`.
 - `maritime_tip_cue/structures.py`: charted offshore structures from OSM (`fetch` writes `data/structures/osm_structures.geojson`); detections within `fixed_structures.exclusion_m` are dropped.
 - `maritime_tip_cue/passes.py`: S1/S2 passes over a hot spot (`--map` burns footprints). `maritime_tip_cue/land.py`: coastline from `data/land/`.
 - `maritime_tip_cue/ais/match.py`: AIS parties per hull from the archive into `ais_matches` (`<run>` [--all-checked] [--stats]). Why notes: `maritime_tip_cue/context/ais.md`.
@@ -21,7 +22,7 @@ Conventions are in CLAUDE.md (already loaded). Read docs by section only: `grep 
 
 ## Data (gitignored `data/`)
 - `data/sts_fixtures/s1`, `data/sts_fixtures/s2`: labelled hulls and passes with their expected verdicts.
-- `data/runs/<name>/`: one folder per run (`state.db`, scene windows/chips). Its report, QA page and QA review (`qa_flags.json`) are in the tracked `reports/<name>/`.
+- `data/runs/<number>/`: one folder per run (`state.db`, scene windows/chips, image `cache/`); `data/runs/registry.db` numbers them. The QA review is mirrored to the tracked `reviews/<number>.json`.
 - `data/earlier_runs/`: outputs of earlier runs of this method, reference only.
 - Stage 0 detector bench (outside the repo): `C:\Users\Shadow\projects\ai2-detectors\` (README there).
 
@@ -32,13 +33,12 @@ Conventions are in CLAUDE.md (already loaded). Read docs by section only: `grep 
 ## Common commands (repo root)
 - `.venv/Scripts/python -m pytest tests -q` fixture tests: verdicts to 1e-6 on the frozen rules (`tests/sts_graph_frozen.json`), label scores on the live rules.
 - `.venv/Scripts/python -m maritime_tip_cue.sts.score` per-set STS tallies.
-- `.venv/Scripts/python -m maritime_tip_cue.watch.run --site <hot spot> --end <ISO> --days 7 --out data/runs/<name> [--reanalyse]` a run (long: launch detached with a log file; resumes from `state.db`).
-- `.venv/Scripts/python -m maritime_tip_cue.ais.match <run folder>` match AIS to pair hulls (`--all-checked --stats` for limit measurements).
+- `.venv/Scripts/python -m maritime_tip_cue.watch.run --site <hot spot> --end <ISO> --days 7 [--run N] [--reanalyse]` a run; a new one gets the next run number (long: launch detached with a log file; resumes from `state.db` with `--run N`). `watch.registry list|adopt` lists runs / renames finished legacy folders to their number.
+- `.venv/Scripts/python -m maritime_tip_cue.ais.match <run folder>` match AIS to the after-QA pair hulls (`--all-checked --stats` for limit measurements).
+- `app\start.cmd` runs app at http://127.0.0.1:8765/ (runs table, run pages, QA saved to `qa_flags`).
 - `.venv/Scripts/python -m maritime_tip_cue.watch.state summary <run folder>` per-scene counts.
-- `.venv/Scripts/python -m maritime_tip_cue.watch.report <run folder> --qa` also writes `reports/<run>/qa.html` (QA page to publish); `.venv/Scripts/python -m maritime_tip_cue.watch.qa <run folder>` serves the QA page locally; each Save writes `qa_flags` in `state.db` and `reports/<run>/qa_flags.json`. A published page's flags come in with `watch.report <run> --qa-import <run>/qa_export/flags`. QA-corrected verdicts are the `findings` view, which AIS matching and publishing read.
-- `.venv/Scripts/python -m maritime_tip_cue.watch.report <run folder> [--singles N] [--seed S]` static report (`reports/<run>/index.html`, `data.json`, `img/`, committed to git) from a run's `state.db`; runs without the detector.
 - `.venv/Scripts/python -m maritime_tip_cue.hotspots [publish <file>]` print (or replace) the S3 hot-spot list.
 
 ## Where work stands (2026-10-19)
-- Runs for 12–19 Oct 2026 in `data/runs/<hot spot>_week` (Fujairah: `fuj_week_2km`). fujairah_outer and off_sohar done, AIS-matched, QA pages published (Fujairah reviewed, flags in its `qa_flags`; off_sohar awaiting review). malaysia_eopl then johor_east_scs were relaunched detached (`run.log` in each folder); when they finish: `ais.match`, `watch.report --qa`, publish the QA page.
-- Next stage: 6, publish (GeoParquet per date/hot spot/source and raw captures to S3, recorded in `outputs`/`captures`).
+- Runs 1-5 (12-19 Oct 2026): 1 and 2 fujairah_outer (2 reviewed, 1 unresolved: the moving card), 3 off_sohar (not reviewed), 4 johor_east_scs and 5 malaysia_eopl still in folders `johor_east_scs_week` / `malaysia_eopl_week`: EOPL running detached, Johor rerun queued after it (`run.log` in each). When they finish: `watch.registry adopt 4 5`, then `ais.match`, then QA in the app.
+- Next stage: 6, publish from `findings` (GeoParquet per date/hot spot/source and raw captures to S3, recorded in `outputs`/`captures`).

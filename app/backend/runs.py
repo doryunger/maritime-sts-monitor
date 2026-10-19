@@ -1,0 +1,186 @@
+import hashlib
+import io
+import json
+import threading
+from datetime import datetime, timezone
+from pathlib import Path
+
+from maritime_tip_cue.config import ROOT, settings
+from maritime_tip_cue.sts import rules as rules_mod
+from maritime_tip_cue.watch import registry, report
+from maritime_tip_cue.watch.state import QA_COLUMNS, Store, now, qa_flags, upsert_flags
+
+LISTED = ("pair", "possible_pair", "unmeasured", "moving")
+SINGLES = 24
+FLAGS = ("ok", "wrong_verdict", "bad_geometry", "other")
+LABELS = ("is_single", "is_moving", "is_pair")
+CORRECT = ("pair", "single", "moving")
+STALE_MIN = 60
+
+CACHE: dict[int, tuple] = {}
+LOCKS: dict[int, threading.Lock] = {}
+
+
+def reviews_dir() -> Path:
+    return ROOT / settings()["app"]["reviews"]
+
+
+def folder(no: int) -> Path:
+    return registry.folder_of(no)
+
+
+def counts(store: Store, column: str) -> dict:
+    return {k: n for k, n in store.db.execute(f"select {column}, count(*) from findings group by {column}")}
+
+
+def status_of(runs: list[dict], last_event: str | None) -> str:
+    if not runs:
+        return "empty"
+    last = runs[-1]
+    if last["ended_utc"]:
+        return last["status"] or "done"
+    if last_event:
+        age = datetime.now(timezone.utc) - datetime.fromisoformat(last_event.replace("Z", "+00:00"))
+        if age.total_seconds() > STALE_MIN * 60:
+            return "stopped"
+    return "running"
+
+
+def summary(row: dict) -> dict:
+    path = registry.runs_root() / row["folder"]
+    out = {"run": row["run_no"], "created": row["created_utc"], "area": None, "status": "empty"}
+    if not (path / "state.db").exists():
+        return out
+    store = Store(path / "state.db", path)
+    try:
+        runs = [dict(r) for r in store.db.execute("select * from runs order by run_id")]
+        named = [r for r in runs if r["hot_spot"]]
+        scenes = {k: n for k, n in store.db.execute("select status, count(*) from scenes group by status")}
+        last_event = store.db.execute("select max(time_utc) from events").fetchone()[0]
+        run_v, final = counts(store, "run_verdict"), counts(store, "verdict")
+        reviewed = store.db.execute("select count(*) from qa_flags").fetchone()[0]
+        flagged = store.db.execute("select count(*) from qa_flags f where not exists (select 1 from findings h where h.scene_id || '__' || h.hull_id = f.hull_id and (h.run_verdict in ('pair', 'possible_pair', 'unmeasured', 'moving')))").fetchone()[0]
+        captured = list(store.db.execute("select min(capture_utc), max(capture_utc) from scenes").fetchone())
+    finally:
+        store.close()
+    listed = sum(run_v.get(k, 0) for k in LISTED) + max(min(SINGLES, run_v.get("single", 0)), flagged)
+    return out | {
+        "area": named[-1]["hot_spot"] if named else None,
+        "window": [runs[0]["window_start"], runs[-1]["window_end"]] if runs else None,
+        "sources": named[-1]["sources"] if named else None,
+        "status": status_of(runs, last_event),
+        "captured": captured,
+        "finished": runs[-1]["ended_utc"] if runs else None,
+        "scenes": sum(scenes.values()),
+        "scenes_failed": scenes.get("failed", 0),
+        "run_verdicts": run_v,
+        "verdicts": final,
+        "reviewed": reviewed,
+        "listed": listed,
+    }
+
+
+def summaries() -> list[dict]:
+    return [summary(r) for r in registry.listing()]
+
+
+def stamp(store: Store) -> tuple:
+    return tuple(store.db.execute(
+        "select (select count(*) from hulls), (select max(updated_utc) from scenes), (select count(*) from ais_matches), (select count(*) from runs)"
+    ).fetchone())
+
+
+def cached(no: int) -> tuple[dict, dict]:
+    path = folder(no)
+    lock = LOCKS.setdefault(no, threading.Lock())
+    with lock:
+        store = Store(path / "state.db", path)
+        try:
+            key = stamp(store)
+        finally:
+            store.close()
+        hit = CACHE.get(no)
+        if hit and hit[0] == key:
+            return hit[1], hit[2]
+        doc, records = report.collect(path, SINGLES, keep=flagged_ids(no))
+        CACHE[no] = (key, doc, records)
+        return doc, records
+
+
+def finals(no: int) -> dict:
+    path = folder(no)
+    store = Store(path / "state.db", path)
+    try:
+        return {f"{r['scene_id']}__{r['hull_id']}": r["verdict"] for r in store.db.execute("select scene_id, hull_id, verdict from findings")}
+    finally:
+        store.close()
+
+
+def flagged_ids(no: int) -> set:
+    return {f["hull_id"] for f in qa_flags(folder(no))}
+
+
+def detail(no: int) -> dict:
+    doc, _ = cached(no)
+    final = finals(no)
+    hulls = [h | {"final_verdict": final.get(h["id"], h["verdict"])} for h in doc["hulls"]]
+    row = next(r for r in registry.listing() if r["run_no"] == no)
+    return doc | {"number": no, "summary": summary(row), "hulls": hulls, "flags": qa_flags(folder(no))}
+
+
+def image(no: int, hull_id: str, kind: str) -> bytes | None:
+    _, records = cached(no)
+    if hull_id not in records:
+        return None
+    path = folder(no)
+    key = hashlib.sha1(f"{hull_id}|{CACHE[no][0]}".encode()).hexdigest()[:16]
+    target = path / "cache" / f"{key}_{kind}.png"
+    if target.exists():
+        return target.read_bytes()
+    scene, rec = records[hull_id]
+    img = report.render(path, scene, rec, rules_mod.load(), kind == "overlay")
+    if img is None:
+        return None
+    target.parent.mkdir(exist_ok=True)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    target.write_bytes(buf.getvalue())
+    return buf.getvalue()
+
+
+def check_flag(h: dict, body: dict) -> str | None:
+    status = body.get("status")
+    allowed = LABELS if h["verdict"] == "unmeasured" else FLAGS
+    if status not in allowed:
+        return f"status must be one of {', '.join(allowed)}"
+    if status == "wrong_verdict":
+        alt = [v for v in CORRECT if v != h["verdict"]]
+        if body.get("correct_verdict") not in alt:
+            return f"correct_verdict must be one of {', '.join(alt)}"
+    return None
+
+
+def save_flag(no: int, hull_id: str, body: dict) -> tuple[dict | None, str | None]:
+    doc, _ = cached(no)
+    h = next((x for x in doc["hulls"] if x["id"] == hull_id), None)
+    if h is None:
+        return None, "unknown hull"
+    error = check_flag(h, body)
+    if error:
+        return None, error
+    row = {k: None for k in QA_COLUMNS} | {
+        "hull_id": h["id"], "scene_id": h["scene_id"], "source": h["source"], "verdict": h["verdict"], "lat": h["lat"], "lon": h["lon"],
+        "status": body["status"], "correct_verdict": body.get("correct_verdict") if body["status"] == "wrong_verdict" else None,
+        "note": (body.get("note") or "").strip(), "reviewer": body.get("reviewer") or "local", "updated_utc": now(),
+    }
+    upsert_flags(folder(no), [row])
+    mirror(no)
+    return row | {"final_verdict": finals(no).get(hull_id)}, None
+
+
+def mirror(no: int) -> Path:
+    flags = qa_flags(folder(no))
+    target = reviews_dir() / f"{no}.json"
+    target.parent.mkdir(exist_ok=True)
+    target.write_text(json.dumps(flags, indent=1), encoding="utf-8")
+    return target

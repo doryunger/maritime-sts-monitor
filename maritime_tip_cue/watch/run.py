@@ -10,7 +10,7 @@ from pathlib import Path
 from maritime_tip_cue import structures as structures_mod, hotspots, passes
 from maritime_tip_cue.config import ROOT, settings
 from maritime_tip_cue.sts import rules as rules_mod
-from maritime_tip_cue.watch import common, detector, review, s1, s2
+from maritime_tip_cue.watch import common, detector, registry, review, s1, s2
 from maritime_tip_cue.watch.geo import Shore, Structures
 from maritime_tip_cue.watch.state import VERDICTS, Store
 
@@ -195,7 +195,8 @@ def main() -> int:
     parser.add_argument("--site", required=True)
     parser.add_argument("--end", required=True)
     parser.add_argument("--days", type=float, default=7)
-    parser.add_argument("--out", required=True)
+    parser.add_argument("--run", type=int)
+    parser.add_argument("--out")
     parser.add_argument("--db")
     parser.add_argument("--sources", default="s1,s2")
     parser.add_argument("--reanalyse", action="store_true")
@@ -205,9 +206,16 @@ def main() -> int:
     site = next(s for s in hotspots.load() if s["name"] == args.site)
     end = datetime.fromisoformat(args.end.replace("Z", "+00:00")).astimezone(timezone.utc)
     start = end - timedelta(days=args.days)
-    out = Path(args.out)
-    out = out if out.is_absolute() else ROOT / out
-    out.mkdir(parents=True, exist_ok=True)
+    if args.out:
+        out = Path(args.out)
+        out = out if out.is_absolute() else ROOT / out
+        out.mkdir(parents=True, exist_ok=True)
+        number = registry.register(out)
+    elif args.run:
+        number, out = args.run, registry.folder_of(args.run)
+    else:
+        number, out = registry.new_run()
+    print(f"run {number}: {out}", flush=True)
     store = Store(Path(args.db) if args.db else out / "state.db", out)
     rules_sha1 = hashlib.sha1(rules_mod.RULES_PATH.read_bytes()).hexdigest()
     run_id = store.start_run(vars(args) | {"hot_spot_settings": site}, args.site, (start.isoformat(), end.isoformat()), args.sources, rules_sha1, git_head())

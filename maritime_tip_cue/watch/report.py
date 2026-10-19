@@ -1,20 +1,17 @@
-import argparse
 import json
 import math
 import random
 import re
-import sys
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
 from rasterio.warp import transform as warp_transform
 
-from maritime_tip_cue.config import ROOT, settings
 from maritime_tip_cue.sts import fixtures, rules as rules_mod
 from maritime_tip_cue.watch import review, s1 as s1mod
 from maritime_tip_cue.watch.geo import Shore, haversine_m
-from maritime_tip_cue.watch.state import IGNORED_ROLES, VERDICTS, Store, final_verdicts, import_qa, qa_flags
+from maritime_tip_cue.watch.state import IGNORED_ROLES, VERDICTS, Store
 
 SCALE = 6
 S1_DB_RANGE = (22.0, 50.0)
@@ -131,29 +128,31 @@ def s1_tile(folder: Path, obj: dict, rules: dict, overlay: bool) -> Image.Image:
     return img
 
 
-def make_images(store: Store, scene: dict, rec: dict, hull: dict, out: Path, rules: dict) -> bool:
-    folder = store.root / scene["folder"]
-    cfg = rules["review"] | {"scale": SCALE}
+def window_of(scene: dict, rec: dict) -> str | None:
+    return next((w["file"] for w in (scene["data"] or {}).get("index", []) if rec["hull_id"] in w["members"] and w["file"]), None)
+
+
+def render(root: Path, scene: dict, rec: dict, rules: dict, overlay: bool) -> Image.Image | None:
+    folder = root / scene["folder"]
     if scene["source"] == "s2":
-        window = next((w["file"] for w in scene["data"]["index"] if rec["hull_id"] in w["members"] and w["file"]), None)
+        window = window_of(scene, rec)
         if window is None:
-            return False
-        raw = review.s2_tile(folder / "s2_windows", window, rec, cfg, overlay=False)
-        over = review.s2_tile(folder / "s2_windows", window, rec, cfg, overlay=True, ai2=True)
-    else:
-        raw = s1_tile(folder, rec["object"], rules, False)
-        over = s1_tile(folder, rec["object"], rules, True)
-    raw.save(out / "img" / f"{hull['id']}_raw.png")
-    over.save(out / "img" / f"{hull['id']}_overlay.png")
-    return True
+            return None
+        cfg = rules["review"] | {"scale": SCALE}
+        return review.s2_tile(folder / "s2_windows", window, rec, cfg, overlay=overlay, ai2=overlay)
+    return s1_tile(folder, rec["object"], rules, overlay)
 
 
-def site_box(name_hint: str):
+def site_of(store: Store, scenes: list[dict]) -> dict | None:
+    for r in store.db.execute("select args from runs order by run_id desc"):
+        site = json.loads(r["args"] or "{}").get("hot_spot_settings")
+        if site:
+            return site
+    name = next((s["site"] for s in scenes if s["site"]), "")
     try:
         from maritime_tip_cue import hotspots
 
-        sites = hotspots.load()
-        return next((s for s in sites if s["name"] == name_hint), None)
+        return next((s for s in hotspots.load() if s["name"] == name), None)
     except Exception:
         return None
 
@@ -161,7 +160,7 @@ def site_box(name_hint: str):
 class Dropped:
     def __init__(self, store: Store, scenes: list[dict], site: dict | None):
         self.site = site
-        self.shore = Shore(site["bbox"], 10000) if site else None
+        self.shore = Shore(site["bbox"], site["min_shore_distance_m"]) if site else None
         self.raw = {}
         for s in scenes:
             rows = store.db.execute("select lat, lon from raw_detections where scene_id=? and site=?", (s["scene_id"], s["site"])).fetchall()
@@ -298,116 +297,45 @@ def fixture_section(store: Store, scenes: list[dict], hulls: list[dict], listed:
     return {"passes": passes, "totals": total}
 
 
-def report_dir(folder: Path) -> Path:
-    root = settings().get("reports", {}).get("path")
-    return ROOT / root / folder.name if root else folder / "report"
-
-
-def build(folder: Path, n_singles: int, seed: int) -> dict:
-    store = Store(folder / "state.db")
-    rules = rules_mod.load()
-    scenes = store.scenes()
-    out = report_dir(folder)
-    (out / "img").mkdir(parents=True, exist_ok=True)
-    taken: set = set()
-    all_hulls = []
-    records = {}
-    for s in scenes:
-        for rec in hull_rows(store, s):
-            if rec["role"] in IGNORED_ROLES:
-                continue
-            h = describe(s, rec, taken)
-            all_hulls.append(h)
-            records[h["id"]] = (s, rec)
-    singles = sorted((h for h in all_hulls if h["verdict"] == "single"), key=lambda h: h["id"])
-    picked = {h["id"] for h in random.Random(seed).sample(singles, min(n_singles, len(singles)))}
-    listed = [h for h in all_hulls if h["verdict"] in ("pair", "possible_pair", "unmeasured", "moving") or h["id"] in picked]
-    listed.sort(key=lambda h: (SECTIONS.index(h["verdict"]) if h["verdict"] in SECTIONS else 9, h["time"], h["id"]))
-    for h in listed:
-        scene, rec = records[h["id"]]
-        ok = make_images(store, scene, rec, h, out, rules)
-        h["raw"] = f"img/{h['id']}_raw.png" if ok else None
-        h["overlay"] = f"img/{h['id']}_overlay.png" if ok else None
-    site = site_box(next((s["site"] for s in scenes if s["site"]), ""))
-    fx = fixture_section(store, scenes, all_hulls, {h["id"] for h in listed}, site, rules)
-    doc = {
-        "run": run_section(store, scenes) | {"singles_sample": {"n": len(picked), "of": len(singles), "seed": seed}},
-        "scenes": scene_section(scenes),
-        "hulls": listed,
-        "fixtures": fx,
-    }
-    parties = {}
-    if store.db.execute("select count(*) from sqlite_master where name = 'ais_matches'").fetchone()[0]:
-        for r in store.db.execute("select scene_id, hull_id, slot, name, flag, imo, mmsi, dist_a_m, dist_b_m, report_age_min from ais_matches where chosen = 1 order by slot"):
+def collect(folder: Path, n_singles: int = 24, seed: int = 0, keep: set | None = None) -> tuple[dict, dict]:
+    store = Store(folder / "state.db", folder)
+    try:
+        rules = rules_mod.load()
+        scenes = store.scenes()
+        taken: set = set()
+        all_hulls = []
+        records = {}
+        for s in scenes:
+            for rec in hull_rows(store, s):
+                if rec["role"] in IGNORED_ROLES:
+                    continue
+                h = describe(s, rec, taken)
+                h["image"] = s["source"] == "s1" or window_of(s, rec) is not None
+                all_hulls.append(h)
+                records[h["id"]] = (s, rec)
+        singles = sorted((h for h in all_hulls if h["verdict"] == "single"), key=lambda h: h["id"])
+        keep = keep or set()
+        picked = {h["id"] for h in singles if h["id"] in keep}
+        rest = [h for h in singles if h["id"] not in picked]
+        picked |= {h["id"] for h in random.Random(seed).sample(rest, max(0, min(n_singles - len(picked), len(rest))))}
+        listed = [h for h in all_hulls if h["verdict"] in ("pair", "possible_pair", "unmeasured", "moving") or h["id"] in picked or h["id"] in keep]
+        listed.sort(key=lambda h: (SECTIONS.index(h["verdict"]) if h["verdict"] in SECTIONS else 9, h["time"], h["id"]))
+        site = site_of(store, scenes)
+        fx = fixture_section(store, scenes, all_hulls, {h["id"] for h in listed}, site, rules)
+        parties: dict = {}
+        columns = {r["name"] for r in store.db.execute("pragma table_info(ais_matches)")}
+        for r in [] if "slot" not in columns else store.db.execute("select scene_id, hull_id, slot, name, flag, imo, mmsi, dist_a_m, dist_b_m, report_age_min from ais_matches where chosen = 1 order by slot"):
             dist = r["dist_b_m"] if r["slot"] == "b" and r["dist_b_m"] is not None else r["dist_a_m"]
             parties.setdefault(f"{r['scene_id']}__{r['hull_id']}", []).append(
                 {"slot": r["slot"], "name": r["name"], "flag": r["flag"], "imo": r["imo"], "mmsi": r["mmsi"], "distance_m": dist, "age_min": r["report_age_min"]})
-    for h in listed:
-        h["ais"] = parties.get(h["id"], [])
-    store.close()
-    doc = clean(doc)
-    (out / "data.json").write_text(json.dumps(doc, indent=1), encoding="utf-8")
-    page = (Path(__file__).parent / "report.html").read_text(encoding="utf-8")
-    (out / "index.html").write_text(page.replace("__DATA__", json.dumps(doc).replace("</", "<\\/")), encoding="utf-8")
-    return doc
-
-
-def export_flags(folder: Path) -> list[dict]:
-    flags = qa_flags(folder)
-    if flags:
-        (report_dir(folder) / "qa_flags.json").write_text(json.dumps(flags, indent=1), encoding="utf-8")
-    return flags
-
-
-def write_qa(folder: Path) -> Path:
-    out = report_dir(folder)
-    doc = json.loads((out / "data.json").read_text(encoding="utf-8"))
-    saved = out / "qa_flags.json"
-    if saved.exists() and not ((folder / "state.db").exists() and qa_flags(folder)):
-        import_qa(folder, saved)
-    flags = export_flags(folder)
-    final = final_verdicts(folder)
-    for h in doc["hulls"]:
-        h["final_verdict"] = final.get(h["id"], h["verdict"])
-    doc["qa_flags"] = flags
-    site = doc["run"].get("hot_spot") or next((s["site"] for s in doc["scenes"] if s.get("site")), "")
-    title = (site.split("_")[0].title() + " STS QA").strip()
-    page = (Path(__file__).parent / "qa.html").read_text(encoding="utf-8")
-    page = page.replace("__TITLE__", title).replace("__RUN__", folder.name).replace("__DATA__", json.dumps(doc, separators=(",", ":")).replace("</", "<\\/"))
-    path = out / "qa.html"
-    path.write_text(page, encoding="utf-8")
-    return path
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(prog="maritime_tip_cue.watch.report")
-    parser.add_argument("folder")
-    parser.add_argument("--singles", type=int, default=24)
-    parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--qa", action="store_true")
-    parser.add_argument("--qa-only", action="store_true")
-    parser.add_argument("--qa-import")
-    args = parser.parse_args()
-    sys.stdout.reconfigure(encoding="utf-8")
-    folder = Path(args.folder).resolve()
-    if args.qa_import:
-        print(f"imported {import_qa(folder, Path(args.qa_import))} QA flags; QA page {write_qa(folder)}")
-        return 0
-    if args.qa_only:
-        print(f"QA page {write_qa(folder)}")
-        return 0
-    doc = build(folder, args.singles, args.seed)
-    if args.qa:
-        print(f"QA page {write_qa(folder)}")
-    by = {}
-    for h in doc["hulls"]:
-        by[h["verdict"]] = by.get(h["verdict"], 0) + 1
-    after = {}
-    for v in final_verdicts(folder).values():
-        after[v] = after.get(v, 0) + 1
-    print(f"report in {report_dir(folder)}: {len(doc['scenes'])} scenes, listed {by}, after QA {after}, fixtures {doc['fixtures']['totals']}")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+        for h in listed:
+            h["ais"] = parties.get(h["id"], [])
+        doc = {
+            "run": run_section(store, scenes) | {"singles_sample": {"n": len(picked), "of": len(singles), "seed": seed}, "site": site},
+            "scenes": scene_section(scenes),
+            "hulls": listed,
+            "fixtures": fx,
+        }
+        return clean(doc), {h["id"]: records[h["id"]] for h in listed}
+    finally:
+        store.close()
