@@ -17,7 +17,7 @@ Conventions are in CLAUDE.md (already loaded). Read docs by section only: `grep 
 
 ## Data (gitignored `data/`)
 - `data/sts_fixtures/s1`, `data/sts_fixtures/s2`: labelled hulls and passes with their expected verdicts.
-- `data/earlier_runs/`: outputs of earlier runs (2026-10-13 to 18), reference only.
+- `data/earlier_runs/`: outputs of earlier runs of this method, reference only.
 - Stage 0 detector bench (outside the repo): `C:\Users\Shadow\projects\ai2-detectors\` (README there).
 
 ## Docs
