@@ -23,7 +23,7 @@ killed when the PC shut down).
 React, Vite and TypeScript in `frontend/`; `dist/` and `node_modules/` are gitignored and rebuilt by
 `start.cmd` when missing. During development `npm run dev` proxies `/api` to the server. Runs table: one row per scene, since each capture has its own timestamp and that is the time detections carry: run,
 area, source (with the S2 tile or S1 orbit), captured, created (when that scene's processing finished), run status
-and review status, all sortable; a row opens the run's QA filtered to that scene (`?scene=`). Review status:
+and review status, all sortable; a row opens the run's QA filtered to that scene (`?scene=`). The sort is in the URL (`?sort=&dir=`, so Back restores it) and in localStorage (`runs.sort`, used when the table is opened without one); no app-wide store is needed while the table is the only shared view state. Review status:
 `waiting for run` while the run is going, `nothing to review` for a failed scene or one with no listed hulls,
 `not started`, `in progress` (unflagged hulls left or an `unresolved` wrong verdict), `done`. Review counts come from
 the cached run document, warmed in a thread when the server starts.

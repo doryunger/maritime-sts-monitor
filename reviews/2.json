@@ -791,11 +791,11 @@
   "lat": 25.346879157572353,
   "lon": 56.5780875235582,
   "status": "wrong_verdict",
-  "correct_verdict": null,
+  "correct_verdict": "single",
   "note": "",
-  "reviewer": "u_RYpwChdzNJIqPWNhazlK5g",
-  "updated_utc": "2026-10-19T11:09:34.920Z",
-  "imported_utc": "2026-10-19T14:08:01Z"
+  "reviewer": "local",
+  "updated_utc": "2026-10-19T14:37:39Z",
+  "imported_utc": "2026-10-19T14:37:39Z"
  },
  {
   "hull_id": "S2C_MSIL1C_20261014T064831_N0513_R020_T40RDP_20261014T101115__45933_-280911",

@@ -1,0 +1,30 @@
+[
+ {
+  "hull_id": "S2B_MSIL1C_20261009T064759_N0513_R020_T40REP_20261009T102416__50187_-284618",
+  "scene_id": "S2B_MSIL1C_20261009T064759_N0513_R020_T40REP_20261009T102416",
+  "source": "s2",
+  "verdict": "single",
+  "lat": 25.7336234964348,
+  "lon": 57.01869349154551,
+  "status": "ok",
+  "correct_verdict": null,
+  "note": "",
+  "reviewer": "local",
+  "updated_utc": "2026-10-19T14:38:54Z",
+  "imported_utc": "2026-10-19T14:38:54Z"
+ },
+ {
+  "hull_id": "S2B_MSIL1C_20261009T064759_N0513_R020_T40REP_20261009T102416__50304_-279534",
+  "scene_id": "S2B_MSIL1C_20261009T064759_N0513_R020_T40REP_20261009T102416",
+  "source": "s2",
+  "verdict": "moving",
+  "lat": 25.27451221655788,
+  "lon": 57.03024303114676,
+  "status": "ok",
+  "correct_verdict": null,
+  "note": "",
+  "reviewer": "local",
+  "updated_utc": "2026-10-19T14:38:50Z",
+  "imported_utc": "2026-10-19T14:38:50Z"
+ }
+]

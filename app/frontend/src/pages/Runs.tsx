@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, label, SceneRow, sceneTag, when } from "../api";
 
 type Key = "run" | "area" | "source" | "captured" | "created" | "status" | "review";
@@ -14,13 +14,38 @@ const COLUMNS: { key: Key; title: string }[] = [
   { key: "review", title: "Review status" },
 ];
 
+const STORE = "runs.sort";
+const KEYS = COLUMNS.map((c) => c.key);
+
+function remembered(): { key: Key; dir: 1 | -1 } | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(STORE) || "null");
+    return v && KEYS.includes(v.key) && (v.dir === 1 || v.dir === -1) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
 const sortValue = (r: SceneRow, k: Key): string | number => (k === "run" ? r.run : r[k] ?? "");
 
 export default function Runs() {
   const [rows, setRows] = useState<SceneRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [sort, setSort] = useState<{ key: Key; dir: 1 | -1 }>({ key: "captured", dir: -1 });
+  const [params, setParams] = useSearchParams();
   const go = useNavigate();
+  const fromUrl = params.get("sort") as Key | null;
+  const sort: { key: Key; dir: 1 | -1 } =
+    fromUrl && KEYS.includes(fromUrl)
+      ? { key: fromUrl, dir: params.get("dir") === "asc" ? 1 : -1 }
+      : remembered() ?? { key: "captured", dir: -1 };
+  const setSort = (next: { key: Key; dir: 1 | -1 }) => {
+    setParams({ sort: next.key, dir: next.dir === 1 ? "asc" : "desc" }, { replace: true });
+    try {
+      localStorage.setItem(STORE, JSON.stringify(next));
+    } catch {
+      return;
+    }
+  };
 
   useEffect(() => {
     api.scenes().then(setRows).catch((e) => setError(e.message));
@@ -33,9 +58,9 @@ export default function Runs() {
       const tie = a.run - b.run || a.captured.localeCompare(b.captured) || a.scene_id.localeCompare(b.scene_id);
       return (x < y ? -1 : x > y ? 1 : tie) * sort.dir;
     });
-  }, [rows, sort]);
+  }, [rows, sort.key, sort.dir]);
 
-  const toggle = (key: Key) => setSort((s) => ({ key, dir: s.key === key ? (s.dir === 1 ? -1 : 1) : 1 }));
+  const toggle = (key: Key) => setSort({ key, dir: sort.key === key ? (sort.dir === 1 ? -1 : 1) : 1 });
   const open = (r: SceneRow) => go(`/runs/${r.run}?scene=${encodeURIComponent(r.scene_id)}`);
 
   if (error) return <p className="error">Could not load runs: {error}</p>;
