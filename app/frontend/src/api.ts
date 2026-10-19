@@ -5,6 +5,7 @@ export interface RunSummary {
   created: string;
   area: string | null;
   status: string;
+  review?: string;
   window?: [string, string] | null;
   sources?: string | null;
   captured?: [string | null, string | null];

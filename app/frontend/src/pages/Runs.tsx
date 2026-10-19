@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, label, RunSummary, when } from "../api";
 
-type Key = "run" | "area" | "created" | "captured" | "finished";
+type Key = "run" | "area" | "created" | "captured" | "finished" | "status" | "review";
 
 const COLUMNS: { key: Key; title: string }[] = [
   { key: "run", title: "Run" },
@@ -10,6 +10,8 @@ const COLUMNS: { key: Key; title: string }[] = [
   { key: "created", title: "Created" },
   { key: "captured", title: "Captured" },
   { key: "finished", title: "Finished" },
+  { key: "status", title: "Run status" },
+  { key: "review", title: "Review status" },
 ];
 
 const sortValue = (r: RunSummary, k: Key): string | number =>
@@ -54,11 +56,6 @@ export default function Runs() {
                   </button>
                 </th>
               ))}
-              <th>Status</th>
-              <th className="n">Scenes</th>
-              <th className="n">Pairs</th>
-              <th className="n">Possible</th>
-              <th className="n">QA</th>
             </tr>
           </thead>
           <tbody>
@@ -73,16 +70,13 @@ export default function Runs() {
                 </td>
                 <td className="mono">{when(r.finished)}</td>
                 <td><span className={`status s-${r.status}`}>{r.status}</span></td>
-                <td className="n">{r.scenes ?? "–"}{r.scenes_failed ? <span className="warn"> ({r.scenes_failed} failed)</span> : null}</td>
-                <td className="n">{r.verdicts?.pair ?? 0}</td>
-                <td className="n">{r.verdicts?.possible_pair ?? 0}</td>
-                <td className="n">{r.listed ? `${r.reviewed ?? 0} / ${r.listed}` : "–"}</td>
+                <td><span className={`status r-${(r.review || "").replace(/ /g, "-")}`}>{r.review || "–"}</span></td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <p className="muted small">Created: when the run started. Captured: first and last satellite capture in the run. Finished: when processing ended. Pairs and Possible are after QA.</p>
+      <p className="muted small">Created: when the run started. Captured: first and last satellite capture in the run. Finished: when processing ended.</p>
     </section>
   );
 }

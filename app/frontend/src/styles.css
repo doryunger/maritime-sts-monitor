@@ -63,6 +63,10 @@ button.sort { background: none; border: 0; padding: 0; font: inherit; color: inh
 .s-done, .s-checked { color: var(--ok); }
 .s-running, .s-detected { color: var(--accent); }
 .s-failed, .s-stopped { color: var(--pair); }
+.r-done { color: var(--ok); }
+.r-in-progress { color: var(--warn); }
+.r-not-started { color: var(--pair); }
+.r-waiting-for-run, .r-nothing-to-review { color: var(--muted); }
 .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px 16px; margin: 0 0 12px; }
 .facts dt { font-size: 12px; color: var(--muted); }
 .facts dd { margin: 0; }

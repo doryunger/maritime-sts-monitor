@@ -46,6 +46,18 @@ def status_of(runs: list[dict], last_event: str | None) -> str:
     return "running"
 
 
+def review_of(status: str, reviewed: int, listed: int, unresolved: int) -> str:
+    if status == "running":
+        return "waiting for run"
+    if not listed:
+        return "nothing to review"
+    if not reviewed:
+        return "not started"
+    if reviewed < listed or unresolved:
+        return "in progress"
+    return "done"
+
+
 def summary(row: dict) -> dict:
     path = registry.runs_root() / row["folder"]
     out = {"run": row["run_no"], "created": row["created_utc"], "area": None, "status": "empty"}
@@ -64,11 +76,13 @@ def summary(row: dict) -> dict:
     finally:
         store.close()
     listed = sum(run_v.get(k, 0) for k in LISTED) + max(min(SINGLES, run_v.get("single", 0)), flagged)
+    status = status_of(runs, last_event)
     return out | {
         "area": named[-1]["hot_spot"] if named else None,
         "window": [runs[0]["window_start"], runs[-1]["window_end"]] if runs else None,
         "sources": named[-1]["sources"] if named else None,
-        "status": status_of(runs, last_event),
+        "status": status,
+        "review": review_of(status, reviewed, listed, final.get("unresolved", 0)),
         "captured": captured,
         "finished": runs[-1]["ended_utc"] if runs else None,
         "scenes": sum(scenes.values()),
