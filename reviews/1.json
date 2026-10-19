@@ -973,11 +973,11 @@
   "lat": 25.258563591020987,
   "lon": 56.612256440815884,
   "status": "wrong_verdict",
-  "correct_verdict": "pair",
-  "note": "near by cloud",
+  "correct_verdict": "single",
+  "note": "single (corrected on recheck)",
   "reviewer": "local",
-  "updated_utc": "2026-10-19T14:41:12Z",
-  "imported_utc": "2026-10-19T14:41:12Z"
+  "updated_utc": "2026-10-19T14:59:11Z",
+  "imported_utc": "2026-10-19T14:59:11Z"
  },
  {
   "hull_id": "S2B_MSIL1C_20261009T064759_N0513_R020_T40RDP_20261009T102416__46283_-281318",

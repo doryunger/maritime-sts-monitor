@@ -412,6 +412,79 @@
     "pair_requires_hull_b": {
       "value": true,
       "basis": "A Sentinel-2 pair needs a second hull found beside hull A; one-sided excess along the hull without a hull B gives possible_pair. QA of the fujairah_outer run 2026-10-12..19 (user, 2026-10-19), 18 S1/S2 pairs reviewed; fitted on one hot spot, to verify on the others; the only S2 pair without a hull B was judged wrong (a moving ship)."
+    },
+    "shape_enabled": {
+      "value": true,
+      "basis": "Sentinel-2 hull shape: both hull edges traced per row at the half-max of the 10 m bands, each edge fitted as a straight line with at most one step. Fitted 2026-10-19 on 192 labelled stationary S2 hulls (QA of runs 1 and 2, fujairah_outer, plus the user-labelled S2 fixtures): with the shape test 36 of 36 pairs are called pair and 1 of 156 non-pairs; fitted on these labels and mostly one hot spot, to verify on the others."
+    },
+    "shape_pixel_m": {
+      "value": 10,
+      "unit": "m",
+      "basis": "Sentinel-2 10 m pixel; its quantisation (pixel / sqrt 12) is the floor of the edge noise."
+    },
+    "shape_along_frac": {
+      "value": 0.84,
+      "basis": "Share of hull A's length, centred, over which the edges are traced; the bow and stern taper is left out."
+    },
+    "shape_min_peak_sigma": {
+      "value": 6,
+      "unit": "sigma",
+      "basis": "A row is traced only when its brightest cell stands this far above the sea noise."
+    },
+    "shape_edge_frac": {
+      "value": 0.5,
+      "basis": "Edge = where brightness falls to this share of the row peak above the sea (half-max), which leaves out most of the blur halo."
+    },
+    "shape_min_rows": {
+      "value": 8,
+      "basis": "Fewest traced rows for a shape measurement."
+    },
+    "shape_trim_sigma": {
+      "value": 2.5,
+      "basis": "Rows further than this many standard deviations from a straight-line fit are left out of it."
+    },
+    "shape_outside_sigma": {
+      "value": 2,
+      "unit": "edge sigma",
+      "basis": "A row counts as stepped out when its edge is this many edge-noise units outside the base line."
+    },
+    "shape_min_step_k": {
+      "value": 10,
+      "unit": "edge sigma",
+      "basis": "Sentinel-2 hull shape: both hull edges traced per row at the half-max of the 10 m bands, each edge fitted as a straight line with at most one step. Fitted 2026-10-19 on 192 labelled stationary S2 hulls (QA of runs 1 and 2, fujairah_outer, plus the user-labelled S2 fixtures): with the shape test 36 of 36 pairs are called pair and 1 of 156 non-pairs; fitted on these labels and mostly one hot spot, to verify on the others. A one-sided step must explain the edge better than a straight line by this many edge-noise units (the noise per hull from sea noise over edge steepness)."
+    },
+    "shape_min_beams": {
+      "value": 0.3,
+      "unit": "beams",
+      "basis": "Sentinel-2 hull shape: both hull edges traced per row at the half-max of the 10 m bands, each edge fitted as a straight line with at most one step. Fitted 2026-10-19 on 192 labelled stationary S2 hulls (QA of runs 1 and 2, fujairah_outer, plus the user-labelled S2 fixtures): with the shape test 36 of 36 pairs are called pair and 1 of 156 non-pairs; fitted on these labels and mostly one hot spot, to verify on the others. Smallest step that counts as a second vessel; bow and stern taper and halo stay below it."
+    },
+    "shape_pair_max_beams": {
+      "value": 1.2,
+      "unit": "beams",
+      "basis": "Sentinel-2 hull shape: both hull edges traced per row at the half-max of the 10 m bands, each edge fitted as a straight line with at most one step. Fitted 2026-10-19 on 192 labelled stationary S2 hulls (QA of runs 1 and 2, fujairah_outer, plus the user-labelled S2 fixtures): with the shape test 36 of 36 pairs are called pair and 1 of 156 non-pairs; fitted on these labels and mostly one hot spot, to verify on the others. Largest step that is called a pair."
+    },
+    "shape_min_continuity": {
+      "value": 0.7,
+      "basis": "Sentinel-2 hull shape: both hull edges traced per row at the half-max of the 10 m bands, each edge fitted as a straight line with at most one step. Fitted 2026-10-19 on 192 labelled stationary S2 hulls (QA of runs 1 and 2, fujairah_outer, plus the user-labelled S2 fixtures): with the shape test 36 of 36 pairs are called pair and 1 of 156 non-pairs; fitted on these labels and mostly one hot spot, to verify on the others. Share of rows in the stepped stretch that sit clearly outside the base edge."
+    },
+    "shape_veto_beams": {
+      "value": 1.3,
+      "unit": "beams",
+      "basis": "Sentinel-2 hull shape: both hull edges traced per row at the half-max of the 10 m bands, each edge fitted as a straight line with at most one step. Fitted 2026-10-19 on 192 labelled stationary S2 hulls (QA of runs 1 and 2, fujairah_outer, plus the user-labelled S2 fixtures): with the shape test 36 of 36 pairs are called pair and 1 of 156 non-pairs; fitted on these labels and mostly one hot spot, to verify on the others. A step wider than this with a ragged edge is a cloud or haze beside the hull, not a second hull."
+    },
+    "shape_veto_straight_k": {
+      "value": 2,
+      "unit": "edge sigma",
+      "basis": "Sentinel-2 hull shape: both hull edges traced per row at the half-max of the 10 m bands, each edge fitted as a straight line with at most one step. Fitted 2026-10-19 on 192 labelled stationary S2 hulls (QA of runs 1 and 2, fujairah_outer, plus the user-labelled S2 fixtures): with the shape test 36 of 36 pairs are called pair and 1 of 156 non-pairs; fitted on these labels and mostly one hot spot, to verify on the others. Ragged: the stepped edge scatters more than this many edge-noise units around its line (a real pair of 1.32 beams scattered 0.56, clouds 3.6 and 4.3)."
+    },
+    "shape_max_beams": {
+      "value": 2,
+      "unit": "beams",
+      "basis": "Sentinel-2 hull shape: both hull edges traced per row at the half-max of the 10 m bands, each edge fitted as a straight line with at most one step. Fitted 2026-10-19 on 192 labelled stationary S2 hulls (QA of runs 1 and 2, fujairah_outer, plus the user-labelled S2 fixtures): with the shape test 36 of 36 pairs are called pair and 1 of 156 non-pairs; fitted on these labels and mostly one hot spot, to verify on the others. A step wider than this is never a second hull."
+    },
+    "weak_pair_verdict": {
+      "value": "single",
+      "basis": "decision (user, 2026-10-19): Sentinel-2 has no possible_pair; weak pair evidence is reported as single and kept in the check record as weak_evidence."
     }
   },
   "s1_outline": {

@@ -17,7 +17,6 @@ create table if not exists ais_matches (
 """
 
 FINDINGS = """
-create view if not exists findings as
 select h.scene_id, h.site, h.hull_id, s.source, s.capture_utc, h.lat, h.lon, h.role, h.verdict as run_verdict,
     f.status as qa_status, f.correct_verdict as qa_correct_verdict, f.note as qa_note, f.updated_utc as qa_updated_utc,
     case
@@ -26,6 +25,7 @@ select h.scene_id, h.site, h.hull_id, s.source, s.capture_utc, h.lat, h.lon, h.r
         when f.status = 'is_moving' then 'moving'
         when f.status = 'is_pair' then 'pair'
         when f.status in ('bad_geometry', 'other') then 'excluded'
+        when f.status = 'ok' then f.verdict
         else h.verdict
     end as verdict
 from hulls h join scenes s using (scene_id, site)
@@ -98,7 +98,10 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self.db.execute("pragma journal_mode=wal")
         self.db.execute("pragma busy_timeout=60000")
-        self.db.executescript(SCHEMA + AIS_MATCHES + FINDINGS)
+        self.db.executescript(SCHEMA + AIS_MATCHES)
+        current = self.db.execute("select sql from sqlite_master where type = 'view' and name = 'findings'").fetchone()
+        if current is None or current[0].split(" as", 1)[1].strip() != FINDINGS.strip():
+            self.db.executescript("drop view if exists findings; create view findings as " + FINDINGS)
         self.depth = 0
 
     def close(self) -> None:

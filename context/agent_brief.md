@@ -35,6 +35,7 @@ Conventions are in CLAUDE.md (already loaded). Read docs by section only: `grep 
 - `.venv/Scripts/python -m maritime_tip_cue.sts.score` per-set STS tallies.
 - `.venv/Scripts/python -m maritime_tip_cue.watch.run --site <hot spot> --end <ISO> --days 7 [--run N] [--reanalyse]` a run; a new one gets the next run number (long: launch detached with a log file; resumes from `state.db` with `--run N`). `watch.registry list|adopt` lists runs / renames finished legacy folders to their number.
 - `.venv/Scripts/python -m maritime_tip_cue.ais.match <run folder>` match AIS to the after-QA pair hulls (`--all-checked --stats` for limit measurements).
+- `.venv/Scripts/python -m maritime_tip_cue.watch.recheck <run numbers>` re-runs the S2 pair check of runs from their stored windows (after a rule change; no detector).
 - `app\start.cmd` runs app at http://127.0.0.1:8765/ (runs table, run pages, QA saved to `qa_flags`).
 - `.venv/Scripts/python -m maritime_tip_cue.watch.state summary <run folder>` per-scene counts.
 - `.venv/Scripts/python -m maritime_tip_cue.hotspots [publish <file>]` print (or replace) the S3 hot-spot list.

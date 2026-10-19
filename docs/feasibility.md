@@ -245,3 +245,29 @@ types only (AIS ship types 7 and 8), 30 days kept. What that means for matching 
 - **Satellite-only rows** (`[SAT-AIS]`) get a new anonymous id on every serving and carry no
   identity or size; they can't be tracked or matched by length.
 - **Small craft are not stored**, so a tanker alongside a bunker barge shows in imagery only.
+
+## Sentinel-2 hull shape test (measured 2026-10-19)
+Set: 192 labelled stationary S2 hulls, 36 pairs and 156 non-pairs: the QA of runs 1 and 2 (fujairah_outer,
+9 and 12-19 Oct 2026, with the user's recheck of 44971, 45616/45617, 46095/46096) and the user-labelled S2
+fixtures. Mostly one hot spot; the limits are fitted on these labels.
+
+| Feature (per hull) | AUC pair vs non-pair | Pair median | Non-pair median |
+|---|---|---|---|
+| step significance, edge-noise units | 0.91 | 29.6 | 4.2 |
+| step size, beams | 0.89 | 0.63 | 0.15 |
+| continuity of the stepped stretch | 0.88 | 1.00 | 0.10 |
+| raggedness of the stepped edge, noise units | 0.84 | 0.95 | 0.34 |
+| edge parallelism, noise units | 0.75 | 2.0 | 0.5 |
+| symmetry (other edge shift), noise units | 0.64 | 1.2 | 0.4 |
+| whole-object pixel histogram bimodality, best band | 0.49-0.59 | | |
+| stepped strip vs hull A histogram, KS B08 | 0.25 (lower for pairs) | 0.38 | 0.78 |
+
+| Verdicts | Pairs called pair | Non-pairs called pair | Non-pairs called possible |
+|---|---|---|---|
+| rules before the shape test | 29 / 36 | 4 / 156 | 4 |
+| with the shape test | 36 / 36 | 1 / 156 | (possible dropped for S2) |
+
+Re-check of runs 1 and 2 against the QA: 18 of 18 confirmed S2 pairs called pair, one false pair left
+(49844_-275454, a ship with a haze trail beside it). The 6 S2 `moving` hulls the user judged stationary are a
+separate error (Ai2 speed 3.4-7.4 kn near cloud, no wake) and are not touched by this test.
+

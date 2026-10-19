@@ -28,6 +28,20 @@ blob in a strip beside hull A (size, elongation, axis and plateau tests, with a 
 skirt of A), and one-sided excess along most of the hull in the 10 m bands. Weaker evidence gives `possible_pair`.
 Unmeasured cases (cloud, hull running out of the window, profile never reaching water) are never turned into a
 single. A hull faster than the stopped limit is `moving`; a window with no water peak is `unmeasured`.
+Hull shape (`shape_step`, `pair_split.shape_*`): both edges of hull A are traced per 5 m row where the brightest
+10 m band falls to half its peak above the sea, and each edge is fitted as a straight line with at most one
+one-sided step. Every limit is a ratio or a multiple of that hull's own edge noise (sea noise over edge steepness,
+floored at the pixel quantisation), never metres: step size in beams, step significance (how much better the step
+explains the edge than a line, in noise units), continuity (share of stepped rows clearly outside the base edge)
+and raggedness of the stepped edge. A second vessel widens one side over a continuous stretch with a straight edge;
+bow and stern taper is symmetric and halo stays under 0.3 beams; a cloud or haze beside the hull gives a step wider
+than a hull with a ragged edge. The shape test turns weak evidence into `pair` and vetoes a `pair` whose hull B is a
+ragged over-wide step. Weak evidence left over is reported as `single` (`weak_pair_verdict`), with `weak_evidence`
+kept in the record: Sentinel-2 has no `possible_pair`. Tried and dropped (2026-10-19, 192 labelled hulls): edge
+parallelism and symmetry tests (weak: a second vessel is often shorter or slightly angled), and the pixel-value
+histogram of the whole object (no separation: one ship at 10 m is already multimodal, accommodation, deck and
+hull). The histogram of the stepped strip against hull A in the same rows does separate (a second vessel is nearly
+as bright and has the same value distribution, a halo is dimmer), but is not needed by the current limits.
 
 ## s1object
 Radar outline of one object: dB chips of VH and VV, the object's brightness scale is a high percentile of the

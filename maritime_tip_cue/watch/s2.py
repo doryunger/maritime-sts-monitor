@@ -181,7 +181,11 @@ def summarise(win: dict, res: dict) -> dict:
         "reaches_water": res.get("reaches_water"),
         "a_fired": res.get("a_fired"),
         "b_fired": res.get("b_fired"),
+        "weak_evidence": res.get("weak_evidence"),
+        "shape_call": res.get("shape_call"),
     }
+    for k, v in (res.get("shape") or {}).items():
+        out[f"shape_{k}"] = v
     for which in ("a", "b"):
         h = res.get(f"hull_{which}")
         lat, lon = hull_centre(win, fix, h) if "x" in fix else (None, None)

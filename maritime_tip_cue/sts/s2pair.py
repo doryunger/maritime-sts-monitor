@@ -313,6 +313,138 @@ def halo(zprof: np.ndarray, t: np.ndarray, a: tuple[float, float], b: dict, cfg:
     return b_to_a < cfg["halo_max_b_to_a"] and ratio < cfg["halo_min_mirror_ratio"]
 
 
+def half_crossing(z: np.ndarray, i: int, half: float, d: int) -> tuple[float | None, float]:
+    j = i
+    while 0 <= j + d < len(z) and z[j + d] >= half:
+        j += d
+    if not 0 <= j + d < len(z):
+        return None, 0.0
+    a, b = z[j], z[j + d]
+    return j + d * (a - half) / max(a - b, 1e-9), abs(a - b)
+
+
+def trimmed_line(x: np.ndarray, y: np.ndarray, k: float) -> tuple[float, float, np.ndarray]:
+    design = np.vstack([x, np.ones_like(x)]).T
+    slope, icpt = np.linalg.lstsq(design, y, rcond=None)[0]
+    res = y - (slope * x + icpt)
+    keep = np.abs(res) <= max(k * np.std(res), 1e-9)
+    if 3 <= keep.sum() < len(x):
+        slope, icpt = np.linalg.lstsq(design[keep], y[keep], rcond=None)[0]
+        res = y - (slope * x + icpt)
+    return float(slope), float(icpt), res
+
+
+def shape_water(win: dict, names: list[str], cfg: dict) -> dict:
+    w = win["water"]
+    missing = [n for n in names if n not in w["median"]]
+    if not missing:
+        return w
+    b = win["bands"]
+    med = dict(w["median"]) | {n: float(np.median(b[n][w["mask"]])) for n in missing}
+    sigma = dict(w["sigma"]) | {
+        n: max(1.4826 * float(np.median(np.abs(b[n][w["mask"]] - med[n]))), cfg["water_sigma_floor"]) for n in missing
+    }
+    return {"median": med, "sigma": sigma}
+
+
+def hull_edges(win: dict, fix: dict, beam: float, cfg: dict) -> dict | None:
+    names = [n for n in cfg["tenm_bands"] if n in win["bands"]]
+    length, step = fix["length_m"], cfg["grid_step_m"]
+    s = np.arange(-length / 2, length / 2 + step / 2, step)
+    t = np.arange(-cfg["anchor_grid_half_m"], cfg["anchor_grid_half_m"] + step / 2, step)
+    grid = s2window.sample(win, fix["x"], fix["y"], fix["heading"], s, t, names)
+    w = shape_water(win, names, cfg)
+    z = np.max(np.stack([(grid[n] - w["median"][n]) / w["sigma"][n] for n in names], -1), -1)
+    floor = cfg["shape_pixel_m"] / math.sqrt(12)
+    near = np.where(np.abs(t) <= beam)[0]
+    rows = {"s": [], "lo": [], "hi": [], "sig_lo": [], "sig_hi": []}
+    for r in np.where(np.abs(s) <= cfg["shape_along_frac"] * length / 2)[0]:
+        row = z[r]
+        if not len(near):
+            break
+        i = near[np.argmax(row[near])]
+        if row[i] < cfg["shape_min_peak_sigma"]:
+            continue
+        half = row[i] * cfg["shape_edge_frac"]
+        a, ga = half_crossing(row, i, half, -1)
+        b, gb = half_crossing(row, i, half, 1)
+        if a is None or b is None:
+            continue
+        rows["s"].append(s[r])
+        rows["lo"].append(t[0] + a * step)
+        rows["hi"].append(t[0] + b * step)
+        rows["sig_lo"].append(math.hypot(step / max(ga, 1e-6), floor))
+        rows["sig_hi"].append(math.hypot(step / max(gb, 1e-6), floor))
+    if len(rows["s"]) < cfg["shape_min_rows"]:
+        return None
+    return {k: np.array(v) for k, v in rows.items()}
+
+
+def best_step(e: np.ndarray, sign: int, sigma: float, sse_line: float) -> tuple | None:
+    n = len(e)
+    cs = np.concatenate([[0.0], np.cumsum(e)])
+    cq = np.concatenate([[0.0], np.cumsum(e * e)])
+    best = None
+    for i in range(n):
+        for j in range(i + 3, n + 1):
+            if n - (j - i) < 3:
+                continue
+            m_seg = (cs[j] - cs[i]) / (j - i)
+            sse_seg = (cq[j] - cq[i]) - (j - i) * m_seg**2
+            rest_sum, rest_sq, rest_n = cs[n] - (cs[j] - cs[i]), cq[n] - (cq[j] - cq[i]), n - (j - i)
+            m_rest = rest_sum / rest_n
+            sse_rest = rest_sq - rest_n * m_rest**2
+            step_m = (m_seg - m_rest) * sign
+            if step_m <= 0:
+                continue
+            gain = (sse_line - sse_seg - sse_rest) / sigma**2
+            if best is None or gain > best[0]:
+                best = (gain, i, j, step_m)
+    return best
+
+
+def shape_step(win: dict, fix: dict, beam: float, cfg: dict) -> dict | None:
+    edges = hull_edges(win, fix, beam, cfg)
+    if edges is None:
+        return None
+    s = edges["s"]
+    sig = {"lo": float(np.median(edges["sig_lo"])), "hi": float(np.median(edges["sig_hi"]))}
+    best = None
+    for side, sign in (("hi", 1), ("lo", -1)):
+        e = edges[side]
+        _, _, res = trimmed_line(s, e, cfg["shape_trim_sigma"])
+        found = best_step(e, sign, sig[side], float(np.sum(res**2)))
+        if found is not None and (best is None or found[0] > best[0][0]):
+            best = (found, side, sign)
+    if best is None:
+        return None
+    (gain, i, j, step_m), side, sign = best
+    e = edges[side]
+    rest = np.r_[0:i, j : len(e)]
+    _, _, seg_res = trimmed_line(s[i:j], e[i:j], cfg["shape_trim_sigma"])
+    slope, icpt, _ = trimmed_line(s[rest], e[rest], cfg["shape_trim_sigma"])
+    base = slope * s[i:j] + icpt
+    outward = (e[i:j] - base) * sign
+    return {
+        "side": side,
+        "step_beams": step_m / beam,
+        "step_k": math.sqrt(max(gain, 0.0)),
+        "continuity": float(np.mean(outward > cfg["shape_outside_sigma"] * sig[side])),
+        "straight_k": float(np.sqrt(np.mean(seg_res**2)) / sig[side]),
+        "along_share": (j - i) * cfg["grid_step_m"] / fix["length_m"],
+    }
+
+
+def shape_call(shape: dict | None, cfg: dict) -> str | None:
+    if shape is None or shape["step_k"] < cfg["shape_min_step_k"]:
+        return None
+    ragged = shape["step_beams"] > cfg["shape_veto_beams"] and shape["straight_k"] > cfg["shape_veto_straight_k"]
+    if ragged or shape["step_beams"] > cfg["shape_max_beams"]:
+        return "veto"
+    fits = cfg["shape_min_beams"] <= shape["step_beams"] <= cfg["shape_pair_max_beams"] and shape["continuity"] >= cfg["shape_min_continuity"]
+    return "pair" if fits else None
+
+
 def empty_result(out: dict, verdict: str) -> dict:
     out.update({"hull_a": None, "hull_b": None, "b_fired": False, "verdict": verdict})
     return out
@@ -430,6 +562,16 @@ def check(win: dict, box: dict, cfg: dict) -> dict:
         verdict = "pair" if out["ratio_ab"] >= cfg["pair_width_ratio"] or f4_pair else "possible_pair"
     else:
         verdict = ("possible_pair" if cfg["pair_requires_hull_b"] else "pair") if f4_pair else "single"
+    out["shape"] = shape_step(win, fix, fix["length_m"] / cfg["hull_length_to_beam"], cfg) if cfg["shape_enabled"] else None
+    call = shape_call(out["shape"], cfg) if cfg["shape_enabled"] else None
+    out["shape_call"] = call
+    if call == "veto" and verdict == "pair":
+        verdict = "possible_pair"
+    elif call == "pair" and verdict == "possible_pair":
+        verdict = "pair"
+    out["weak_evidence"] = verdict == "possible_pair"
+    if verdict == "possible_pair":
+        verdict = cfg["weak_pair_verdict"]
     out["verdict"] = verdict
     return out
 
