@@ -2,8 +2,8 @@
 
 For what the project is (input, processing, output, decisions), see `README.md` — this file is
 about *how to work on it*. `PLAN.md` holds only the operative stages and open gaps; keep it current
-as stages finish. Measured research goes in `docs/feasibility.md`. Where tips come from is out of
-scope here (vessel collection lives in the separate `vessels-aggregator` repo).
+as stages finish. Measured research goes in `docs/feasibility.md`. AIS collection is out of scope here
+(it lives in the separate `vessels-aggregator` repo; this repo only queries its archive).
 
 **No comments in code files, anywhere in this repo** — no inline `#`/`//` comments, no explanatory
 docstrings, in any language, in any part of the tree. For the "why" behind a non-obvious design
@@ -19,13 +19,13 @@ out as part of that edit, folding the note into the component's existing context
 starting a new one.
 
 **Rule parameters live in `rules/*.json`, never in code.** Every threshold or condition the code
-applies (tip rules, evidence steps, sensor limits, grading) is read from `rules/tip_graph.json` or
-`rules/evidence_graph.json`, and the STS pair-check rules from `rules/sts_graph.json`; code only evaluates the graph. Unknown values stay `null` with
+applies (scene selection, detection cleanup, STS pair check, AIS matching) is read from
+`rules/sts_graph.json`; code only evaluates the graph. Unknown values stay `null` with
 `basis: "tbd"` rather than being filled in as code defaults. `config.yaml` is for deployment
 settings (regions, paths), not rules.
 
 **Never focus on a single hot spot.** Tests, calibrations, analyses and progress reports cover every
-region we have data for (the regions in `config.yaml`, the STS sites and the stage 0 test areas).
+hot spot in the shared hot-spot list (see `README.md`).
 Where one has no data, say so explicitly; a threshold measured in one region is not general until
 checked in the others, and results are reported per region.
 

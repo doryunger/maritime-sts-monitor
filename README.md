@@ -1,146 +1,127 @@
 # maritime-tip-cue
 
-Given a **tip** (one or more vessels involved in an event at a known place and time), search free
-satellite imagery for them, detect ships in the captures, match the detections to the tip's
-vessels, grade the evidence and publish the result.
+Watches known **ship-to-ship (STS) transfer hot spots** in free satellite imagery. On every new
+Sentinel-1 or Sentinel-2 pass over a hot spot it detects the ships, checks each tanker for a second
+hull alongside (a possible STS transfer), and then uses AIS to name the vessels it sees, or to show
+that they were not broadcasting. AIS alone can also point to a possible STS place and time outside
+the hot spots; that is a weaker lead, checked on the next pass.
 
-Where tips come from is out of scope. Anything that produces a valid tip can drive the app: an
-alerting system, an incident report typed in by hand, a replayed past event.
-
-The staged work to build it is in [PLAN.md](PLAN.md); measured feasibility data is in
+AIS collection lives in the separate `vessels-aggregator` repo; this repo only reads its archive.
+The staged work is in [PLAN.md](PLAN.md); measured feasibility data is in
 [docs/feasibility.md](docs/feasibility.md).
 
 ## Flow
 
 ```
-tip.json ──> intake: validate, store ──> job ──> GPU job server
-                                                  1. search area + time window
-                                                  2. find optical + SAR scenes
-                                                  3. download, crop, detect ships
-                                                  4. match detections to the tip's vessels
-                                                  5. grade evidence
-             S3 <── tip, findings, images, index ─┘
+hot-spot list (S3, shared) ──> scheduler: new S1 / S2 passes over each hot spot (STAC)
+                                   │
+                                   v
+                               GPU job, per pass and hot spot
+                                 1. read the hot-spot crop of the scene
+                                 2. detect ships, drop those near shore
+                                 3. STS pair check per tanker (one hull or two)
+                                 4. AIS enrichment: archive positions near the pass time,
+                                    projected and matched -> vessel names, or "no AIS"
+             S3 <── sts/<DD-MM-YYYY>/<hot_spot>/<source>.parquet ─┘
 viewer ──reads──> S3
+
+AIS STS candidate pairs (vessels-aggregator sts_pairs.py) ──> weaker lead: place and time
+                                                               checked on the next pass
 ```
 
-Three layers: **tip** (input, as received) → **job** (one search run for a tip) → **finding** (one
-scene searched: detections, matches, grade, or an outcome such as "no capture").
+Layers: **hot spot** (a site where STS is known to take place) → **pass** (one scene over it) →
+**finding** (one STS pair seen at that pass: pair verdict, AIS identity, crop).
 
-## Input: the tip
+## Hot spots
 
-One JSON document per tip. The more of it is filled in, the smaller the search area and the more
-reliable the match. Field names are a proposal; the schema is fixed in stage 1.
+One list for all repos, kept on S3; each repo reads it from there. Until it moves, the proof-of-
+concept list is `rules/sts_pairs.json` in `vessels-aggregator`:
 
-| Field | Required | Used for |
+| Site | Area | Notes from the PoC (15 Jul – 15 Oct 2026) |
 |---|---|---|
-| `tip_id` | yes | Stable id from the producer; re-sending the same id updates the tip, never duplicates it |
-| `source` | yes | Who produced it and on what basis (free text + optional references, e.g. a report URL) |
-| `event.type` | yes | `dark`, `encounter`, `loitering`, `attack`, `seizure`, `suspicious_approach`, `other` |
-| `event.time` | yes | UTC; centre of the imagery time window |
-| `event.position` | yes | lat/lon of the event, or of the subject's last known position |
-| `event.uncertainty_km` | no | How far off the position may be; widens the search area |
-| `subject` | yes | The vessel we are looking for (vessel object, below) |
-| `parties` | no | Other vessels involved (e.g. the other ship in an encounter) |
-| `context_vessels` | no | Other vessels known to be in the area over the window, with tracks. Lets the matcher explain detections that are *not* the subject |
-| `search` | no | Overrides: `before_hours`, `after_hours`, area polygon, sensors |
+| `malaysia_eopl` | EOPL / Singapore Strait east, 103.5–106.0 E, 0.8–1.8 N | S1 on 27 days, S2 38 clear days; 74% coastal AIS; shore distance 2 km |
+| `johor_east_scs` | Johor east / South China Sea, 103.5–106.0 E, 1.8–2.8 N | S1 27 days, S2 35 clear days; 28% coastal AIS, mostly satellite AIS |
+| `fujairah_outer` | Outer Fujairah / Khor Fakkan, 56.3–57.2 E, 24.8–25.8 N | S1 60 days, S2 40 clear days; 76% coastal AIS |
+| `off_sohar` | Gulf of Oman off Sohar, 56.6–57.6 E, 24.2–24.9 N | S1 36 days, S2 41 clear days; 44% coastal AIS |
 
-Vessel object:
-
-| Field | Required | Used for |
-|---|---|---|
-| `id` | yes | Producer's id for the vessel; any stable string |
-| `name`, `mmsi`, `imo`, `flag` | no | Display and cross-reference only |
-| `type` | no | cargo, tanker, fishing, …; matched against the detector's type |
-| `length_m`, `width_m` | strongly advised | Main matching feature; without them a match rests on position alone |
-| `track` | yes (≥ 1 point) | `[{time, lat, lon, speed_kn, course, heading}]`. The last point before the event sets the projected position and how fast the search area grows |
-
-Validation: required fields present; times UTC ISO 8601 and not in the future; lat −90..90, lon
-−180..180; speed 0..50 kn; course and heading 0..359; sizes > 0. An invalid tip is rejected with the
-list of reasons and stored as rejected. Missing optional fields are accepted and noted on the job,
-since they lower match confidence.
+Per site: bounding box and minimum distance from shore (default 10 km); detections nearer to land
+are dropped.
 
 ## Processing
 
-1. **Time window**: `[event.time − before_hours, event.time + after_hours]`, default −6 h / +24 h
-   (`rules/evidence_graph.json`, `time_window`).
-2. **Search area**: around the subject's last track point, radius = last speed × time from that
-   point to the capture, plus `uncertainty_km`, clamped to 5–60 km (`search_area`). Computed per
-   capture time, so an early capture gets a small box.
-3. **Scene search**: Sentinel-2 L1C, Landsat 8/9 L1 and Sentinel-1 GRD scenes that cover the area
-   inside the window, via STAC. A capture before the event is used too: it shows the vessel while
-   still reporting and how the detector sees it.
-4. **Detection**: Ai2 detectors (one per sensor) on the crop. Output per ship: position, length,
-   width, heading, speed, type.
-5. **Matching**: project each tip vessel's track to the capture time; candidates are detections
-   of compatible length and heading near the projected position. Context vessels at their own
-   projected positions are matched first and removed, so they aren't mistaken for the subject.
-6. **Evidence grade** ([evidence rules](docs/evidence-rules.md)).
-7. **Publish** the finding, images and updated index.
-
-### Evidence rules
-
-The assumptions, decision flow, grades and parameters are in
-[docs/evidence-rules.md](docs/evidence-rules.md). How tips are produced upstream is in
-[docs/tip-rules.md](docs/tip-rules.md). The suspicious activities this has to handle, seen in recorded
-vessel snapshots, and the data and imagery sources behind them are in
-[docs/use-cases.md](docs/use-cases.md).
+1. **Pass search**: Sentinel-1 GRD and Sentinel-2 L1C scenes covering each hot spot since the last
+   run, via STAC.
+2. **Detection**: Ai2 detectors (one per sensor) on the hot-spot crop. Output per ship: position,
+   length, width, heading, type. Detections on land or within the site's shore distance are dropped.
+3. **STS pair check** (`maritime_tip_cue/sts/`, parameters in `rules/sts_graph.json`): per tanker,
+   `pair`, `possible_pair`, `single`, `moving` or `unmeasured`. Sentinel-2 uses the hull's spectral
+   width and a second-hull search beside it; Sentinel-1 uses the radar outline and two light lines.
+4. **AIS enrichment**: from the `vessels-aggregator` archive, the AIS positions in and around the
+   hot spot near the pass time, projected to the capture time, matched to each hull by position,
+   length and heading. Result per hull: named (name, flag, type, size; IMO where the aggregator's Equasis lookup
+   resolved it; the archive has no MMSI), or no AIS match. A
+   pair with one or both hulls unmatched is a stronger lead, since a ship there without AIS is
+   hiding. Matching parameters go in a rules graph, `null` / `basis: "tbd"` until measured.
+5. **AIS-only leads**: STS candidate pairs from AIS (`sts_pairs.py`) are recorded as weak leads and
+   checked on the next pass over that place.
+6. **Publish** the STS findings per date, hot spot and source (see Output).
 
 ## Output
 
-Public-facing results live in S3; one writer per object.
+Public-facing results live in S3, one parquet per source, and the folder tree reflects the findings:
 
-| Object | Holds |
-|---|---|
-| `tips/<tip_id>/tip.json` | The tip as received, validation notes, status |
-| `tips/<tip_id>/findings/<scene>.json` | Sensor, scene id, capture time and offset from the event ("9 h before"), detections, matches with confidence and reasons, evidence grade, outcome: `found`, `nothing_found`, `no_capture`, `failed` |
-| `tips/<tip_id>/images/…` | Crops with detections and the projected positions drawn on |
-| `index.json` | All tips with status and best grade, for the viewer |
+```
+sts/<DD-MM-YYYY>/<hot_spot>/s1.parquet
+sts/<DD-MM-YYYY>/<hot_spot>/s2.parquet
+```
 
-The viewer is a static site reading S3: a list of tips and a detail page with the crop and an SVG
-overlay.
+- `<DD-MM-YYYY>` is the UTC capture date; `<hot_spot>` is the site name from the hot-spot list.
+- A file is written only when that source has STS findings (`pair` or `possible_pair`) at that hot
+  spot on that date. No findings at a hot spot means no hot-spot folder; no STS anywhere on a date
+  means no date folder. Passes with no STS, `single`, `moving` and `unmeasured` hulls are not
+  published.
+- One row per STS finding: scene id, capture time, hull position and geometry, size, verdict and its
+  measurements, AIS matches per hull (MMSI, IMO, name, distance, reasons) or no AIS, and the crop
+  image path. Crops with the detections and projected AIS positions drawn on sit next to the parquet.
+- Listing `sts/` gives the dates with STS; listing a date gives its hot spots. The viewer, a static
+  site, reads the tree directly, with no separate index.
 
 ## Where it runs
 
 | Machine | Uptime | Runs |
 |---|---|---|
-| **Intake host** (existing Lightsail) | 24/7 | Receives tips, validates, stores, starts the GPU instance and hands it the job, updates `index.json` |
-| **AWS GPU instance** (existing) | Per job | Job server started on boot: scene search, download, detection, matching, grading, upload; shuts down when its queue is empty, with a max-runtime watchdog |
-| **S3** | — | Tips, findings, images, index |
-| **Viewer** | — | Static site from S3 (+ CloudFront), or Lightsail |
-| **Shadow cloud PC** | Dev only | Editing, git. Can't run Docker (nested virtualization blocked) |
+| **Scheduler host** (existing Lightsail) | 24/7 | Looks for new passes over the hot spots, starts the GPU instance and hands it the jobs |
+| **AWS GPU instance** (existing) | Per batch | Job server started on boot: crop, detection, pair check, AIS enrichment, upload; shuts down when its queue is empty, with a max-runtime watchdog |
+| **ubuntu3** | 24/7 | The `vessels-aggregator` AIS archive (GizmoSQL), queried for enrichment |
+| **S3** | — | Hot-spot list, STS findings tree, crops |
+| **Shadow cloud PC** | Dev only | Editing, git, the stage 0 detector bench |
 
 ## Sources
 
 | Source | Access | Cost |
 |---|---|---|
-| Sentinel-1 GRD | Copernicus Data Space, free account | Free |
+| Sentinel-1 GRD | Planetary Computer (free) or AWS requester-pays | Free / pennies |
 | Sentinel-2 L1C | Public GCS / Earth Search STAC | Free |
-| Landsat 8/9 L1 | AWS requester-pays | Pennies per scene |
-| NASA VIIRS (later) | Earthdata account | Free |
+| AIS | `vessels-aggregator` archive on ubuntu3 | — |
 
 ## Decisions
 
-- **Tip producer is out of scope** (2026-10-11). The app's contract is the tip; vessel-data
-  collection lives in the separate `vessels-aggregator` repo. aisstream dropped: no coverage in
-  the focus regions.
-- **Focus regions** (2026-10-11): Middle East, where recent incidents are. Used to pick stage 0
-  test scenes and to measure imagery availability; tips outside them are still processed.
-
-  | Region | Covers | Approx. bbox (lon, lat) |
-  |---|---|---|
-  | `suez_red_sea_north` | Suez Canal, Gulf of Suez, northern Red Sea | 32.0–35.5 E, 27.0–31.5 N |
-  | `bab_el_mandeb_aden` | Southern Red Sea, Bab el-Mandeb, Gulf of Aden | 41.0–51.5 E, 10.5–16.5 N |
-  | `hormuz_oman` | Eastern Persian Gulf, Strait of Hormuz, Gulf of Oman | 54.0–60.0 E, 22.5–27.5 N |
-  | `arabian_sea` | NW Indian Ocean approaches | 55.0–66.0 E, 12.0–22.0 N |
-- **Split of duties** (agreed): the intake decides nothing about whether a tip is worth it; every
-  valid tip gets a job. The GPU does scene search, download, detection and matching.
-- **Shut down when idle**, not after each job: several tips can queue while the instance is up.
-- **No database server**: tips and findings are files in S3; the intake keeps a small local
-  state file. The PostGIS scaffold is removed in stage 1.
+- **Hot-spot driven, tip path dropped** (2026-10-19). Work is driven by new passes over known STS
+  hot spots; the earlier design, where a tip naming one vessel started a search, is dropped.
+- **One shared hot-spot list on S3** (2026-10-19), read by every repo; the PoC list in
+  `vessels-aggregator` is the starting content.
+- **AIS by querying the archive** (2026-10-19): this repo reads the `vessels-aggregator` archive
+  directly by time and area around each pass; it does not collect AIS.
+- **Sentinel-1 and Sentinel-2 only** (2026-10-19); Landsat dropped for now.
+- **Output tree** (2026-10-19): `sts/<DD-MM-YYYY>/<hot_spot>/<source>.parquet`, written only where there
+  are STS findings.
+- **AIS-only STS pairs are weaker** than an imagery pair verdict: they add a place and time to check.
+- **Shut down when idle**, not after each job.
+- **No database server of our own**: findings are files in S3. The PostGIS scaffold is removed.
 - Python workers; React/Vite/TS viewer.
 
 ## Code
 
 `maritime_tip_cue/sts/`: the Sentinel-1 / Sentinel-2 STS pair check, driven by `rules/sts_graph.json`
 and tested against `data/sts_fixtures` (`tests/`). The rest (`config.py`, a PostGIS schema and `initdb`) is
-scaffolding from the earlier AIS-stream design, removed in stage 1.
+scaffolding from the earlier AIS-stream design, to be removed.

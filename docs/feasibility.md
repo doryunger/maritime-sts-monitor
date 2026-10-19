@@ -168,7 +168,7 @@ each was moved back to 15:18:35 by its speed and course (12–16 km) before matc
 No same-day pair exists over the Jask anchorage; closest: S1
 `S1C_IW_GRDH_1SDV_20261010T020602_…_0138DB` (2026-10-10 02:06 UTC, historical 2026-08-11) vs the
 Hormuz S2 run (2026-10-11 06:52 UTC), **29 h apart**. S1 run: 1,549 s, 187 detections over the whole
-scene. Stationary threshold (< 1 kn) and match distance (1 km) read from `rules/evidence_graph.json`.
+scene. Stationary threshold (< 1 kn) and match distance (1 km) read from the rules graph (now `rules/sts_graph.json` `ais_match`).
 Overlay: `images\jask_s1_on_s2.jpg` (red S2, cyan S1).
 
 - **18 of 20** stationary S2 detections inside the S1 footprint have an S1 detection within 1 km,
@@ -182,8 +182,8 @@ Overlay: `images\jask_s1_on_s2.jpg` (red S2, cyan S1).
   the 30–90-day reference image.
 - S1 also showed a cluster of detections inside Jask harbour and one on the shoreline.
 
-Set from this: stationary pairing `max_gap_hours` 30 and `max_length_diff_m` 30 in
-`rules/evidence_graph.json` (`basis: stage0`).
+The 1 km match distance is now the AIS match distance (`rules/sts_graph.json` `ais_match`). The
+stationary S1–S2 pairing values (30 h, 30 m) left with the tip-era rules (tag `tip-era-final`).
 
 ### Landsat vs Sentinel-2 (Hormuz, 12 min apart)
 
@@ -202,8 +202,7 @@ GPU 4.6 GB, 464 detections over the 185 km scene (27 inside the S2 tile, vs S2's
   Landsat minus S2 on matches −137 to −9 m, median −91 m. The 15 m pan crop shows only ~10 px
   (~150 m) of bright hull, so the image, not the model, limits it.
 
-Set from this in `rules/evidence_graph.json`: Landsat `use_length: false`, `min_ship_length_m: 100`,
-and Landsat ↔ S1 pairs `compare_length: false` (`basis: stage0`): Landsat matches on position only.
+Landsat was dropped on 2026-10-19; the app uses Sentinel-1 and Sentinel-2 only.
 
 ## Columnar storage for alerts and findings (measured 2026-10-12)
 
@@ -231,3 +230,18 @@ Measured in `vessels-aggregator` (DuckDB 1.5.6 with the spatial extension):
   from S3 in the browser.
 - Not measured yet: the same queries over S3 instead of local disk, and tile generation at higher
   zoom levels and over months of data.
+
+## AIS archive limits for enrichment (recorded 2026-10-12)
+
+The `vessels-aggregator` archive is public vessel-map tiles read every 30 min, cargo and tanker
+types only (AIS ship types 7 and 8), 30 days kept. What that means for matching hulls:
+
+- **A sample, not full traffic.** ~13% of vessels drop out between snapshots, so a hull with no AIS
+  match is not automatically a dark ship.
+- **No MMSI or IMO** in the rows: name, flag, type and dimensions only; IMO comes from the
+  aggregator's Equasis lookup where it resolved.
+- **Report time** comes from each tile's `Last-Modified` (cached up to 30 min by the provider's
+  CDN), so a position can be up to 30 min older than its snapshot.
+- **Satellite-only rows** (`[SAT-AIS]`) get a new anonymous id on every serving and carry no
+  identity or size; they can't be tracked or matched by length.
+- **Small craft are not stored**, so a tanker alongside a bunker barge shows in imagery only.

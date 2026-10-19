@@ -1,5 +1,5 @@
 {
-  "basis": "Parameters of the Sentinel-1 and Sentinel-2 STS pair check, ported from the proven proof of concept; each entry is {value, unit, basis}.",
+  "basis": "Parameters of the hot-spot STS check: scene selection, detection cleanup, the Sentinel-1 and Sentinel-2 pair check (ported from the proven proof of concept) and AIS matching; each entry is {value, unit, basis}.",
   "ai2_point_correction": {
     "s1": {
       "value": [
@@ -529,6 +529,71 @@
     "overlap_min": {
       "value": 0.5,
       "basis": "The two light lines overlap along the hull by at least this share of the shorter one."
+    }
+  },
+  "scene": {
+    "s2_max_cloud_pct": {
+      "value": 30,
+      "unit": "%",
+      "basis": "decision: Sentinel-2 scenes above this cloud cover are skipped."
+    },
+    "s1_min_score": {
+      "value": 0.7,
+      "basis": "model: Ai2 Sentinel-1 detector's own score threshold."
+    }
+  },
+  "s1_reference_image": {
+    "orbit_direction": {
+      "value": "same_as_capture",
+      "basis": "model: the Ai2 Sentinel-1 detector compares the capture with one earlier image of the same spot so fixed structures cancel; the reference is not evidence."
+    },
+    "min_days_before": {
+      "value": 30,
+      "unit": "days",
+      "basis": "model"
+    },
+    "max_days_before": {
+      "value": 90,
+      "unit": "days",
+      "basis": "model"
+    }
+  },
+  "detection_clean": {
+    "drop_on_land": {
+      "value": true,
+      "basis": "stage0: one Sentinel-2 detection on an inland reservoir."
+    },
+    "merge_within_m": {
+      "value": 150,
+      "unit": "m",
+      "basis": "guess: stage0 Sentinel-2 detected one ~320 m tanker twice ~100 m apart."
+    }
+  },
+  "ais_match": {
+    "max_distance_km": {
+      "value": 1.0,
+      "unit": "km",
+      "basis": "stage0: 18 of 20 stationary Sentinel-2 ships at Jask had a Sentinel-1 detection within 1 km (0.09-0.54 km)."
+    },
+    "stationary_max_speed_kn": {
+      "value": 1.0,
+      "unit": "kn",
+      "basis": "guess"
+    },
+    "max_report_age_min": {
+      "value": null,
+      "unit": "min",
+      "basis": "tbd"
+    },
+    "length_tolerance_m": {
+      "value": null,
+      "unit": "m",
+      "basis": "tbd"
+    },
+    "heading_tolerance_deg": {
+      "value": null,
+      "unit": "deg",
+      "basis": "tbd"
     }
   }
 }
