@@ -328,8 +328,12 @@ def collect(folder: Path, n_singles: int = 24, seed: int = 0, keep: set | None =
             dist = r["dist_b_m"] if r["slot"] == "b" and r["dist_b_m"] is not None else r["dist_a_m"]
             parties.setdefault(f"{r['scene_id']}__{r['hull_id']}", []).append(
                 {"slot": r["slot"], "name": r["name"], "flag": r["flag"], "imo": r["imo"], "mmsi": r["mmsi"], "distance_m": dist, "age_min": r["report_age_min"]})
+        coverage = {(r["scene_id"], r["site"]): r["ships"] for r in store.db.execute("select scene_id, site, ships from ais_coverage")}
+        floor = rules["ais_match"]["min_coverage_ships"]
         for h in listed:
             h["ais"] = parties.get(h["id"], [])
+            ships = coverage.get((h["scene_id"], h["site"]))
+            h["ais_status"] = "matched" if h["ais"] else ("not_checked" if ships is None else ("no_data" if ships < floor else "no_match"))
         doc = {
             "run": run_section(store, scenes) | {"singles_sample": {"n": len(picked), "of": len(singles), "seed": seed}, "site": site},
             "scenes": scene_section(scenes),

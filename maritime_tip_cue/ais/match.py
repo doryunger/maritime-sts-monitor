@@ -13,7 +13,7 @@ from maritime_tip_cue.sts import rules as rules_mod
 from maritime_tip_cue.watch.geo import Shore, haversine_m
 from maritime_tip_cue.watch.state import AIS_MATCHES, IGNORED_ROLES, Store
 
-PAIR_VERDICTS = ("pair", "possible_pair")
+PAIR_VERDICTS = ("pair",)
 COLUMNS = (
     "scene_id site hull_id ship_id is_sat name imo mmsi flag seen_utc report_age_min method rep_lat rep_lon "
     "proj_lat proj_lon dist_a_m dist_b_m limit_m ais_length_m ais_width_m meas_length_m length_diff_m "
@@ -213,7 +213,13 @@ def run_match(store: Store, rows: list[dict], rules: dict, log=print) -> dict:
     for (scene_id, site), hs in sorted(by_scene.items()):
         capture = parse_time(hs[0]["capture_utc"])
         bbox = site_bbox(store, site)
-        projected = project(fetch_reports(capture, bbox, rule), capture, rule)
+        reports = fetch_reports(capture, bbox, rule)
+        projected = project(reports, capture, rule)
+        with store.tx():
+            store.db.execute(
+                "insert or replace into ais_coverage values (?,?,?,?,?,?)",
+                (scene_id, site, len({r["ship_id"] for r in reports}), len(reports), rule["search_window_min"], datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")),
+            )
         hulls = {}
         for r in hs:
             h = hull_slots(r)
@@ -358,6 +364,13 @@ def main() -> int:
     store = Store(Path(args.run) / "state.db")
     rules = rules_mod.load()
     rows = select_hulls(store, tuple(args.verdicts.split(",")), args.all_checked, args.stats)
+    if not args.stats and not args.all_checked:
+        ensure_table(store)
+        keep = {(r["scene_id"], r["site"], r["hull_id"]) for r in rows}
+        stale = [k for k in store.db.execute("select distinct scene_id, site, hull_id from ais_matches") if tuple(k) not in keep]
+        with store.tx():
+            store.db.executemany("delete from ais_matches where scene_id=? and site=? and hull_id=?", [tuple(k) for k in stale])
+        print(f"cleared AIS matches of {len(stale)} hulls that are no longer pairs")
     result = run_match(store, rows, rules)
     if args.stats:
         stats(store, result, rules)

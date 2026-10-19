@@ -105,7 +105,10 @@ export default function HullCard({ run, hull, flag, onSaved, focused }: Props) {
           ))}
         </div>
       ) : (
-        <div className="ais muted">AIS: no match</div>
+        <div className="ais muted">
+          AIS:{" "}
+          {hull.ais_status === "no_data" ? "no archive data at capture time" : hull.ais_status === "not_checked" ? "not matched yet" : "no ship matched"}
+        </div>
       )}
       <dl className="m">
         {Object.entries(hull.measures || {}).map(([k, v]) => (

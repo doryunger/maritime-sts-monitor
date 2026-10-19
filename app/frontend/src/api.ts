@@ -55,6 +55,7 @@ export interface Hull {
   ai2: Record<string, number | null>;
   measures: Record<string, number | string | null>;
   ais: AisParty[];
+  ais_status?: "matched" | "no_match" | "no_data" | "not_checked";
 }
 
 export interface Flag {

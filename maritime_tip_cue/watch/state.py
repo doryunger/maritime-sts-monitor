@@ -34,6 +34,10 @@ where coalesce(h.role, '') not in ('duplicate', 'hull_b_box');
 """
 
 SCHEMA = """
+create table if not exists ais_coverage (
+    scene_id text, site text, ships integer, reports integer, window_min real, checked_utc text,
+    primary key (scene_id, site)
+);
 create table if not exists runs (
     run_id integer primary key autoincrement,
     started_utc text, ended_utc text, args text, hot_spot text, window_start text, window_end text,

@@ -752,6 +752,11 @@
       "value": 300,
       "unit": "m",
       "basis": "user decision 2026-10-19: an AIS ship counts as a party only when its position projected to the capture time lies within this of its hull (S2: hull A or hull B; S1: the pair outline centre). On the Fujairah QA-confirmed pairs real partners sat 65-180 m from their hull, while the B ships picked by a 1 km plus half-outline allowance sat 850-1,100 m away and were other ships."
+    },
+    "min_coverage_ships": {
+      "value": 1,
+      "unit": "ships",
+      "basis": "A scene whose AIS search window and box hold fewer archive ships than this has no AIS coverage: its pairs are reported as 'no archive data', not 'no AIS match'. The archive has no reports over fujairah_outer before 2026-10-12 (0 on 8-10 Oct, 81 reports of 8 ships on 12 Oct, 3084 of 460 on 14 Oct, 05-09 UTC)."
     }
   },
   "detectors": {

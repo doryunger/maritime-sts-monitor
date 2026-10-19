@@ -11,3 +11,8 @@
 ## stats
 - Chance baseline: per scene and source the same number of random points as hulls, drawn uniformly in the hot-spot box with seed `baseline_seed` plus the scene index, kept `baseline_clearance_km` from every hull slot and from land; the nearest named terrestrial candidate within the search radius is measured. Points with none within the radius are counted separately, not given a distance.
 - `--stats` selects the hulls QA marked ok (not moving); with `--all-checked` every checked stopped hull, singles included, so its tables describe all ships, not only STS ones.
+- Coverage: each matched scene records in `ais_coverage` how many archive ships and reports fell in its search window
+  and box. Below `ais_match.min_coverage_ships` the pair is "no archive data", never "no AIS": the archive has no
+  reports over the Gulf of Oman before 2026-10-12, so run 1 (9 Oct) cannot be enriched. A matching run first clears
+  the matches of hulls that are no longer pairs (after a re-check or QA), and only `pair` is matched.
+
