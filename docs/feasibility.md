@@ -205,11 +205,6 @@ GPU 4.6 GB, 464 detections over the 185 km scene (27 inside the S2 tile, vs S2's
 Set from this in `rules/evidence_graph.json`: Landsat `use_length: false`, `min_ship_length_m: 100`,
 and Landsat ↔ S1 pairs `compare_length: false` (`basis: stage0`): Landsat matches on position only.
 
-### Still to run
-
-- Systematic by-eye count of missed and false detections on a crop.
-- Go / adjust / fall back decision.
-
 ## Columnar storage for alerts and findings (measured 2026-10-12)
 
 Option for stages 4 and 6: keep alerts, findings and vessel positions as GeoParquet partitioned by

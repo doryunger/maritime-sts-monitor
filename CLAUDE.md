@@ -24,6 +24,26 @@ applies (tip rules, evidence steps, sensor limits, grading) is read from `rules/
 `basis: "tbd"` rather than being filled in as code defaults. `config.yaml` is for deployment
 settings (regions, paths), not rules.
 
+**Never focus on a single hot spot.** Tests, calibrations, analyses and progress reports cover every
+region we have data for (the regions in `config.yaml`, the STS sites and the stage 0 test areas).
+Where one has no data, say so explicitly; a threshold measured in one region is not general until
+checked in the others, and results are reported per region.
+
+## Model, effort and subagents
+
+Planning and architectural decisions (what to build, how to measure it, which rule or threshold,
+interpreting results) are made by Opus at medium effort. Execution (running commands, tests and
+rounds, writing and editing code to an agreed design, commits) is done by Sonnet at medium effort.
+A subagent starts cold and re-reads its context, so only long runs, rounds and read-heavy jobs go
+to a Sonnet subagent, briefed with `context/agent_brief.md` plus exact commands; short edits,
+single commands and commits stay in the current session. Docs and context notes are read by
+section (`grep -n "^## "`, then the range), never whole; scripts print compact summaries; only the
+images that matter are opened. Keep the brief current when modules, commands or data paths change.
+
+**No redundant history.** Docs describe the current state. Finished or superseded work leaves
+`PLAN.md`; a fact lives in one file and others link to it; old narratives that no longer guide
+decisions go to a git tag, with a one-line pointer, not into files agents read.
+
 ## Reply style
 
 Keep chat replies short and informative: answer first, a few lines at most, no padding. Use one

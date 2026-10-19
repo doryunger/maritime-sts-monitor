@@ -141,5 +141,6 @@ overlay.
 
 ## Code
 
-Currently only scaffolding from the earlier AIS-stream design (`config.py`, a PostGIS schema and
-`initdb`); replaced in stage 1.
+`maritime_tip_cue/sts/`: the Sentinel-1 / Sentinel-2 STS pair check, driven by `rules/sts_graph.json`
+and tested against `data/sts_fixtures` (`tests/`). The rest (`config.py`, a PostGIS schema and `initdb`) is
+scaffolding from the earlier AIS-stream design, removed in stage 1.
