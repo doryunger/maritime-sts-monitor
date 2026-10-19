@@ -76,10 +76,15 @@ fixture that the run calls `moving` counts as a difference.
 `report.py --qa` (or `--qa-only` on an existing `reports/<run>/data.json`) writes `reports/<run>/qa.html`, a page meant to be
 published as a private artifact with the `db` and `user` capabilities: one card per listed hull with a flag
 (OK, wrong verdict with the correct one, bad geometry, other; unmeasured hulls take single, single moving or
-pair directly) and a note, stored in the page's `flags` collection keyed by hull id. Flags are pulled back with
-the artifact tools into `<run>/qa_export/` and loaded with `state.py qa-import <run> <dir>` into `qa_flags`,
-so the review stays with the run and can become fixture labels. The page carries the verdicts as they were when
-it was built; a later `--reanalyse` changes `hulls` but not the page, and each flag keeps the verdict it judged.
+pair directly) and a note, stored in the page's `flags` collection keyed by hull id. The run's review lives in
+`state.db` `qa_flags` (one row per hull, upserted, never deleted: the page has no delete) and is mirrored to the
+committed `reports/<run>/qa_flags.json`, since `state.db` is gitignored. To sync after a review: pull the
+collection with the artifact tools into `<run>/qa_export/`, then `report.py <run> --qa-import <run>/qa_export/flags`
+loads it into `qa_flags`, rewrites `qa_flags.json` and rebuilds `qa.html` with the flags baked in, and the page is
+republished to the same URL. A baked page shows the saved review when opened from disk (read-only) and in a fresh
+artifact before its database has rows; live rows override it. With no `state.db`, `--qa-only` reloads
+`qa_flags.json` into a new one. The page carries the verdicts as they were when it was built; a later
+`--reanalyse` changes `hulls` but not the page, and each flag keeps the verdict it judged.
 First use (fujairah_outer 12-19 Oct 2026, 64 hulls): 11 of 18 pairs OK, 4 wrong, 2 rigs or barges, 1 small
 craft alongside; all 10 unmeasured were single ships.
 

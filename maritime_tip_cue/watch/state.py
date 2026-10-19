@@ -266,20 +266,36 @@ def summary(folder: Path) -> list[str]:
     return lines
 
 
-def import_qa(folder: Path, flags_dir: Path) -> str:
-    store = Store(folder / "state.db", folder)
-    rows = []
-    for path in sorted(flags_dir.rglob("*.json")):
+QA_COLUMNS = ("hull_id", "scene_id", "source", "verdict", "lat", "lon", "status", "correct_verdict", "note", "reviewer", "updated_utc", "imported_utc")
+
+
+def read_flags(source: Path) -> list[dict]:
+    if source.is_file():
+        return json.loads(source.read_text(encoding="utf-8"))
+    out = []
+    for path in sorted(source.rglob("*.json")):
         doc = json.loads(path.read_text(encoding="utf-8"))
         d = doc.get("data", doc)
-        if "hull_id" not in d:
-            continue
-        rows.append((d["hull_id"], d.get("scene_id"), d.get("source"), d.get("verdict"), d.get("lat"), d.get("lon"), d.get("status"),
-                     d.get("correct_verdict"), d.get("note"), d.get("by"), d.get("updated_utc"), now()))
+        if "hull_id" in d:
+            out.append(d | {"reviewer": d.get("reviewer", d.get("by"))})
+    return out
+
+
+def import_qa(folder: Path, source: Path) -> int:
+    stamp = now()
+    rows = [tuple(d.get("imported_utc") or stamp if k == "imported_utc" else d.get(k) for k in QA_COLUMNS) for d in read_flags(source)]
+    store = Store(folder / "state.db", folder)
     with store.tx():
-        store.db.executemany("insert or replace into qa_flags values (?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+        store.db.executemany(f"insert or replace into qa_flags values ({','.join('?' * len(QA_COLUMNS))})", rows)
     store.close()
-    return f"imported {len(rows)} QA flags into {folder / 'state.db'}"
+    return len(rows)
+
+
+def qa_flags(folder: Path) -> list[dict]:
+    store = Store(folder / "state.db", folder)
+    rows = [dict(r) for r in store.db.execute(f"select {','.join(QA_COLUMNS)} from qa_flags order by scene_id, hull_id")]
+    store.close()
+    return rows
 
 
 def main() -> int:
@@ -293,7 +309,7 @@ def main() -> int:
     if args.command == "import":
         print(import_folder(folder))
     elif args.command == "qa-import":
-        print(import_qa(folder, Path(args.flags)))
+        print(f"imported {import_qa(folder, Path(args.flags))} QA flags into {folder / 'state.db'}")
     else:
         print("\n".join(summary(folder)))
     return 0

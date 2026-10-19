@@ -104,6 +104,7 @@ const alternatives = v => Object.keys(VERDICT_NAMES).filter(k => k !== v);
 const LABELLED = ["ok", "is_pair", "is_single", "is_moving"];
 const docId = id => id.replace(/[^A-Za-z0-9_-]/g, "_");
 const flags = {};
+(D.qa_flags || []).forEach(f => { flags[docId(f.hull_id)] = f; });
 let db = null, me = null, filter = "all";
 
 function facts() {
@@ -227,7 +228,8 @@ function tally() {
   const v = Object.values(flags), n = document.querySelectorAll(".card").length;
   const labelled = v.filter(f => f.status.startsWith("is_")).length;
   const issues = v.filter(f => !LABELLED.includes(f.status)).length, ok = v.length - issues - labelled;
-  document.getElementById("status").textContent = db ? v.length + " of " + n + " reviewed: " + ok + " OK, " + issues + " with issues, " + labelled + " unmeasured labelled." : "Flags are unavailable in this view; the report is read-only.";
+  const line = v.length + " of " + n + " reviewed: " + ok + " OK, " + issues + " with issues, " + labelled + " unmeasured labelled.";
+  document.getElementById("status").textContent = db ? line : v.length ? line + " Saved review, read-only here." : "No review saved yet; this view is read-only.";
 }
 
 function wire() {
@@ -273,5 +275,5 @@ async function connect() {
   tally();
 }
 
-facts(); scenes(); sections(); fixtures(); wire(); connect();
+facts(); scenes(); sections(); fixtures(); wire(); Object.keys(flags).forEach(paint); connect();
 </script>

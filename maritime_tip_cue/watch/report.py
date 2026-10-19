@@ -14,7 +14,7 @@ from maritime_tip_cue.config import ROOT, settings
 from maritime_tip_cue.sts import fixtures, rules as rules_mod
 from maritime_tip_cue.watch import review, s1 as s1mod
 from maritime_tip_cue.watch.geo import Shore, haversine_m
-from maritime_tip_cue.watch.state import IGNORED_ROLES, VERDICTS, Store
+from maritime_tip_cue.watch.state import IGNORED_ROLES, VERDICTS, Store, import_qa, qa_flags
 
 SCALE = 6
 S1_DB_RANGE = (22.0, 50.0)
@@ -355,6 +355,14 @@ def build(folder: Path, n_singles: int, seed: int) -> dict:
 def write_qa(folder: Path) -> Path:
     out = report_dir(folder)
     doc = json.loads((out / "data.json").read_text(encoding="utf-8"))
+    flags = qa_flags(folder) if (folder / "state.db").exists() else []
+    saved = out / "qa_flags.json"
+    if not flags and saved.exists():
+        import_qa(folder, saved)
+        flags = qa_flags(folder)
+    if flags:
+        saved.write_text(json.dumps(flags, indent=1), encoding="utf-8")
+    doc["qa_flags"] = flags
     site = doc["run"].get("hot_spot") or next((s["site"] for s in doc["scenes"] if s.get("site")), "")
     title = (site.split("_")[0].title() + " STS QA").strip()
     page = (Path(__file__).parent / "qa.html").read_text(encoding="utf-8")
@@ -371,9 +379,13 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--qa", action="store_true")
     parser.add_argument("--qa-only", action="store_true")
+    parser.add_argument("--qa-import")
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
     folder = Path(args.folder).resolve()
+    if args.qa_import:
+        print(f"imported {import_qa(folder, Path(args.qa_import))} QA flags; QA page {write_qa(folder)}")
+        return 0
     if args.qa_only:
         print(f"QA page {write_qa(folder)}")
         return 0
