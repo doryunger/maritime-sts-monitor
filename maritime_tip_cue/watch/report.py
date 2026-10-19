@@ -330,6 +330,14 @@ def build(folder: Path, n_singles: int, seed: int) -> dict:
         "hulls": listed,
         "fixtures": fx,
     }
+    parties = {}
+    if store.db.execute("select count(*) from sqlite_master where name = 'ais_matches'").fetchone()[0]:
+        for r in store.db.execute("select scene_id, hull_id, slot, name, flag, imo, mmsi, dist_a_m, dist_b_m, report_age_min from ais_matches where chosen = 1 order by slot"):
+            dist = r["dist_b_m"] if r["slot"] == "b" and r["dist_b_m"] is not None else r["dist_a_m"]
+            parties.setdefault(f"{r['scene_id']}__{r['hull_id']}", []).append(
+                {"slot": r["slot"], "name": r["name"], "flag": r["flag"], "imo": r["imo"], "mmsi": r["mmsi"], "distance_m": dist, "age_min": r["report_age_min"]})
+    for h in listed:
+        h["ais"] = parties.get(h["id"], [])
     store.close()
     doc = clean(doc)
     (out / "data.json").write_text(json.dumps(doc, indent=1), encoding="utf-8")

@@ -84,6 +84,13 @@ function scenes() {
   document.getElementById("scenes").innerHTML = head + body + foot;
 }
 
+function ais(h) {
+  if (!["pair", "possible_pair"].includes(h.verdict)) return "";
+  const ps = h.ais || [];
+  const one = p => esc(p.name || "unnamed") + (p.flag ? " (" + esc(p.flag) + ")" : "") + ", " + num(p.distance_m, 0) + " m, report " + num(p.age_min, 0) + " min old" + (p.imo ? ", IMO " + esc(p.imo) : "");
+  return "<div class='meta'><b>AIS parties:</b> " + (ps.length ? ps.map(one).join("; ") + (ps.length < 2 ? "; second ship: no AIS" : "") : "no AIS for either ship") + "</div>";
+}
+
 function card(h) {
   const pics = h.raw
     ? "<img loading='lazy' src='" + esc(h.raw) + "' alt='raw'><img loading='lazy' src='" + esc(h.overlay) + "' alt='overlay'>"
@@ -94,7 +101,7 @@ function card(h) {
   return "<article class='card' id='h-" + esc(h.id) + "'><div class='pics'>" + pics + "</div>" +
     "<div class='cap'><span class='badge v-" + h.verdict + "'>" + h.verdict + "</span><span>" + h.source.toUpperCase() + " " + when(h.time) + "</span></div>" +
     "<div>" + num(h.lat, 5) + " N, " + num(h.lon, 5) + " E</div><div class='meta'>" + esc(ai2) + "</div>" +
-    "<dl class='m'>" + m + "</dl><div class='meta'>" + esc(h.id) + "</div></article>";
+    ais(h) + "<dl class='m'>" + m + "</dl><div class='meta'>" + esc(h.id) + "</div></article>";
 }
 
 function sections() {

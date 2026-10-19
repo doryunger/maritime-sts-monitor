@@ -128,6 +128,13 @@ function scenes() {
   document.getElementById("scenes").innerHTML = head + body + foot;
 }
 
+function ais(h) {
+  if (!["pair", "possible_pair"].includes(h.verdict)) return "";
+  const ps = h.ais || [];
+  const one = p => esc(p.name || "unnamed") + (p.flag ? " (" + esc(p.flag) + ")" : "") + ", " + num(p.distance_m, 0) + " m, report " + num(p.age_min, 0) + " min old" + (p.imo ? ", IMO " + esc(p.imo) : "");
+  return "<div class='meta'><b>AIS parties:</b> " + (ps.length ? ps.map(one).join("; ") + (ps.length < 2 ? "; second ship: no AIS" : "") : "no AIS for either ship") + "</div>";
+}
+
 function card(h) {
   const pics = h.raw
     ? "<figure><img loading='lazy' src='" + esc(h.raw) + "' alt='Raw capture of " + esc(h.verdict) + " hull'><figcaption>Raw</figcaption></figure><figure><img loading='lazy' src='" + esc(h.overlay) + "' alt='Same crop with hull outlines'><figcaption>Outlines</figcaption></figure>"
@@ -141,7 +148,7 @@ function card(h) {
     "<div class='pics'>" + pics + "</div>" +
     "<div class='cap'><span class='badge v-" + h.verdict + "'>" + h.verdict.replace("_", " ") + "</span><span class='mono'>" + h.source.toUpperCase() + " " + when(h.time) + "</span></div>" +
     "<div class='mono'>" + num(h.lat, 5) + " N, " + num(h.lon, 5) + " E</div><div class='meta'>" + esc(ai2) + "</div>" +
-    "<dl class='m'>" + m + "</dl><div class='meta mono'>" + esc(h.id) + "</div>" +
+    ais(h) + "<dl class='m'>" + m + "</dl><div class='meta mono'>" + esc(h.id) + "</div>" +
     "<div class='qa'><div class='opts' role='radiogroup' aria-label='QA flag'>" + opts + "</div>" +
     (h.verdict === "unmeasured" ? "" : "<div class='fix' id='x-" + id + "' hidden><span class='meta'>Correct verdict:</span><div class='opts' role='radiogroup' aria-label='Correct verdict'>" +
       alternatives(h.verdict).map(v => "<label><input type='radio' name='c-" + id + "' id='c-" + id + "-" + v + "' value='" + v + "'>" + VERDICT_NAMES[v] + "</label>").join("") + "</div></div>") +
