@@ -736,7 +736,7 @@
     "max_report_age_min": {
       "value": 60,
       "unit": "min",
-      "basis": "user decision 2026-10-19: reports older than this at capture time are not used. Fujairah 12-19 Oct 2026, nearest report to checked hulls: median age 5-9 min, p95 17-55 min; a 154 min old report gave a likely wrong match ~110 m off its hull."
+      "basis": "user decision 2026-10-19: reports older than this at capture time are not used. Fujairah 12-19 Oct 2026, nearest report to checked hulls: median age 5-9 min, p95 17-55 min; a 154 min old report gave a likely wrong match ~110 m off its hull. Decision (user, 2026-10-19): the same limit for stationary ships; an anchored ship with an older last report next to an unmatched vessel stays N/A rather than risk a stale match (5 such cases in runs 2-3, 21-112 m, 66-165 min)."
     },
     "length_tolerance_m": {
       "value": null,
