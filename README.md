@@ -78,11 +78,15 @@ are dropped.
 
 ## Output
 
-Public-facing results live in S3, one parquet per source, and the folder tree reflects the findings:
+Two kinds of data, kept apart: **run state** is local SQLite that the process needs to carry on and
+to account for what it did; the **product** is GeoParquet on S3 plus the captures it points to.
+
+### Product (S3)
 
 ```
 sts/<DD-MM-YYYY>/<hot_spot>/s1.parquet
 sts/<DD-MM-YYYY>/<hot_spot>/s2.parquet
+captures/<DD-MM-YYYY>/<hot_spot>/<source>/<finding>[_<vessel names>].tif / .png
 ```
 
 - `<DD-MM-YYYY>` is the UTC capture date; `<hot_spot>` is the site name from the hot-spot list.
@@ -90,12 +94,37 @@ sts/<DD-MM-YYYY>/<hot_spot>/s2.parquet
   spot on that date. No findings at a hot spot means no hot-spot folder; no STS anywhere on a date
   means no date folder. Passes with no STS, `single`, `moving` and `unmeasured` hulls are not
   published.
-- One row per STS finding: scene id, capture time, hull position and geometry, size, verdict and its
-  measurements, AIS matches per hull (MMSI, IMO, name, distance, reasons) or no AIS, and the crop
-  image path. Crops with the detections and projected AIS positions drawn on sit next to the parquet.
+- One row per STS finding (GeoParquet, point geometry): position, capture time, source, scene id,
+  verdict and its measurements, involved parties and their vessel data where AIS matched them (name,
+  flag, type, size, IMO where resolved; match distance and reasons), or no AIS, and the paths of the
+  capture.
+- The capture is the raw crop as the source delivered it, untouched: a GeoTIFF of the original pixel
+  values (S2 L1C bands, S1 VV/VH) and a plain PNG of the same crop with a fixed stretch, no boxes or
+  labels. When AIS names the vessels their names are in the file name and in the row.
 - Listing `sts/` gives the dates with STS; listing a date gives its hot spots. The viewer, a static
   site, reads the tree directly, with no separate index.
 
+### Run state (SQLite)
+
+Every process keeps its state in one SQLite file in its working folder (WAL mode, one writer, any
+number of readers), the same way the earlier runs of this method did. A scene's result and its status
+are written in one transaction, so a run killed mid-way (the dev PC shuts down when idle) resumes from
+the last finished scene and never leaves a half-saved one.
+
+| Table | Holds |
+|---|---|
+| `runs` | One row per invocation: start / end time, hot spots, time window, sources, rules hash, code commit, status |
+| `scenes` | One row per scene and hot spot: source, capture time, pass, status and stage, attempts, error, detector seconds, counts (raw, kept, checked, verdicts) |
+| `raw_detections` | The detector's own output per scene, before any filter |
+| `hulls` | Every checked hull: position, Ai2 size and heading, verdict, measurements |
+| `ais_matches` | Per hull, the AIS candidates considered and the chosen match with distance and reasons |
+| `outputs` | One row per parquet written: path and S3 URI, created time, date, hot spot, source, rows, pairs, possible pairs, scene ids, checksum, upload time, run id |
+| `captures` | One row per capture file: finding, local path, S3 URI, format |
+| `events` | The run log |
+
+Only image data stays as files next to it (pair-check windows, radar chips, captures, review
+sheets), with paths stored relative to the working folder. Reports and QA pages are built from the
+tables.
 ## Where it runs
 
 | Machine | Uptime | Runs |
@@ -126,7 +155,8 @@ sts/<DD-MM-YYYY>/<hot_spot>/s2.parquet
   are STS findings.
 - **AIS-only STS pairs are weaker** than an imagery pair verdict: they add a place and time to check.
 - **Shut down when idle**, not after each job.
-- **No database server of our own**: findings are files in S3. The PostGIS scaffold is removed.
+- **No database server of our own**: findings are GeoParquet in S3; each process keeps its run
+  state in a local SQLite file (2026-10-19). The PostGIS scaffold is removed.
 - Python workers; React/Vite/TS viewer.
 
 ## Code
