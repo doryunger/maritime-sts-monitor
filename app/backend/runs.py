@@ -49,6 +49,8 @@ def status_of(runs: list[dict], last_event: str | None) -> str:
 def review_of(status: str, reviewed: int, listed: int, unresolved: int) -> str:
     if status == "running":
         return "waiting for run"
+    if status == "failed":
+        return "nothing to review"
     if not listed:
         return "nothing to review"
     if not reviewed:
@@ -96,6 +98,58 @@ def summary(row: dict) -> dict:
 
 def summaries() -> list[dict]:
     return [summary(r) for r in registry.listing()]
+
+
+def scene_status(status: str, run_status: str) -> str:
+    if status == "checked":
+        return "done"
+    if status == "failed":
+        return "failed"
+    return "running" if run_status == "running" else "stopped"
+
+
+def scene_rows() -> list[dict]:
+    out = []
+    for row in registry.listing():
+        no, path = row["run_no"], registry.runs_root() / row["folder"]
+        if not (path / "state.db").exists():
+            continue
+        store = Store(path / "state.db", path)
+        try:
+            runs = [dict(r) for r in store.db.execute("select * from runs order by run_id")]
+            last_event = store.db.execute("select max(time_utc) from events").fetchone()[0]
+            scenes = [dict(r) for r in store.db.execute("select scene_id, site, source, capture_utc, status, updated_utc from scenes order by capture_utc")]
+        finally:
+            store.close()
+        run_status = status_of(runs, last_event)
+        review: dict = {}
+        if run_status != "running":
+            doc, _ = cached(no)
+            final = finals(no)
+            flagged = flagged_ids(no)
+            for h in doc["hulls"]:
+                r = review.setdefault(h["scene_id"], [0, 0, 0])
+                r[0] += 1
+                r[1] += h["id"] in flagged
+                r[2] += final.get(h["id"]) == "unresolved"
+        for s in scenes:
+            status = scene_status(s["status"], run_status)
+            listed, reviewed, unresolved = review.get(s["scene_id"], (0, 0, 0))
+            out.append({
+                "run": no, "area": s["site"], "source": s["source"], "scene_id": s["scene_id"], "captured": s["capture_utc"],
+                "created": s["updated_utc"], "status": status,
+                "review": "waiting for run" if status in ("running", "stopped") or run_status == "running" else review_of(status, reviewed, listed, unresolved),
+            })
+    return out
+
+
+def warm() -> None:
+    for row in registry.listing():
+        try:
+            if summary(row)["status"] != "running":
+                cached(row["run_no"])
+        except Exception:
+            pass
 
 
 def stamp(store: Store) -> tuple:

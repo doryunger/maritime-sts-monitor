@@ -18,6 +18,17 @@ export interface RunSummary {
   listed?: number;
 }
 
+export interface SceneRow {
+  run: number;
+  area: string;
+  source: string;
+  scene_id: string;
+  captured: string;
+  created: string | null;
+  status: string;
+  review: string;
+}
+
 export interface AisParty {
   slot: string;
   name: string | null;
@@ -117,6 +128,7 @@ async function json<T>(r: Response): Promise<T> {
 
 export const api = {
   runs: () => fetch("/api/runs").then((r) => json<RunSummary[]>(r)),
+  scenes: () => fetch("/api/scenes").then((r) => json<SceneRow[]>(r)),
   run: (n: number) => fetch(`/api/runs/${n}`).then((r) => json<RunDetail>(r)),
   image: (n: number, id: string, kind: "raw" | "overlay") => `/api/runs/${n}/hulls/${encodeURIComponent(id)}/${kind}.png`,
   saveFlag: (n: number, id: string, body: { status: string; correct_verdict: string | null; note: string }) =>
@@ -125,6 +137,13 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }).then((r) => json<Flag>(r)),
+};
+
+export const sceneTag = (id: string) => {
+  const tile = id.match(/_(T\d{2}[A-Z]{3})_/);
+  if (tile) return tile[1];
+  const orbit = id.split("_");
+  return orbit.length > 6 ? `orbit ${orbit[6]}` : id.slice(0, 12);
 };
 
 export const when = (t?: string | null) => (t ? t.replace("T", " ").slice(0, 16) + "Z" : "–");

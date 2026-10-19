@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { api, Flag, label, num, RunDetail, when } from "../api";
+import { api, Flag, label, num, RunDetail, sceneTag, when } from "../api";
 import HullCard from "../components/HullCard";
 
 const SECTIONS = ["pair", "possible_pair", "unmeasured", "moving", "single"];
@@ -24,6 +24,7 @@ export default function Run() {
   const [params, setParams] = useSearchParams();
   const tab = params.get("tab") || "qa";
   const filter = params.get("filter") || "all";
+  const scene = params.get("scene");
   const [doc, setDoc] = useState<RunDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,9 +35,10 @@ export default function Run() {
 
   const flags = useMemo(() => Object.fromEntries((doc?.flags || []).map((f) => [f.hull_id, f])), [doc]);
 
-  const set = (k: string, v: string) => {
+  const set = (k: string, v: string | null) => {
     const p = new URLSearchParams(params);
-    p.set(k, v);
+    if (v === null) p.delete(k);
+    else p.set(k, v);
     setParams(p, { replace: true });
   };
 
@@ -55,7 +57,8 @@ export default function Run() {
   const s = doc.summary;
   const flagged = doc.flags.length;
   const issues = doc.flags.filter((f) => !LABELLED.includes(f.status)).length;
-  const keep = (id: string, verdict: string, final: string) => {
+  const keep = (id: string, verdict: string, final: string, sceneId: string) => {
+    if (scene && sceneId !== scene) return false;
     const f = flags[id];
     if (filter === "unflagged") return !f;
     if (filter === "issue") return !!f && !LABELLED.includes(f.status);
@@ -71,9 +74,6 @@ export default function Run() {
       <dl className="facts">
         <div><dt>Status</dt><dd><span className={`status s-${s.status}`}>{s.status}</span></dd></div>
         <div><dt>Created</dt><dd className="mono">{when(s.created)}</dd></div>
-        <div><dt>Captured</dt><dd className="mono">{when(s.captured?.[0])} – {when(s.captured?.[1])}</dd></div>
-        <div><dt>Finished</dt><dd className="mono">{when(s.finished)}</dd></div>
-        <div><dt>Window</dt><dd className="mono">{when(doc.run.window?.[0])} – {when(doc.run.window?.[1])}</dd></div>
         <div><dt>Sources</dt><dd>{doc.run.sources}</dd></div>
         <div><dt>Scenes</dt><dd>{s.scenes}{s.scenes_failed ? ` (${s.scenes_failed} failed)` : ""}</dd></div>
         <div><dt>Rules / code</dt><dd className="mono">{doc.run.rules_sha1?.slice(0, 8)} / {doc.run.commit?.slice(0, 8)}</dd></div>
@@ -100,12 +100,17 @@ export default function Run() {
             {FILTERS.map(([k, t]) => (
               <button key={k} className="chip" aria-pressed={filter === k} onClick={() => set("filter", k)}>{t}</button>
             ))}
+            {scene && (
+              <button className="chip" aria-pressed={true} onClick={() => set("scene", null)} title={scene}>
+                {(doc.scenes.find((x) => x.scene_id === scene)?.source || "").toUpperCase()} {sceneTag(scene)} {when(doc.scenes.find((x) => x.scene_id === scene)?.time)} ×
+              </button>
+            )}
             <span className="muted small">
               {flagged} of {doc.hulls.length} reviewed, {issues} with issues. Singles: a sample of {doc.run.singles_sample.n} of {doc.run.singles_sample.of}.
             </span>
           </div>
           {SECTIONS.map((sec) => {
-            const hulls = doc.hulls.filter((h) => (SECTIONS.includes(h.verdict) ? h.verdict : "single") === sec && keep(h.id, h.verdict, h.final_verdict));
+            const hulls = doc.hulls.filter((h) => (SECTIONS.includes(h.verdict) ? h.verdict : "single") === sec && keep(h.id, h.verdict, h.final_verdict, h.scene_id));
             if (!hulls.length) return null;
             return (
               <div key={sec}>

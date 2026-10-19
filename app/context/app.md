@@ -21,9 +21,12 @@ killed when the PC shut down).
 
 ## frontend
 React, Vite and TypeScript in `frontend/`; `dist/` and `node_modules/` are gitignored and rebuilt by
-`start.cmd` when missing. During development `npm run dev` proxies `/api` to the server. Runs table: run number, area, created (run start), captured (first and last capture), finished (processing end),
-run status and review status, all sortable. Review status: `waiting for run` while running, `nothing to review`
-with no listed hulls, `not started`, `in progress` (unflagged hulls left or an `unresolved` wrong verdict), `done`.
+`start.cmd` when missing. During development `npm run dev` proxies `/api` to the server. Runs table: one row per scene, since each capture has its own timestamp and that is the time detections carry: run,
+area, source (with the S2 tile or S1 orbit), captured, created (when that scene's processing finished), run status
+and review status, all sortable; a row opens the run's QA filtered to that scene (`?scene=`). Review status:
+`waiting for run` while the run is going, `nothing to review` for a failed scene or one with no listed hulls,
+`not started`, `in progress` (unflagged hulls left or an `unresolved` wrong verdict), `done`. Review counts come from
+the cached run document, warmed in a thread when the server starts.
 Run page: facts,
 run vs after-QA verdict counts, and tabs for QA cards, scenes and the fixture comparison; tab and filter live in
 the URL so a view can be linked.

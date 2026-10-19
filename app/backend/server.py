@@ -1,4 +1,5 @@
 import sys
+import threading
 from pathlib import Path
 
 import uvicorn
@@ -24,6 +25,11 @@ def known(no: int) -> None:
 @app.get("/api/runs")
 def list_runs():
     return runs.summaries()
+
+
+@app.get("/api/scenes")
+def list_scenes():
+    return runs.scene_rows()
 
 
 @app.get("/api/runs/{no}")
@@ -67,6 +73,7 @@ def main() -> int:
         sys.stdout = sys.stderr = log
     if not DIST.exists():
         print("frontend not built: cd app/frontend && npm install && npm run build", flush=True)
+    threading.Thread(target=runs.warm, daemon=True).start()
     uvicorn.run(app, host=cfg["host"], port=cfg["port"], log_level="warning")
     return 0
 
