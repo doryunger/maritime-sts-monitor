@@ -49,12 +49,12 @@ One list for all repos, kept on S3 at `hotspots/sts_hotspots.json` in the bucket
 
 | Site | Area | Measured 15 Jul – 15 Oct 2026 |
 |---|---|---|
-| `malaysia_eopl` | EOPL / Singapore Strait east, 103.5–106.0 E, 0.8–1.8 N | S1 on 27 days, S2 38 clear days; 74% coastal AIS; shore distance 2 km |
+| `malaysia_eopl` | EOPL / Singapore Strait east, 103.5–106.0 E, 0.8–1.8 N | S1 on 27 days, S2 38 clear days; 74% coastal AIS |
 | `johor_east_scs` | Johor east / South China Sea, 103.5–106.0 E, 1.8–2.8 N | S1 27 days, S2 35 clear days; 28% coastal AIS, mostly satellite AIS |
 | `fujairah_outer` | Outer Fujairah / Khor Fakkan, 56.3–57.2 E, 24.8–25.8 N | S1 60 days, S2 40 clear days; 76% coastal AIS |
 | `off_sohar` | Gulf of Oman off Sohar, 56.6–57.6 E, 24.2–24.9 N | S1 36 days, S2 41 clear days; 44% coastal AIS |
 
-Per site: bounding box and minimum distance from shore (default 10 km); detections nearer to land
+Per site: bounding box and minimum distance from shore (2 km for all, decision 2026-10-19); detections nearer to land
 are dropped.
 
 ## Processing
