@@ -37,3 +37,7 @@ ai2:
 ais_archive:
   tls_root_cert: maritime_tip_cue/ais/archive_cert.pem
   default_user: gizmosql_user
+
+structures:
+  path: data/structures/osm_structures.geojson
+  overpass_url: https://overpass-api.de/api/interpreter

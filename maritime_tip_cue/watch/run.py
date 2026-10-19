@@ -7,11 +7,11 @@ import traceback
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from maritime_tip_cue import hotspots, passes
+from maritime_tip_cue import structures as structures_mod, hotspots, passes
 from maritime_tip_cue.config import ROOT
 from maritime_tip_cue.sts import rules as rules_mod
 from maritime_tip_cue.watch import common, detector, review, s1, s2
-from maritime_tip_cue.watch.geo import Shore
+from maritime_tip_cue.watch.geo import Shore, Structures
 from maritime_tip_cue.watch.state import VERDICTS, Store
 
 SINK: dict = {"store": None, "run_id": None, "scene": None}
@@ -31,7 +31,7 @@ def free_gb(path: Path) -> float:
     return shutil.disk_usage(path).free / 1e9
 
 
-def stage_one(store: Store, scene: dict, site: dict, shore: Shore, rules: dict, folder: Path) -> dict:
+def stage_one(store: Store, scene: dict, site: dict, shore: Shore, rules: dict, folder: Path, structures: Structures | None = None) -> dict:
     source = scene["source"]
     need = rules["detectors"][f"min_free_gb_{source}"]
     if free_gb(folder) < need:
@@ -41,7 +41,7 @@ def stage_one(store: Store, scene: dict, site: dict, shore: Shore, rules: dict, 
     work.mkdir(parents=True)
     try:
         secs, windows, features = detector.detect(source, scene, rules, work, tuple(site["bbox"]), log)
-        dets, counts = common.prepare(features, source, site, shore, rules)
+        dets, counts = common.prepare(features, source, site, shore, rules, structures)
         scratch = work / "scratch"
         if source == "s2":
             cands = s2.candidates(dets, rules)
@@ -133,6 +133,8 @@ def run(store: Store, run_id: int, args, rules: dict, site: dict, start: datetim
     found = [p for p in passes.find(start, end, [site], None) if p["source"] in args.sources.split(",")]
     log(f"{len(found)} scenes: " + ", ".join(f"{p['source']} {p['time'][:16]}" for p in found))
     shore = Shore(site["bbox"], site["min_shore_distance_m"])
+    structures = Structures(site["bbox"], rules["fixed_structures"]["exclusion_m"], structures_mod.load())
+    log(f"{len(structures.points)} charted structures near {site['name']}")
     infos: dict[str, dict] = {}
     rows: dict[str, dict] = {}
     total = 0.0
@@ -147,7 +149,7 @@ def run(store: Store, run_id: int, args, rules: dict, site: dict, start: datetim
                 info = stored_info(row)
             else:
                 store.begin_scene(run_id, scene, folder, s1.pass_of(scene["scene"]) if scene["source"] == "s1" else None)
-                info = stage_one(store, scene, site, shore, rules, folder)
+                info = stage_one(store, scene, site, shore, rules, folder, structures)
                 row = store.scene(scene["scene"], scene["site"])
             total += info["detector_s"]
             infos[scene["scene"]] = info
@@ -201,7 +203,7 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     store = Store(Path(args.db) if args.db else out / "state.db", out)
     rules_sha1 = hashlib.sha1(rules_mod.RULES_PATH.read_bytes()).hexdigest()
-    run_id = store.start_run(vars(args), args.site, (start.isoformat(), end.isoformat()), args.sources, rules_sha1, git_head())
+    run_id = store.start_run(vars(args) | {"hot_spot_settings": site}, args.site, (start.isoformat(), end.isoformat()), args.sources, rules_sha1, git_head())
     SINK.update(store=store, run_id=run_id)
     status = "failed"
     try:

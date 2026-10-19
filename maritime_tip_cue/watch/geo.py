@@ -37,3 +37,13 @@ class Shore:
         if self.land is None:
             return float("inf")
         return self.land.distance(Point(lon * self.k, lat)) * 110540
+
+
+class Structures:
+    def __init__(self, bbox: list[float], margin_m: float, points: list[tuple[float, float, str]]):
+        pad = margin_m / 110540 * 1.5
+        w, s, e, n = bbox
+        self.points = [p for p in points if w - pad <= p[0] <= e + pad and s - pad <= p[1] <= n + pad]
+
+    def nearest_m(self, lon: float, lat: float) -> float:
+        return min((haversine_m(lat, lon, p[1], p[0]) for p in self.points), default=float("inf"))

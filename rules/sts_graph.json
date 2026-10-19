@@ -799,5 +799,20 @@
       "value": 2550,
       "basis": "decision: L1C digital number mapped to white in true colour (divided by 10 to 8 bit)"
     }
+  },
+  "fixed_structures": {
+    "basis": "Charted offshore structures from OpenStreetMap (Overpass); a detection next to one is the structure, or a ship tied to a mooring or platform, not an STS at sea.",
+    "osm_filters": {
+      "value": [
+        "nwr[\"man_made\"~\"^(offshore_platform|petroleum_well|pumping_rig)$\"]",
+        "nwr[\"seamark:type\"~\"^(platform|mooring|production_area)$\"]"
+      ],
+      "basis": "decision 2026-10-19 (user): add a layer of oil platforms; checked 2026-10-19: within the four hot spots OSM holds 12 such features, all at malaysia_eopl (7 moorings, 3 platforms, 2 wells), none at the other three."
+    },
+    "exclusion_m": {
+      "value": 300,
+      "unit": "m",
+      "basis": "guess: a detection within this of a charted structure is dropped; covers a platform's own size and a tanker of up to ~250 m moored to a buoy."
+    }
   }
 }
