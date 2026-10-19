@@ -27,6 +27,13 @@ land:
   - data/land/ne_10m_land.geojson
   - data/land/ne_10m_minor_islands.geojson
 
+ai2:
+  root: C:\Users\Shadow\projects\ai2-detectors
+  env:
+    RSLP_APPLY_WORKERS: "0"
+    RSLEARN_NUM_DATA_LOADER_WORKERS: "0"
+    PYTHONIOENCODING: utf-8
+
 ais_archive:
   tls_root_cert: maritime_tip_cue/ais/archive_cert.pem
   default_user: gizmosql_user

@@ -1,5 +1,5 @@
 {
-  "basis": "Parameters of the hot-spot STS check: scene selection, detection cleanup, the Sentinel-1 and Sentinel-2 pair check (ported from the proven proof of concept) and AIS matching; each entry is {value, unit, basis}.",
+  "basis": "Parameters of the hot-spot STS check: scene selection, detection cleanup, the Sentinel-1 and Sentinel-2 pair check and AIS matching; each entry is {value, unit, basis}.",
   "ai2_point_correction": {
     "s1": {
       "value": [
@@ -408,6 +408,10 @@
     "clip_spread_floor": {
       "value": 0.001,
       "basis": "Floor for the robust spread used in the water clipping."
+    },
+    "pair_requires_hull_b": {
+      "value": true,
+      "basis": "A Sentinel-2 pair needs a second hull found beside hull A; one-sided excess along the hull without a hull B gives possible_pair. QA of the fujairah_outer run 2026-10-12..19 (user, 2026-10-19), 18 S1/S2 pairs reviewed; fitted on one hot spot, to verify on the others; the only S2 pair without a hull B was judged wrong (a moving ship)."
     }
   },
   "s1_outline": {
@@ -519,16 +523,28 @@
       "basis": "Longest possible tanker; longer outlines are merged objects."
     },
     "width_min_beams": {
-      "value": 1.5,
-      "basis": "Outline width minus the pass's own radar blur, in beams of its own length, at least this."
+      "value": 1.65,
+      "basis": "Outline width minus the pass's own radar blur, in beams of its own length, at least this. Raised from 1.5: QA of the fujairah_outer run 2026-10-12..19 (user, 2026-10-19), 18 S1/S2 pairs reviewed; fitted on one hot spot, to verify on the others; the three pairs judged wrong and a small vessel alongside a ship measured 1.50-1.62, the 11 confirmed pairs 1.68-2.44."
     },
     "light_separation_min": {
       "value": 0.28,
       "basis": "Distance between the two bright-pixel class centres over the outline width, at least this."
     },
     "overlap_min": {
+      "value": 0.72,
+      "basis": "The two light lines overlap along the hull by at least this share of the shorter one. Raised from 0.5: QA of the fujairah_outer run 2026-10-12..19 (user, 2026-10-19), 18 S1/S2 pairs reviewed; fitted on one hot spot, to verify on the others; a pair judged wrong measured 0.69, confirmed pairs 0.74-0.97."
+    },
+    "width_max_beams": {
+      "value": 3.0,
+      "basis": "Outline width in beams at most this; a wider, near-square object is a rig, barge or platform, not two tankers side by side. QA of the fujairah_outer run 2026-10-12..19 (user, 2026-10-19), 18 S1/S2 pairs reviewed; fitted on one hot spot, to verify on the others; the two objects flagged as platforms measured 3.16 and 4.22, confirmed pairs at most 2.44."
+    },
+    "width_min_beams_possible": {
+      "value": 1.5,
+      "basis": "Below width_min_beams but at least this gives possible_pair instead of single. The earlier pair limit; at Hormuz (4 Oct 2026 pass) a labelled pair measured 1.57, so the raised limit alone would lose it."
+    },
+    "overlap_min_possible": {
       "value": 0.5,
-      "basis": "The two light lines overlap along the hull by at least this share of the shorter one."
+      "basis": "Below overlap_min but at least this gives possible_pair instead of single. The earlier pair limit; at Hormuz (4 Oct 2026 pass) a labelled pair measured 0.51."
     }
   },
   "scene": {
@@ -544,7 +560,7 @@
     "min_overlap_km2": {
       "value": 500,
       "unit": "km2",
-      "basis": "decision 2026-10-14 (user, PoC): a scene is used for a hot spot only if its footprint covers at least this much of the hot-spot box (about 22 x 22 km)."
+      "basis": "decision 2026-10-14 (user): a scene is used for a hot spot only if its footprint covers at least this much of the hot-spot box (about 22 x 22 km)."
     },
     "catalogs": {
       "value": {
@@ -557,7 +573,7 @@
           "sentinel-2-l1c"
         ]
       },
-      "basis": "PoC: Sentinel-1 GRD free on Planetary Computer; Sentinel-2 L1C (what Ai2 needs) on Earth Search."
+      "basis": "Sentinel-1 GRD free on Planetary Computer; Sentinel-2 L1C (what Ai2 needs) on Earth Search."
     }
   },
   "s1_reference_image": {
@@ -574,6 +590,15 @@
       "value": 90,
       "unit": "days",
       "basis": "model"
+    },
+    "preferred_days_before": {
+      "value": 60,
+      "unit": "days",
+      "basis": "stage0: same track, 60 days before, full overlap; among the candidates the one covering most of the scene wins, ties go to the age closest to this."
+    },
+    "instrument_mode": {
+      "value": "IW",
+      "basis": "only interferometric wide swath references are used, like the captures."
     }
   },
   "detection_clean": {
@@ -612,6 +637,167 @@
       "value": null,
       "unit": "deg",
       "basis": "tbd"
+    }
+  },
+  "detectors": {
+    "basis": "Ai2 rslearn_projects pipelines run in the ai2-detectors venv (config.yaml ai2.root); values.",
+    "s1_pipeline": {
+      "value": "sentinel1_vessels",
+      "basis": "model: Ai2 Sentinel-1 vessel detector."
+    },
+    "s2_pipeline": {
+      "value": "sentinel2_vessels",
+      "basis": "model: Ai2 Sentinel-2 vessel detector."
+    },
+    "s1_timeout_min": {
+      "value": 60,
+      "unit": "min",
+      "basis": "stage0: 21-26 min per scene on the Shadow PC, x2 margin"
+    },
+    "s2_timeout_min": {
+      "value": 20,
+      "unit": "min",
+      "basis": "stage0: ~3 min per scene"
+    },
+    "keep_scratch": {
+      "value": false,
+      "basis": "decision 2026-10-17 (user): delete the detector's download scratch after a successful run; only the small band windows and outputs are kept"
+    },
+    "min_free_gb_s1": {
+      "value": 12,
+      "unit": "GB",
+      "basis": "stage0: target + reference VV/VH ~4 GB plus ingest scratch"
+    },
+    "min_free_gb_s2": {
+      "value": 3,
+      "unit": "GB",
+      "basis": "guess: one L1C scene ~1 GB plus scratch"
+    }
+  },
+  "s2_cloud_mask": {
+    "basis": "Sentinel-2 L2A scene classification of the same tile and day, used for the pair-check windows only.",
+    "stac_url": {
+      "value": "https://planetarycomputer.microsoft.com/api/stac/v1",
+      "basis": "Planetary Computer holds the L2A product with the SCL asset."
+    },
+    "collection": {
+      "value": "sentinel-2-l2a",
+      "basis": "Planetary Computer collection of the L2A product."
+    },
+    "asset": {
+      "value": "SCL",
+      "basis": "ESA L2A scene classification"
+    }
+  },
+  "s2_window": {
+    "basis": "Pair-check windows on the detector's own Sentinel-2 pixels, extents the pair check was frozen on (pair_split windows).",
+    "cluster_m": {
+      "value": 500,
+      "unit": "m",
+      "basis": "decision 2026-10-17 (user): hulls of one scene within this of a window centre share one 2 km window, which leaves each hull 500 m or more from the window edge"
+    },
+    "region_half_lon_deg": {
+      "value": 0.0105,
+      "unit": "deg",
+      "basis": "decision 2026-10-17 (user): half width of the 2 km pair-check window"
+    },
+    "region_half_lat_deg": {
+      "value": 0.0095,
+      "unit": "deg",
+      "basis": "decision 2026-10-17 (user): half height of the 2 km pair-check window"
+    },
+    "inside_margin_m": {
+      "value": 10,
+      "unit": "m",
+      "basis": "initial guess to be measured on known pairs 2026-10-17: an Ai2 box belongs to a hull when its centre lies inside that hull's rectangle (pair-check length along, width across, fix heading) grown by this much; one 10 m pixel, the position resolution of the detector's box centre"
+    },
+    "shape_bands": {
+      "value": [
+        "B02",
+        "B03",
+        "B04",
+        "B05",
+        "B06",
+        "B07",
+        "B08",
+        "B8A",
+        "B09",
+        "B10",
+        "B11",
+        "B12"
+      ],
+      "basis": "bands whose spectral shape separates hull from water; B01 (aerosol) is left out."
+    }
+  },
+  "s1_objects": {
+    "basis": "Sentinel-1 objects: Ai2 detections whose bright footprints overlap are one object; the footprint comes from the sea-relative brightness of the VV power (one pass, measured 2026-10-18).",
+    "chip_half_m": {
+      "value": 1500,
+      "unit": "m",
+      "basis": "decision 2026-10-18 (planning): local chip around each Ai2 S1 detection for sea level and the bright object; wider than a VLCC plus its side lobes"
+    },
+    "sea_annulus_inner_m": {
+      "value": 500,
+      "unit": "m",
+      "basis": "guess: beyond ship, side-lobe streaks cross the chip but cover a small share of the annulus"
+    },
+    "smooth_px": {
+      "value": 1,
+      "unit": "px",
+      "basis": "guess: gaussian on the linear image before dB, tames single-pixel speckle without merging 10 m features"
+    },
+    "obj_k_sigma": {
+      "value": 12,
+      "basis": "measured 2026-10-18 on the 14 user-labelled singles of one pass: bright object = smoothed dB above local sea median by this many robust sea sigma in dB (about 20-30 dB); at 5 sigma the footprint is the ship plus its smear and side lobes, at 12 the length is on median 1.15 x Ai2 length with no fragmentation, at 15 several 330 m ships fragment; one pass, not general"
+    },
+    "open_px": {
+      "value": 3,
+      "unit": "px",
+      "basis": "decision 2026-10-18 (user/planning): binary opening with a square element of this size removes side-lobe streaks 1-2 px wide; the narrowest hull of 150 m (L/B 6, 25 m) is 2.5 px so shorter objects can lose a rim only"
+    },
+    "assoc_max_m": {
+      "value": 60,
+      "unit": "m",
+      "basis": "guess: an Ai2 point not inside an object is assigned to the nearest object within this distance (boxes are often misplaced by tens of metres)"
+    },
+    "min_length_m": {
+      "value": 150,
+      "unit": "m",
+      "basis": "decision 2026-10-18 (user): size filter on the object length measured from pixels, same as pair_split.min_length_m"
+    },
+    "chip_neighbour_m": {
+      "value": 100,
+      "unit": "m",
+      "basis": "stored chips: Ai2 detections this close outside a stored chip are kept with it so the review can draw them"
+    },
+    "pass_grouping": {
+      "value": "datatake",
+      "basis": "decision: S1 frames of one satellite datatake form one pass and share the blur estimate; a datatake is the orbit and datatake tokens of the product id, with the satellite."
+    }
+  },
+  "review": {
+    "basis": "Review sheet of pair and possible_pair crops (no verdict depends on it).",
+    "crop_half_m": {
+      "value": 300,
+      "unit": "m",
+      "basis": "decision: half side of a crop; earlier blind sheets used 600 m tiles"
+    },
+    "scale": {
+      "value": 4,
+      "basis": "blind sheet: pixels per 10 m pixel"
+    },
+    "per_row": {
+      "value": 4,
+      "basis": "decision: crops per sheet row"
+    },
+    "s1_sea_clip_percentile": {
+      "value": 99.8,
+      "unit": "percentile",
+      "basis": "S1 chip stretch: upper stretch of the dB chip"
+    },
+    "s2_stretch_max": {
+      "value": 2550,
+      "basis": "decision: L1C digital number mapped to white in true colour (divided by 10 to 8 bit)"
     }
   }
 }

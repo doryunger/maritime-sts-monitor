@@ -1,6 +1,11 @@
+from pathlib import Path
+
 import pytest
 
 from maritime_tip_cue.sts import fixtures
+from maritime_tip_cue.sts import rules as rules_mod
+
+FROZEN = rules_mod.load(Path(__file__).with_name("sts_graph_frozen.json"))
 
 pytestmark = pytest.mark.skipif(not fixtures.FIXTURES.exists(), reason="STS fixtures are not present")
 
@@ -14,14 +19,34 @@ def close(a, b) -> bool:
     return abs(a - b) <= TOL
 
 
+PASSES = fixtures.s1_passes() if fixtures.FIXTURES.exists() else []
+
+
 @pytest.fixture(scope="module")
 def s2():
+    return fixtures.s2_results(rules=FROZEN)
+
+
+@pytest.fixture(scope="module")
+def s2_live():
     return fixtures.s2_results()
 
 
-@pytest.fixture(scope="module", params=fixtures.s1_passes() if fixtures.FIXTURES.exists() else [])
+@pytest.fixture(scope="module", params=PASSES)
 def s1(request):
+    return request.param, fixtures.s1_results(request.param, rules=FROZEN)
+
+
+@pytest.fixture(scope="module", params=PASSES)
+def s1_live(request):
     return request.param, fixtures.s1_results(request.param)
+
+
+def counts(pairs: list[tuple[str | None, str]]) -> dict:
+    out = {}
+    for label, verdict in pairs:
+        out[(label, verdict)] = out.get((label, verdict), 0) + 1
+    return out
 
 
 def test_s2_verdicts_and_ratios(s2):
@@ -34,11 +59,10 @@ def test_s2_verdicts_and_ratios(s2):
             assert close(res["ratio_ab"], exp["ratio_ab"]), item["name"]
 
 
-def test_s2_scores(s2):
-    pairs = [(i["label_user"], r["verdict"]) for i, r in s2 if i["set"] in fixtures.S2_SETS]
-    t = fixtures.tally(pairs)
-    assert (t["found"], t["pairs"]) == (17, 17)
-    assert t["false"] == 0
+def test_s2_scores(s2_live):
+    c = counts([(i["label_user"], r["verdict"]) for i, r in s2_live if i["set"] in fixtures.S2_SETS])
+    assert (c.get(("pair", "pair"), 0), c.get(("pair", "possible_pair"), 0)) == (16, 1)
+    assert c.get(("single", "pair"), 0) + c.get(("single", "possible_pair"), 0) == 0
 
 
 def test_s1_verdicts_and_measures(s1):
@@ -50,8 +74,9 @@ def test_s1_verdicts_and_measures(s1):
             assert close(res[key], exp.get(key)), (name, obj["number"], key)
 
 
-def test_s1_scores(s1):
-    name, results = s1
-    t = fixtures.tally([(o["label_user"], r["verdict"]) for o, r in results])
-    want = {"hormuz_2026-10-04": (17, 17, 0, 47), "fujairah_2026-10-16": (7, 8, 1, 189)}[name]
-    assert (t["found"], t["pairs"], t["false"], t["singles"]) == want
+def test_s1_scores(s1_live):
+    name, results = s1_live
+    c = counts([(o["label_user"], r["verdict"]) for o, r in results])
+    got = tuple(c.get(k, 0) for k in (("pair", "pair"), ("pair", "possible_pair"), ("pair", "single"), ("single", "pair"), ("single", "possible_pair")))
+    want = {"hormuz_2026-10-04": (15, 2, 0, 0, 0), "fujairah_2026-10-16": (7, 0, 1, 0, 1)}[name]
+    assert got == want

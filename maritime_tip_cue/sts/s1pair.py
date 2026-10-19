@@ -51,13 +51,14 @@ def light_separation(obj: dict, quantile: float) -> float | None:
 
 def verdict(rec: dict, c: dict) -> str:
     length, wb, sep, ov = rec["length_m"], rec["width_beams"], rec["light_separation"], rec["overlap"]
-    flags = (
-        length is not None and c["length_min_m"] <= length <= c["length_max_m"],
-        wb is not None and wb >= c["width_min_beams"],
-        sep is not None and sep >= c["light_separation_min"],
-        ov is not None and ov >= c["overlap_min"],
-    )
-    return "pair" if all(flags) else "single"
+    if None in (length, wb, sep, ov):
+        return "single"
+    base = c["length_min_m"] <= length <= c["length_max_m"] and sep >= c["light_separation_min"] and wb <= c["width_max_beams"]
+    if base and wb >= c["width_min_beams"] and ov >= c["overlap_min"]:
+        return "pair"
+    if base and wb >= c["width_min_beams_possible"] and ov >= c["overlap_min_possible"]:
+        return "possible_pair"
+    return "single"
 
 
 def evaluate(objects: list[dict], rules: dict) -> list[dict]:

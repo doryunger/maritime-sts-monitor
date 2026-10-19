@@ -429,7 +429,7 @@ def check(win: dict, box: dict, cfg: dict) -> dict:
         out["b_fired"] = True
         verdict = "pair" if out["ratio_ab"] >= cfg["pair_width_ratio"] or f4_pair else "possible_pair"
     else:
-        verdict = "pair" if f4_pair else "single"
+        verdict = ("possible_pair" if cfg["pair_requires_hull_b"] else "pair") if f4_pair else "single"
     out["verdict"] = verdict
     return out
 

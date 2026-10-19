@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hot-spot run report</title>
+<style>
+:root{--bg:#f6f7f9;--fg:#1b1f24;--muted:#5b6570;--card:#fff;--line:#d5dae0;--pair:#c62828;--possible:#b26a00;--moving:#1565c0;--unmeasured:#6a1b9a;--single:#455a64;--ok:#2e7d32;--bad:#c62828}
+@media (prefers-color-scheme:dark){:root{--bg:#14171a;--fg:#e6e9ec;--muted:#98a3ad;--card:#1d2226;--line:#333b42;--pair:#ff6b6b;--possible:#ffb74d;--moving:#64b5f6;--unmeasured:#ce93d8;--single:#90a4ae;--ok:#81c784;--bad:#ff6b6b}}
+*{box-sizing:border-box}
+body{margin:0;padding:16px;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,sans-serif}
+main{max-width:1200px;margin:0 auto}
+h1{font-size:1.4rem;margin:0 0 8px}
+h2{font-size:1.1rem;margin:28px 0 8px;border-bottom:1px solid var(--line);padding-bottom:4px}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:4px 16px;margin:0}
+.facts div{display:flex;gap:6px}
+.facts dt{color:var(--muted)}
+.facts dd{margin:0;overflow-wrap:anywhere}
+.wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:4px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+td.n,th.n{text-align:right}
+th{color:var(--muted);font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,420px),1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:8px}
+.pics{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.pics img{width:100%;height:auto;display:block;image-rendering:pixelated;background:#000}
+.nopic{padding:24px 8px;color:var(--muted);text-align:center;grid-column:1/-1}
+.cap{display:flex;justify-content:space-between;gap:8px;margin-top:6px;flex-wrap:wrap}
+.badge{font-weight:700}
+.v-pair{color:var(--pair)}.v-possible_pair{color:var(--possible)}.v-moving{color:var(--moving)}.v-unmeasured{color:var(--unmeasured)}.v-single{color:var(--single)}
+.meta{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.m{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:0 12px;margin:4px 0 0;font-size:12px}
+.m div{display:flex;justify-content:space-between;gap:6px}
+.m dt{color:var(--muted)}.m dd{margin:0}
+.st-agree{color:var(--ok)}.st-differ,.st-missing{color:var(--bad);font-weight:700}
+details{margin:8px 0}
+summary{cursor:pointer}
+.err{color:var(--bad)}
+</style>
+</head>
+<body>
+<main>
+<h1>Hot-spot run report</h1>
+<dl class="facts" id="facts"></dl>
+<h2>Scenes</h2>
+<div class="wrap"><table id="scenes"></table></div>
+<div id="sections"></div>
+<h2>Fixture comparison</h2>
+<div id="fixtures"></div>
+</main>
+<script id="data" type="application/json">__DATA__</script>
+<script>
+const D = JSON.parse(document.getElementById("data").textContent);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const num = (v, d = 2) => v === null || v === undefined ? "n/a" : typeof v === "number" ? (Number.isInteger(v) ? String(v) : v.toFixed(d)) : esc(v);
+const when = t => (t || "").replace("T", " ").slice(0, 16) + "Z";
+const VERDICTS = ["pair", "possible_pair", "single", "moving", "unmeasured"];
+
+function facts() {
+  const r = D.run, s = r.singles_sample;
+  const rows = [
+    ["Hot spot", r.hot_spot || "n/a"], ["Window", when(r.window[0]) + " to " + when(r.window[1])],
+    ["Sources", r.sources], ["Rules sha1", r.rules_sha1 || "n/a"], ["Commit", r.commit ? r.commit.slice(0, 10) : "n/a"],
+    ["Singles sample", s.n + " of " + s.of + " (seed " + s.seed + ")"],
+    ["Runs", r.runs.map(x => "#" + x.run_id + " " + (x.status || "") + " " + when(x.start) + (x.end ? " to " + when(x.end) : "")).join("; ")]
+  ];
+  document.getElementById("facts").innerHTML = rows.map(([k, v]) => "<div><dt>" + esc(k) + "</dt><dd>" + esc(v) + "</dd></div>").join("");
+}
+
+function scenes() {
+  const cols = ["source", "time", "status", "detector_s", "raw", "kept", "checked", ...VERDICTS, "error"];
+  const head = "<tr>" + ["scene", ...cols].map(c => "<th" + (VERDICTS.includes(c) || ["raw", "kept", "checked", "detector_s"].includes(c) ? ' class="n"' : "") + ">" + esc(c) + "</th>").join("") + "</tr>";
+  const tot = {raw: 0, kept: 0, checked: 0, detector_s: 0};
+  VERDICTS.forEach(v => tot[v] = 0);
+  const body = D.scenes.map(s => {
+    Object.keys(tot).forEach(k => tot[k] += s[k] || 0);
+    return "<tr><td title='" + esc(s.scene_id) + "'>" + esc(s.scene_id.slice(0, 32)) + "</td>" + cols.map(c => {
+      const v = c === "time" ? when(s[c]) : c === "error" ? esc(s[c] || "") : num(s[c], 0);
+      return "<td class='" + (c === "error" ? "err" : (typeof s[c] === "number" ? "n" : "")) + "'>" + v + "</td>";
+    }).join("") + "</tr>";
+  }).join("");
+  const foot = "<tr><th>total " + D.scenes.length + "</th><th></th><th></th><th></th>" + ["detector_s", "raw", "kept", "checked", ...VERDICTS].map(k => "<th class='n'>" + num(tot[k], 0) + "</th>").join("") + "<th></th></tr>";
+  document.getElementById("scenes").innerHTML = head + body + foot;
+}
+
+function card(h) {
+  const pics = h.raw
+    ? "<img loading='lazy' src='" + esc(h.raw) + "' alt='raw'><img loading='lazy' src='" + esc(h.overlay) + "' alt='overlay'>"
+    : "<div class='nopic'>no image (no pixels stored for this hull)</div>";
+  const a = h.ai2 || {};
+  const ai2 = "Ai2 " + num(a.length_m, 0) + " x " + num(a.width_m, 0) + " m, heading " + num(a.heading, 0) + (a.speed_kn !== undefined ? ", " + num(a.speed_kn, 1) + " kn" : "");
+  const m = Object.entries(h.measures || {}).map(([k, v]) => "<div><dt>" + esc(k) + "</dt><dd>" + num(v) + "</dd></div>").join("");
+  return "<article class='card' id='h-" + esc(h.id) + "'><div class='pics'>" + pics + "</div>" +
+    "<div class='cap'><span class='badge v-" + h.verdict + "'>" + h.verdict + "</span><span>" + h.source.toUpperCase() + " " + when(h.time) + "</span></div>" +
+    "<div>" + num(h.lat, 5) + " N, " + num(h.lon, 5) + " E</div><div class='meta'>" + esc(ai2) + "</div>" +
+    "<dl class='m'>" + m + "</dl><div class='meta'>" + esc(h.id) + "</div></article>";
+}
+
+function sections() {
+  const titles = {pair: "Pairs", possible_pair: "Possible pairs", unmeasured: "Unmeasured", moving: "Moving", single: "Singles (random sample)"};
+  document.getElementById("sections").innerHTML = ["pair", "possible_pair", "unmeasured", "moving", "single"].map(v => {
+    const hs = D.hulls.filter(h => h.verdict === v);
+    return "<h2>" + titles[v] + " (" + hs.length + (v === "single" ? " of " + D.run.singles_sample.of : "") + ")</h2>" +
+      (hs.length ? "<div class='grid'>" + hs.map(card).join("") + "</div>" : "<p class='meta'>none</p>");
+  }).join("");
+}
+
+function fixtures() {
+  const f = D.fixtures, el = document.getElementById("fixtures");
+  if (!f.passes.length) { el.innerHTML = "<p class='meta'>No fixture set available.</p>"; return; }
+  const order = {differ: 0, missing: 1, outside_area: 2, agree: 3};
+  el.innerHTML = (f.totals ? "<p><b>Total " + f.totals.agree + " of " + f.totals.objects + " agree</b>, " + f.totals.differ + " differ, " + f.totals.missing + " missing.</p>" : "") +
+    f.passes.map(p => {
+      if (!p.covered) return "<h3>" + esc(p.name) + " (" + p.source + ")</h3><p class='meta'>not covered by this run (no " + p.source.toUpperCase() + " scene on " + esc(p.date) + ").</p>";
+      const t = p.totals, keys = [...new Set(p.items.flatMap(i => Object.keys(i.measures || {})))];
+      const reasons = Object.entries(t.missing_by_reason).map(([k, v]) => k + " " + v).join(", ");
+      const rows = p.items.slice().sort((a, b) => order[a.status] - order[b.status]).map(i => {
+        const link = i.hull ? "<a href='#h-" + esc(i.hull) + "'>" + esc(i.key) + "</a>" : esc(i.key);
+        const meas = keys.map(k => { const m = (i.measures || {})[k] || [null, null]; return "<td class='n'>" + num(m[0]) + " / " + num(m[1]) + "</td>"; }).join("");
+        const why = i.status === "missing" ? esc(i.reason || "") + (i.shore_m !== undefined && i.shore_m !== null ? " (" + i.shore_m + " m)" : "") + (i.nearest_raw_m !== null && i.nearest_raw_m !== undefined ? ", raw " + i.nearest_raw_m + " m" : "") : "";
+        return "<tr><td>" + link + "</td><td>" + esc(i.label_user || "") + "</td><td>" + esc(i.fixture_verdict) + "</td><td>" + esc(i.run_verdict || "") + "</td><td class='st-" + i.status + "'>" + i.status + "</td><td class='n'>" + num(i.distance_m, 0) + "</td>" + meas + "<td>" + why + "</td></tr>";
+      });
+      const head = "<tr><th>object</th><th>label</th><th>fixture</th><th>run</th><th>status</th><th class='n'>m</th>" + keys.map(k => "<th class='n'>" + esc(k) + " (fixture / run)</th>").join("") + "<th>why missing</th></tr>";
+      const split = p.items.filter(i => i.status !== "agree").length;
+      return "<h3>" + esc(p.name) + " (" + p.source + ")</h3><p>" + t.agree + " of " + t.objects + " agree, " + t.differ + " differ, " + t.missing + " missing" + (reasons ? " (" + esc(reasons) + ")" : "") + (t.outside_area ? ", " + t.outside_area + " outside the hot spot" : "") + ".</p>" +
+        "<div class='wrap'><table>" + head + rows.slice(0, split).join("") + "</table></div>" +
+        "<details><summary>" + t.agree + " agreeing objects</summary><div class='wrap'><table>" + head + rows.slice(split).join("") + "</table></div></details>";
+    }).join("");
+}
+
+facts(); scenes(); sections(); fixtures();
+</script>
+</body>
+</html>
