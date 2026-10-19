@@ -540,6 +540,24 @@
     "s1_min_score": {
       "value": 0.7,
       "basis": "model: Ai2 Sentinel-1 detector's own score threshold."
+    },
+    "min_overlap_km2": {
+      "value": 500,
+      "unit": "km2",
+      "basis": "decision 2026-10-14 (user, PoC): a scene is used for a hot spot only if its footprint covers at least this much of the hot-spot box (about 22 x 22 km)."
+    },
+    "catalogs": {
+      "value": {
+        "s1": [
+          "https://planetarycomputer.microsoft.com/api/stac/v1",
+          "sentinel-1-grd"
+        ],
+        "s2": [
+          "https://earth-search.aws.element84.com/v1",
+          "sentinel-2-l1c"
+        ]
+      },
+      "basis": "PoC: Sentinel-1 GRD free on Planetary Computer; Sentinel-2 L1C (what Ai2 needs) on Earth Search."
     }
   },
   "s1_reference_image": {

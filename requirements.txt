@@ -13,3 +13,5 @@ planetary-computer
 pytest
 ruff
 boto3
+requests
+matplotlib
