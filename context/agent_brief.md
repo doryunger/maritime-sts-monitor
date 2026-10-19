@@ -16,8 +16,8 @@ Conventions are in CLAUDE.md (already loaded). Read docs by section only: `grep 
 - `rules/sts_graph.json`: scene selection, detection cleanup, pair check, AIS matching. Values only there; unknown stays `null` with `basis: "tbd"`.
 
 ## Data (gitignored `data/`)
-- `data/sts_fixtures/s1`, `data/sts_fixtures/s2`: expected verdicts of the STS proof of concept.
-- `data/poc/`: proof-of-concept imagery and STS outputs (reference only).
+- `data/sts_fixtures/s1`, `data/sts_fixtures/s2`: labelled hulls and passes with their expected verdicts.
+- `data/earlier_runs/`: outputs of earlier runs (2026-10-13 to 18), reference only.
 - Stage 0 detector bench (outside the repo): `C:\Users\Shadow\projects\ai2-detectors\` (README there).
 
 ## Docs

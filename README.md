@@ -14,8 +14,7 @@ the hot spots; that is a weaker lead, checked on the next pass.
 
 The only interface is the AIS archive server (GizmoSQL on ubuntu3; views `vessels` and
 `identities`), queried with `maritime_tip_cue/ais/archive.py`, plus the shared hot-spot list on S3.
-No code, rules or files are shared; logic needed from the earlier proof of concept is copied in and
-owned here.
+No code, rules or files are shared; everything this repo needs is in it.
 
 The staged work is in [PLAN.md](PLAN.md); measured feasibility data is in
 [docs/feasibility.md](docs/feasibility.md).
@@ -48,7 +47,7 @@ One list for all repos, kept on S3 at `hotspots/sts_hotspots.json` in the bucket
 `S3_BUCKET_NAME` (key in `config.yaml`); each repo reads it from there. This repo loads it with
 `maritime_tip_cue/hotspots.py` (`python -m maritime_tip_cue.hotspots` prints it):
 
-| Site | Area | Notes from the PoC (15 Jul – 15 Oct 2026) |
+| Site | Area | Measured 15 Jul – 15 Oct 2026 |
 |---|---|---|
 | `malaysia_eopl` | EOPL / Singapore Strait east, 103.5–106.0 E, 0.8–1.8 N | S1 on 27 days, S2 38 clear days; 74% coastal AIS; shore distance 2 km |
 | `johor_east_scs` | Johor east / South China Sea, 103.5–106.0 E, 1.8–2.8 N | S1 27 days, S2 35 clear days; 28% coastal AIS, mostly satellite AIS |

@@ -2,8 +2,8 @@
 
 Decides whether a detected tanker is one ship or two ships side by side (a possible ship-to-ship transfer),
 from Sentinel-2 (spectral) and Sentinel-1 (radar). All parameters are in `rules/sts_graph.json`; numeric floors
-that only guard a division stay in code. Fixtures in `data/sts_fixtures` hold the expected verdicts of the
-proven proof of concept and `tests/test_sts_fixtures.py` reproduces them to 1e-6.
+that only guard a division stay in code. Fixtures in `data/sts_fixtures` hold labelled hulls and passes
+with their expected verdicts, and `tests/test_sts_fixtures.py` reproduces them to 1e-6.
 
 ## ai2point
 Ai2 builds a detection from `int(centroid)` in its UTM pixel grid, so the geojson point is the pixel corner and
