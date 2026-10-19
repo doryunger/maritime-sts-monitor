@@ -29,6 +29,7 @@ land:
 
 ai2:
   root: C:\Users\Shadow\projects\ai2-detectors
+  scratch_root: C:\t
   env:
     RSLP_APPLY_WORKERS: "0"
     RSLEARN_NUM_DATA_LOADER_WORKERS: "0"

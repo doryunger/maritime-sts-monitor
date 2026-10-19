@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from maritime_tip_cue import structures as structures_mod, hotspots, passes
-from maritime_tip_cue.config import ROOT
+from maritime_tip_cue.config import ROOT, settings
 from maritime_tip_cue.sts import rules as rules_mod
 from maritime_tip_cue.watch import common, detector, review, s1, s2
 from maritime_tip_cue.watch.geo import Shore, Structures
@@ -31,12 +31,19 @@ def free_gb(path: Path) -> float:
     return shutil.disk_usage(path).free / 1e9
 
 
+def work_dir(folder: Path, scene: dict) -> Path:
+    root = settings()["ai2"].get("scratch_root")
+    if not root:
+        return folder / "work"
+    return Path(root) / hashlib.sha1(scene["scene"].encode()).hexdigest()[:10]
+
+
 def stage_one(store: Store, scene: dict, site: dict, shore: Shore, rules: dict, folder: Path, structures: Structures | None = None) -> dict:
     source = scene["source"]
     need = rules["detectors"][f"min_free_gb_{source}"]
     if free_gb(folder) < need:
         raise RuntimeError(f"free disk {free_gb(folder):.1f} GB is below {need} GB")
-    work = folder / "work"
+    work = work_dir(folder, scene)
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
     try:
@@ -165,7 +172,7 @@ def run(store: Store, run_id: int, args, rules: dict, site: dict, start: datetim
             log(f"{scene['scene']}: FAILED {type(e).__name__}: {str(e)[:600]}", "error")
             store.fail(scene, f"{type(e).__name__}: {str(e)[:600]}")
             traceback.print_exc()
-            shutil.rmtree(folder / "work", ignore_errors=True)
+            shutil.rmtree(work_dir(folder, scene), ignore_errors=True)
     SINK["scene"] = None
     by_pass: dict[str, list] = {}
     for scene in found:

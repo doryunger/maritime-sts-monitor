@@ -82,3 +82,10 @@ so the review stays with the run and can become fixture labels. The page carries
 it was built; a later `--reanalyse` changes `hulls` but not the page, and each flag keeps the verdict it judged.
 First use (fujairah_outer 12-19 Oct 2026, 64 hulls): 11 of 18 pairs OK, 4 wrong, 2 rigs or barges, 1 small
 craft alongside; all 10 unmeasured were single ships.
+
+## scratch path
+On the Windows dev PC long paths are off (no admin to enable them), and the detector's tile store nests the
+scene id twice under `work/scratch/tiles/sentinel1/`; with a run folder name like `johor_east_scs_week` the path
+passed 260 characters and Sentinel-1 ingest failed with WinError 3. `config.yaml` `ai2.scratch_root` puts the
+per-scene work folder under a short root keyed by a hash of the scene id; left empty (Linux) it stays in the
+scene folder.
