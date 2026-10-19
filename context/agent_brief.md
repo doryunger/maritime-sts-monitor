@@ -38,3 +38,7 @@ Conventions are in CLAUDE.md (already loaded). Read docs by section only: `grep 
 - `.venv/Scripts/python -m maritime_tip_cue.watch.report <run folder> --qa` also writes `reports/<run>/qa.html` (QA page to publish); `watch.state qa-import <run folder> <flags dir>` loads reviewed flags into `qa_flags`.
 - `.venv/Scripts/python -m maritime_tip_cue.watch.report <run folder> [--singles N] [--seed S]` static report (`reports/<run>/index.html`, `data.json`, `img/`, committed to git) from a run's `state.db`; runs without the detector.
 - `.venv/Scripts/python -m maritime_tip_cue.hotspots [publish <file>]` print (or replace) the S3 hot-spot list.
+
+## Where work stands (2026-10-19)
+- Runs for 12–19 Oct 2026 in `data/runs/<hot spot>_week` (Fujairah: `fuj_week_2km`). fujairah_outer and off_sohar done, AIS-matched, QA pages published (Fujairah reviewed, flags in its `qa_flags`; off_sohar awaiting review). malaysia_eopl then johor_east_scs were relaunched detached (`run.log` in each folder); when they finish: `ais.match`, `watch.report --qa`, publish the QA page.
+- Next stage: 6, publish (GeoParquet per date/hot spot/source and raw captures to S3, recorded in `outputs`/`captures`).

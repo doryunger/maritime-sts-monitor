@@ -34,6 +34,9 @@ results are reported per hot spot, and one without data is named as such.
 | AIS coverage | Satellite AIS rows carry no identity or size; `johor_east_scs` is 72% satellite AIS, so "no AIS match" there often means missing identity, not a dark ship | Per-hot-spot rule for when "no AIS" counts as a signal | 5 |
 | Archive access | GPU instance reaching the GizmoSQL archive on ubuntu3: network, credentials, query time per pass; archive keeps 30 days | Check from the GPU instance | 5 |
 | AIS-only leads | How a lead outside the hot spots is scheduled (one-off watch area) and graded | Decision | 5 |
+| Overlapping hot spots | fujairah_outer and off_sohar overlap at 24.8–24.9 N; the same pair (e.g. MARAN DIONE, 16 Oct) is found in both runs | Merge findings by scene and position before publishing | 6 |
+| S2 availability | A Sentinel-2 tile listed on Earth Search can be missing from the Google bucket Ai2 reads (off_sohar 19 Oct T40RDN failed); it is retried on the next run | Scheduler retries; measure the delay | 7 |
+| AIS identity | IMO/MMSI come only from the archive's `identities` view (489 resolved ships); none of the matched Fujairah ships are resolved | Identity resolution on the vessels-aggregator side | 5 |
 | GPU instance | Instance type, OS, CUDA, RAM and disk for the detectors installed natively; time per scene there (Shadow PC timings don't transfer) | Check | 7 |
 | Output | S3 bucket not created; parquet columns; whether the viewer also needs vector tiles per date ([measured](docs/feasibility.md#columnar-storage-for-alerts-and-findings-measured-2026-10-12)) | AWS access; schema | 6, 8 |
 | Wake + handoff | IAM for the scheduler to start/stop only the GPU instance; push vs SQS/S3 pull; boot-to-ready time | Decision + IAM policy | 7 |
