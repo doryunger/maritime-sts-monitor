@@ -105,7 +105,10 @@ const LABELLED = ["ok", "is_pair", "is_single", "is_moving"];
 const docId = id => id.replace(/[^A-Za-z0-9_-]/g, "_");
 const flags = {};
 (D.qa_flags || []).forEach(f => { flags[docId(f.hull_id)] = f; });
-let db = null, me = null, filter = "all";
+let db = null, me = null, filter = "all", api = false;
+const canSave = () => !!db || api;
+const FROM_STATUS = {is_single: "single", is_moving: "moving", is_pair: "pair", bad_geometry: "excluded", other: "excluded"};
+const finalOf = (h, f) => !f || f.status === "ok" ? h.verdict : f.status === "wrong_verdict" ? f.correct_verdict || "unresolved" : FROM_STATUS[f.status] || h.verdict;
 
 function facts() {
   const r = D.run, s = r.singles_sample;
@@ -147,7 +150,7 @@ function card(h) {
   const opts = (h.verdict === "unmeasured" ? TRUTH : FLAGS).map(([v, t]) => "<label><input type='radio' name='q-" + id + "' id='q-" + id + "-" + v + "' value='" + v + "'>" + t + "</label>").join("");
   return "<article class='card' id='h-" + esc(h.id) + "' data-doc='" + id + "' data-flag=''>" +
     "<div class='pics'>" + pics + "</div>" +
-    "<div class='cap'><span class='badge v-" + h.verdict + "'>" + h.verdict.replace("_", " ") + "</span><span class='mono'>" + h.source.toUpperCase() + " " + when(h.time) + "</span></div>" +
+    "<div class='cap'><span class='badge v-" + h.verdict + "'>" + h.verdict.replace("_", " ") + "</span><span class='mono'>" + h.source.toUpperCase() + " " + when(h.time) + "</span><span class='meta' id='a-" + id + "'></span></div>" +
     "<div class='mono'>" + num(h.lat, 5) + " N, " + num(h.lon, 5) + " E</div><div class='meta'>" + esc(ai2) + "</div>" +
     ais(h) + "<dl class='m'>" + m + "</dl><div class='meta mono'>" + esc(h.id) + "</div>" +
     "<div class='qa'><div class='opts' role='radiogroup' aria-label='QA flag'>" + opts + "</div>" +
@@ -202,6 +205,8 @@ function paint(id) {
   }
   if (!f) c.querySelectorAll("input[type=radio]").forEach(x => x.checked = false);
   showFix(c);
+  const h = D.hulls.find(x => docId(x.id) === id), fv = h && finalOf(h, f);
+  document.getElementById("a-" + id).textContent = h && fv !== h.verdict ? "after QA: " + String(fv).replace("_", " ") : "";
   document.getElementById("w-" + id).textContent = f ? "Saved " + when(f.updated_utc) : "";
   applyFilter(c);
 }
@@ -229,7 +234,7 @@ function tally() {
   const labelled = v.filter(f => f.status.startsWith("is_")).length;
   const issues = v.filter(f => !LABELLED.includes(f.status)).length, ok = v.length - issues - labelled;
   const line = v.length + " of " + n + " reviewed: " + ok + " OK, " + issues + " with issues, " + labelled + " unmeasured labelled.";
-  document.getElementById("status").textContent = db ? line : v.length ? line + " Saved review, read-only here." : "No review saved yet; this view is read-only.";
+  document.getElementById("status").textContent = db ? line : api ? line + " Saving to the run's SQLite." : line + " Read-only: open it with python -m maritime_tip_cue.watch.qa <run> to edit.";
 }
 
 function wire() {
@@ -242,10 +247,10 @@ function wire() {
   document.getElementById("sections").addEventListener("input", e => {
     const c = e.target.closest(".card"); if (!c) return;
     showFix(c);
-    if (db) document.getElementById("s-" + c.dataset.doc).disabled = !ready(c);
+    if (canSave()) document.getElementById("s-" + c.dataset.doc).disabled = !ready(c);
   });
   document.getElementById("sections").addEventListener("click", async e => {
-    const b = e.target.closest("button.save"); if (!b || !db) return;
+    const b = e.target.closest("button.save"); if (!b || !canSave()) return;
     const c = b.closest(".card"), id = c.dataset.doc, h = D.hulls.find(x => docId(x.id) === id);
     if (!ready(c)) return;
     const picked = c.querySelector("input[name='q-" + id + "']:checked");
@@ -254,13 +259,32 @@ function wire() {
     b.disabled = true; w.textContent = "Saving…";
     const doc = {hull_id: h.id, scene_id: h.scene_id, source: h.source, verdict: h.verdict, lat: h.lat, lon: h.lon, status: picked.value, correct_verdict: fix,
       note: document.getElementById("n-" + id).value.trim(), updated_utc: new Date().toISOString(), run: "__RUN__", by: me};
+    if (api) {
+      try {
+        const r = await fetch("api/flags", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(doc)});
+        if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+        flags[id] = (await r.json()).flag; paint(id); tally();
+      } catch (err) { w.textContent = "Not saved: " + ((err && err.message) || "try again"); b.disabled = false; }
+      return;
+    }
     try { await db.doc("flags/" + id).set(doc); w.textContent = "Saved"; }
     catch (err) { w.textContent = "Not saved: " + (err && err.code === "not_granted" ? "you can view this report but not flag it" : (err && err.message) || "try again"); b.disabled = false; }
   });
 }
 
+async function local() {
+  try {
+    const r = await fetch("api/flags");
+    if (!r.ok) throw new Error();
+    (await r.json()).flags.forEach(f => { flags[docId(f.hull_id)] = f; });
+    api = true;
+    Object.keys(flags).forEach(paint);
+  } catch (err) { api = false; }
+  tally();
+}
+
 async function connect() {
-  if (!window.claude || !window.claude.use) { tally(); return; }
+  if (!window.claude || !window.claude.use) { await local(); return; }
   db = await window.claude.use("db");
   const user = await window.claude.use("user");
   if (user) { try { me = await user.id(); } catch (e) { me = null; } }

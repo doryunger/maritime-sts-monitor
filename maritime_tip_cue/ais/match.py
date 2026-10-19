@@ -190,8 +190,9 @@ def load_identities(ship_ids: list[str]) -> dict:
 
 def select_hulls(store: Store, verdicts: tuple, all_checked: bool, stats: bool) -> list[dict]:
     q = (
-        "select h.*, s.source, s.capture_utc, f.status as qa_status from hulls h join scenes s using(scene_id, site) "
-        "left join qa_flags f on f.hull_id = h.scene_id || '__' || h.hull_id where s.capture_utc is not null"
+        "select h.scene_id, h.site, h.hull_id, h.lat, h.lon, h.ai2_length_m, h.ai2_width_m, h.ai2_heading, h.role, h.record, "
+        "f.run_verdict, f.verdict, f.source, f.capture_utc, f.qa_status from findings f join hulls h using(scene_id, site, hull_id) "
+        "where f.capture_utc is not null"
     )
     rows = [dict(r) for r in store.db.execute(q)]
     rows = [r for r in rows if r["role"] not in IGNORED_ROLES]

@@ -16,6 +16,24 @@ create table if not exists ais_matches (
 );
 """
 
+FINDINGS = """
+drop view if exists findings;
+create view findings as
+select h.scene_id, h.site, h.hull_id, s.source, s.capture_utc, h.lat, h.lon, h.role, h.verdict as run_verdict,
+    f.status as qa_status, f.correct_verdict as qa_correct_verdict, f.note as qa_note, f.updated_utc as qa_updated_utc,
+    case
+        when f.status = 'wrong_verdict' then coalesce(f.correct_verdict, 'unresolved')
+        when f.status = 'is_single' then 'single'
+        when f.status = 'is_moving' then 'moving'
+        when f.status = 'is_pair' then 'pair'
+        when f.status in ('bad_geometry', 'other') then 'excluded'
+        else h.verdict
+    end as verdict
+from hulls h join scenes s using (scene_id, site)
+left join qa_flags f on f.hull_id = h.scene_id || '__' || h.hull_id
+where coalesce(h.role, '') not in ('duplicate', 'hull_b_box');
+"""
+
 SCHEMA = """
 create table if not exists runs (
     run_id integer primary key autoincrement,
@@ -81,7 +99,7 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self.db.execute("pragma journal_mode=wal")
         self.db.execute("pragma busy_timeout=60000")
-        self.db.executescript(SCHEMA + AIS_MATCHES)
+        self.db.executescript(SCHEMA + AIS_MATCHES + FINDINGS)
         self.depth = 0
 
     def close(self) -> None:
@@ -271,7 +289,7 @@ QA_COLUMNS = ("hull_id", "scene_id", "source", "verdict", "lat", "lon", "status"
 
 def read_flags(source: Path) -> list[dict]:
     if source.is_file():
-        return json.loads(source.read_text(encoding="utf-8"))
+        return [d | {"reviewer": d.get("reviewer", d.get("by"))} for d in json.loads(source.read_text(encoding="utf-8"))]
     out = []
     for path in sorted(source.rglob("*.json")):
         doc = json.loads(path.read_text(encoding="utf-8"))
@@ -281,14 +299,25 @@ def read_flags(source: Path) -> list[dict]:
     return out
 
 
-def import_qa(folder: Path, source: Path) -> int:
+def upsert_flags(folder: Path, flags: list[dict]) -> int:
     stamp = now()
-    rows = [tuple(d.get("imported_utc") or stamp if k == "imported_utc" else d.get(k) for k in QA_COLUMNS) for d in read_flags(source)]
+    rows = [tuple(d.get("imported_utc") or stamp if k == "imported_utc" else d.get(k) for k in QA_COLUMNS) for d in flags]
     store = Store(folder / "state.db", folder)
     with store.tx():
         store.db.executemany(f"insert or replace into qa_flags values ({','.join('?' * len(QA_COLUMNS))})", rows)
     store.close()
     return len(rows)
+
+
+def import_qa(folder: Path, source: Path) -> int:
+    return upsert_flags(folder, read_flags(source))
+
+
+def final_verdicts(folder: Path) -> dict[str, str]:
+    store = Store(folder / "state.db", folder)
+    out = {f"{r['scene_id']}__{r['hull_id']}": r["verdict"] for r in store.db.execute("select scene_id, hull_id, verdict from findings")}
+    store.close()
+    return out
 
 
 def qa_flags(folder: Path) -> list[dict]:

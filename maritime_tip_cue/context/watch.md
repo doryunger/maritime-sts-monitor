@@ -73,18 +73,20 @@ not from the threshold. The fixture verdict is the one the fixture rules give, w
 fixture that the run calls `moving` counts as a difference.
 
 ## qa
-`report.py --qa` (or `--qa-only` on an existing `reports/<run>/data.json`) writes `reports/<run>/qa.html`, a page meant to be
-published as a private artifact with the `db` and `user` capabilities: one card per listed hull with a flag
-(OK, wrong verdict with the correct one, bad geometry, other; unmeasured hulls take single, single moving or
-pair directly) and a note, stored in the page's `flags` collection keyed by hull id. The run's review lives in
-`state.db` `qa_flags` (one row per hull, upserted, never deleted: the page has no delete) and is mirrored to the
-committed `reports/<run>/qa_flags.json`, since `state.db` is gitignored. To sync after a review: pull the
-collection with the artifact tools into `<run>/qa_export/`, then `report.py <run> --qa-import <run>/qa_export/flags`
-loads it into `qa_flags`, rewrites `qa_flags.json` and rebuilds `qa.html` with the flags baked in, and the page is
-republished to the same URL. A baked page shows the saved review when opened from disk (read-only) and in a fresh
-artifact before its database has rows; live rows override it. With no `state.db`, `--qa-only` reloads
-`qa_flags.json` into a new one. The page carries the verdicts as they were when it was built; a later
-`--reanalyse` changes `hulls` but not the page, and each flag keeps the verdict it judged.
+`report.py --qa` (or `--qa-only` on an existing `reports/<run>/data.json`) writes `reports/<run>/qa.html`: one card
+per listed hull with a flag (OK, wrong verdict with the correct one, bad geometry, other; unmeasured hulls take
+single, single moving or pair directly) and a note. The review lives in `state.db` `qa_flags` (one row per hull,
+upserted, never deleted: the page has no delete) and is mirrored to the committed `reports/<run>/qa_flags.json`,
+since `state.db` is gitignored; with no `state.db`, `--qa-only` reloads the JSON into a new one.
+The page saves in one of three ways, picked on load: `watch.qa <run>` serves it on 127.0.0.1 and each Save is a
+POST that writes `qa_flags` and the JSON at once (the main way); published as an artifact with `db` and `user` it
+saves to the page's `flags` collection, pulled back with the artifact tools into `<run>/qa_export/` and loaded with
+`report.py <run> --qa-import <dir>`; opened from disk it is read-only. Flags are baked into the page when built.
+QA changes the findings through the `findings` view: its `verdict` is the reviewer's correct verdict for
+`wrong_verdict` (`unresolved` while none is picked), the labelled one for unmeasured hulls, `excluded` for
+`bad_geometry` and `other` (rigs, barges, broken outlines), else the run verdict, kept as `run_verdict`. AIS
+matching and publishing read `findings`; the QA cards keep the run verdict, since that is what is judged, and
+show "after QA" where it changed.
 First use (fujairah_outer 12-19 Oct 2026, 64 hulls): 11 of 18 pairs OK, 4 wrong, 2 rigs or barges, 1 small
 craft alongside; all 10 unmeasured were single ships.
 

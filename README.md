@@ -120,6 +120,8 @@ the last finished scene and never leaves a half-saved one.
 | `ais_matches` | Per hull, the AIS candidates considered and the chosen match with distance and reasons |
 | `outputs` | One row per parquet written: path and S3 URI, created time, date, hot spot, source, rows, pairs, possible pairs, scene ids, checksum, upload time, run id |
 | `captures` | One row per capture file: finding, local path, S3 URI, format |
+| `qa_flags` | The QA review: per hull, flag, correct verdict, note, reviewer (mirrored to the committed `reports/<run>/qa_flags.json`) |
+| `findings` (view) | Each hull's verdict after QA, next to the run's own; what AIS matching and publishing use |
 | `events` | The run log |
 
 Only image data stays as files next to it (pair-check windows, radar chips, captures, review

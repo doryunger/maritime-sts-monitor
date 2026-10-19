@@ -14,7 +14,7 @@ from maritime_tip_cue.config import ROOT, settings
 from maritime_tip_cue.sts import fixtures, rules as rules_mod
 from maritime_tip_cue.watch import review, s1 as s1mod
 from maritime_tip_cue.watch.geo import Shore, haversine_m
-from maritime_tip_cue.watch.state import IGNORED_ROLES, VERDICTS, Store, import_qa, qa_flags
+from maritime_tip_cue.watch.state import IGNORED_ROLES, VERDICTS, Store, final_verdicts, import_qa, qa_flags
 
 SCALE = 6
 S1_DB_RANGE = (22.0, 50.0)
@@ -352,16 +352,23 @@ def build(folder: Path, n_singles: int, seed: int) -> dict:
     return doc
 
 
+def export_flags(folder: Path) -> list[dict]:
+    flags = qa_flags(folder)
+    if flags:
+        (report_dir(folder) / "qa_flags.json").write_text(json.dumps(flags, indent=1), encoding="utf-8")
+    return flags
+
+
 def write_qa(folder: Path) -> Path:
     out = report_dir(folder)
     doc = json.loads((out / "data.json").read_text(encoding="utf-8"))
-    flags = qa_flags(folder) if (folder / "state.db").exists() else []
     saved = out / "qa_flags.json"
-    if not flags and saved.exists():
+    if saved.exists() and not ((folder / "state.db").exists() and qa_flags(folder)):
         import_qa(folder, saved)
-        flags = qa_flags(folder)
-    if flags:
-        saved.write_text(json.dumps(flags, indent=1), encoding="utf-8")
+    flags = export_flags(folder)
+    final = final_verdicts(folder)
+    for h in doc["hulls"]:
+        h["final_verdict"] = final.get(h["id"], h["verdict"])
     doc["qa_flags"] = flags
     site = doc["run"].get("hot_spot") or next((s["site"] for s in doc["scenes"] if s.get("site")), "")
     title = (site.split("_")[0].title() + " STS QA").strip()
@@ -395,7 +402,10 @@ def main() -> int:
     by = {}
     for h in doc["hulls"]:
         by[h["verdict"]] = by.get(h["verdict"], 0) + 1
-    print(f"report in {report_dir(folder)}: {len(doc['scenes'])} scenes, listed {by}, fixtures {doc['fixtures']['totals']}")
+    after = {}
+    for v in final_verdicts(folder).values():
+        after[v] = after.get(v, 0) + 1
+    print(f"report in {report_dir(folder)}: {len(doc['scenes'])} scenes, listed {by}, after QA {after}, fixtures {doc['fixtures']['totals']}")
     return 0
 
 

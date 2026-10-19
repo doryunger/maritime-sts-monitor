@@ -35,7 +35,7 @@ Conventions are in CLAUDE.md (already loaded). Read docs by section only: `grep 
 - `.venv/Scripts/python -m maritime_tip_cue.watch.run --site <hot spot> --end <ISO> --days 7 --out data/runs/<name> [--reanalyse]` a run (long: launch detached with a log file; resumes from `state.db`).
 - `.venv/Scripts/python -m maritime_tip_cue.ais.match <run folder>` match AIS to pair hulls (`--all-checked --stats` for limit measurements).
 - `.venv/Scripts/python -m maritime_tip_cue.watch.state summary <run folder>` per-scene counts.
-- `.venv/Scripts/python -m maritime_tip_cue.watch.report <run folder> --qa` also writes `reports/<run>/qa.html` (QA page to publish); `--qa-import <run>/qa_export/flags` loads reviewed flags (pulled from the page's `flags` collection) into `qa_flags`, writes the committed `reports/<run>/qa_flags.json` and rebuilds `qa.html` with them.
+- `.venv/Scripts/python -m maritime_tip_cue.watch.report <run folder> --qa` also writes `reports/<run>/qa.html` (QA page to publish); `.venv/Scripts/python -m maritime_tip_cue.watch.qa <run folder>` serves the QA page locally; each Save writes `qa_flags` in `state.db` and `reports/<run>/qa_flags.json`. A published page's flags come in with `watch.report <run> --qa-import <run>/qa_export/flags`. QA-corrected verdicts are the `findings` view, which AIS matching and publishing read.
 - `.venv/Scripts/python -m maritime_tip_cue.watch.report <run folder> [--singles N] [--seed S]` static report (`reports/<run>/index.html`, `data.json`, `img/`, committed to git) from a run's `state.db`; runs without the detector.
 - `.venv/Scripts/python -m maritime_tip_cue.hotspots [publish <file>]` print (or replace) the S3 hot-spot list.
 
