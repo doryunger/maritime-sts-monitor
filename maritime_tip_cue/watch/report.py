@@ -338,14 +338,34 @@ def build(folder: Path, n_singles: int, seed: int) -> dict:
     return doc
 
 
+def write_qa(folder: Path) -> Path:
+    out = folder / "report"
+    doc = json.loads((out / "data.json").read_text(encoding="utf-8"))
+    site = doc["run"].get("hot_spot") or next((s["site"] for s in doc["scenes"] if s.get("site")), "")
+    title = (site.split("_")[0].title() + " STS QA").strip()
+    page = (Path(__file__).parent / "qa.html").read_text(encoding="utf-8")
+    page = page.replace("__TITLE__", title).replace("__RUN__", folder.name).replace("__DATA__", json.dumps(doc, separators=(",", ":")).replace("</", "<\\/"))
+    path = out / "qa.html"
+    path.write_text(page, encoding="utf-8")
+    return path
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="maritime_tip_cue.watch.report")
     parser.add_argument("folder")
     parser.add_argument("--singles", type=int, default=24)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--qa", action="store_true")
+    parser.add_argument("--qa-only", action="store_true")
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
-    doc = build(Path(args.folder).resolve(), args.singles, args.seed)
+    folder = Path(args.folder).resolve()
+    if args.qa_only:
+        print(f"QA page {write_qa(folder)}")
+        return 0
+    doc = build(folder, args.singles, args.seed)
+    if args.qa:
+        print(f"QA page {write_qa(folder)}")
     by = {}
     for h in doc["hulls"]:
         by[h["verdict"]] = by.get(h["verdict"], 0) + 1

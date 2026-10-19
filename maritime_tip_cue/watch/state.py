@@ -41,6 +41,10 @@ create table if not exists outputs (
 create table if not exists captures (
     finding_id text primary key, local_path text, s3_uri text, format text
 );
+create table if not exists qa_flags (
+    hull_id text primary key, scene_id text, source text, verdict text, lat real, lon real, status text,
+    correct_verdict text, note text, reviewer text, updated_utc text, imported_utc text
+);
 create table if not exists events (
     event_id integer primary key autoincrement, time_utc text, run_id integer, level text, scene_id text,
     message text
@@ -257,15 +261,34 @@ def summary(folder: Path) -> list[str]:
     return lines
 
 
+def import_qa(folder: Path, flags_dir: Path) -> str:
+    store = Store(folder / "state.db", folder)
+    rows = []
+    for path in sorted(flags_dir.rglob("*.json")):
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        d = doc.get("data", doc)
+        if "hull_id" not in d:
+            continue
+        rows.append((d["hull_id"], d.get("scene_id"), d.get("source"), d.get("verdict"), d.get("lat"), d.get("lon"), d.get("status"),
+                     d.get("correct_verdict"), d.get("note"), d.get("by"), d.get("updated_utc"), now()))
+    with store.tx():
+        store.db.executemany("insert or replace into qa_flags values (?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+    store.close()
+    return f"imported {len(rows)} QA flags into {folder / 'state.db'}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="maritime_tip_cue.watch.state")
-    parser.add_argument("command", choices=("import", "summary"))
+    parser.add_argument("command", choices=("import", "summary", "qa-import"))
     parser.add_argument("folder")
+    parser.add_argument("flags", nargs="?")
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
     folder = Path(args.folder)
     if args.command == "import":
         print(import_folder(folder))
+    elif args.command == "qa-import":
+        print(import_qa(folder, Path(args.flags)))
     else:
         print("\n".join(summary(folder)))
     return 0

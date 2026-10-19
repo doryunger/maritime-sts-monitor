@@ -32,5 +32,6 @@ Conventions are in CLAUDE.md (already loaded). Read docs by section only: `grep 
 - `.venv/Scripts/python -m maritime_tip_cue.sts.score` per-set STS tallies.
 - `.venv/Scripts/python -m maritime_tip_cue.watch.run --site <hot spot> --end <ISO> --days 7 --out data/runs/<name> [--reanalyse]` a run (long: launch detached with a log file; resumes from `state.db`).
 - `.venv/Scripts/python -m maritime_tip_cue.watch.state summary <run folder>` per-scene counts.
+- `.venv/Scripts/python -m maritime_tip_cue.watch.report <run folder> --qa` also writes `report/qa.html` (QA page to publish); `watch.state qa-import <run folder> <flags dir>` loads reviewed flags into `qa_flags`.
 - `.venv/Scripts/python -m maritime_tip_cue.watch.report <run folder> [--singles N] [--seed S]` static report (`report/index.html`, `data.json`, `img/`) from a run's `state.db`; runs without the detector.
 - `.venv/Scripts/python -m maritime_tip_cue.hotspots [publish <file>]` print (or replace) the S3 hot-spot list.

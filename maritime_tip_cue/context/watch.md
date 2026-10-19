@@ -71,3 +71,14 @@ distance); a kept detection without a hull was not checked (`not_checked`, an ob
 shore distance threshold of the run is not stored, so the reason is derived from the box and the measured distance,
 not from the threshold. The fixture verdict is the one the fixture rules give, which ignore speed, so a stopped-ship
 fixture that the run calls `moving` counts as a difference.
+
+## qa
+`report.py --qa` (or `--qa-only` on an existing `report/data.json`) writes `report/qa.html`, a page meant to be
+published as a private artifact with the `db` and `user` capabilities: one card per listed hull with a flag
+(OK, wrong verdict with the correct one, bad geometry, other; unmeasured hulls take single, single moving or
+pair directly) and a note, stored in the page's `flags` collection keyed by hull id. Flags are pulled back with
+the artifact tools into `<run>/qa_export/` and loaded with `state.py qa-import <run> <dir>` into `qa_flags`,
+so the review stays with the run and can become fixture labels. The page carries the verdicts as they were when
+it was built; a later `--reanalyse` changes `hulls` but not the page, and each flag keeps the verdict it judged.
+First use (fujairah_outer 12-19 Oct 2026, 64 hulls): 11 of 18 pairs OK, 4 wrong, 2 rigs or barges, 1 small
+craft alongside; all 10 unmeasured were single ships.

@@ -1,0 +1,270 @@
+<title>__TITLE__</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600;700&display=swap">
+<style>
+:root{
+  --bg:#f3f5f6;--surface:#ffffff;--fg:#17212b;--muted:#5a6873;--line:#d3dbe0;--accent:#0f6e78;--accent-ink:#ffffff;
+  --pair:#b3261e;--possible:#a35a00;--moving:#1d5fa8;--unmeasured:#6b3fa0;--single:#4a5a66;--ok:#2f7a3a;--bad:#b3261e;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;--mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1519;--surface:#172026;--fg:#e3e9ed;--muted:#94a3ad;--line:#2b3840;--accent:#4fb3bd;--accent-ink:#0f1519;
+  --pair:#ff7a70;--possible:#f0a64a;--moving:#7ab4f0;--unmeasured:#c49af0;--single:#9fb0bb;--ok:#7fcf8a;--bad:#ff7a70;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1519;--surface:#172026;--fg:#e3e9ed;--muted:#94a3ad;--line:#2b3840;--accent:#4fb3bd;--accent-ink:#0f1519;
+  --pair:#ff7a70;--possible:#f0a64a;--moving:#7ab4f0;--unmeasured:#c49af0;--single:#9fb0bb;--ok:#7fcf8a;--bad:#ff7a70;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:14px/1.5 var(--sans)}
+main{max-width:1240px;margin:0 auto;padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:12px}
+h1{font-size:1.6rem;margin:0;text-wrap:balance}
+h2{font-size:1.15rem;margin:20px 0 0;padding-bottom:4px;border-bottom:1px solid var(--line);text-wrap:balance}
+h3{font-size:1rem;margin:8px 0 0}
+.sub{color:var(--muted);margin:0}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:2px 20px;margin:0}
+.facts div{display:flex;gap:8px;min-width:0}
+.facts dt{color:var(--muted);flex:none}
+.facts dd{margin:0;overflow-wrap:anywhere;font-family:var(--mono);font-size:12.5px}
+.tally{display:flex;flex-wrap:wrap;gap:8px;align-items:center;position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding-block:8px;border-bottom:1px solid var(--line)}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.chip{font:600 12px var(--sans);letter-spacing:.02em;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:999px;padding:3px 10px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.chip:focus-visible,button:focus-visible,textarea:focus-visible,label:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.status{color:var(--muted);font-size:12px;margin-left:auto}
+.wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:12.5px;font-variant-numeric:tabular-nums}
+th,td{padding:4px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+td.n,th.n{text-align:right}
+th{color:var(--muted);font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,400px),1fr));gap:12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:10px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.card[data-flag="ok"],.card[data-flag="is_pair"],.card[data-flag="is_single"],.card[data-flag="is_moving"]{border-color:var(--ok)}
+.fix{display:flex;flex-direction:column;gap:4px;padding:6px 8px;border-left:2px solid var(--bad);background:var(--bg)}
+.fix[hidden]{display:none!important}
+.card[data-flag="wrong_verdict"],.card[data-flag="bad_geometry"],.card[data-flag="other"]{border-color:var(--bad);box-shadow:inset 3px 0 0 var(--bad)}
+.pics{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.pics figure{margin:0;display:flex;flex-direction:column;gap:2px}
+.pics figcaption{font-size:11px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+.pics img{width:100%;max-width:100%;height:auto;display:block;image-rendering:pixelated;background:#000}
+.nopic{padding:24px 8px;color:var(--muted);text-align:center;grid-column:1/-1}
+.cap{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline}
+.badge{font-weight:700;letter-spacing:.03em;text-transform:uppercase;font-size:12px}
+.v-pair{color:var(--pair)}.v-possible_pair{color:var(--possible)}.v-moving{color:var(--moving)}.v-unmeasured{color:var(--unmeasured)}.v-single{color:var(--single)}
+.mono{font-family:var(--mono);font-size:12px}
+.meta{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.m{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0 14px;margin:0;font-size:12px;font-variant-numeric:tabular-nums}
+.m div{display:flex;justify-content:space-between;gap:6px;min-width:0}
+.m dt{color:var(--muted);overflow-wrap:anywhere}.m dd{margin:0;font-family:var(--mono)}
+.qa{border-top:1px dashed var(--line);padding-top:8px;display:flex;flex-direction:column;gap:6px}
+.opts{display:flex;flex-wrap:wrap;gap:6px}
+.opts label{display:flex;align-items:center;gap:4px;font-size:12.5px;border:1px solid var(--line);border-radius:4px;padding:2px 8px;cursor:pointer}
+.opts input{accent-color:var(--accent);margin:0}
+textarea{font:13px/1.4 var(--sans);color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:6px;resize:vertical;min-height:2.6em;width:100%}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button.save{font:600 12.5px var(--sans);background:var(--accent);color:var(--accent-ink);border:0;border-radius:4px;padding:5px 12px;cursor:pointer}
+button.save:disabled{opacity:.5;cursor:default}
+.saved{font-size:12px;color:var(--muted)}
+.st-agree{color:var(--ok)}.st-differ,.st-missing{color:var(--bad);font-weight:700}
+details{margin:4px 0}
+summary{cursor:pointer;color:var(--accent)}
+a{color:var(--accent)}
+.err{color:var(--bad)}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+<main>
+  <header>
+    <h1>__TITLE__</h1>
+    <p class="sub">Run <span class="mono">__RUN__</span>. Flag any hull whose verdict or drawn geometry looks wrong; flags are saved for Claude to read.</p>
+  </header>
+  <dl class="facts" id="facts"></dl>
+  <div class="tally" id="tally" role="toolbar" aria-label="Filter by flag">
+    <button class="chip" id="f-all" aria-pressed="true" data-f="all">All</button>
+    <button class="chip" id="f-unflagged" aria-pressed="false" data-f="unflagged">Unflagged</button>
+    <button class="chip" id="f-issue" aria-pressed="false" data-f="issue">Issues</button>
+    <button class="chip" id="f-ok" aria-pressed="false" data-f="ok">OK</button>
+    <span class="status" id="status">Flags load once the page connects.</span>
+  </div>
+  <h2>Scenes</h2>
+  <div class="wrap"><table id="scenes"></table></div>
+  <div id="sections"></div>
+  <h2>Fixture comparison</h2>
+  <div id="fixtures"></div>
+</main>
+<script id="data" type="application/json">__DATA__</script>
+<script>
+const D = JSON.parse(document.getElementById("data").textContent);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const num = (v, d = 2) => v === null || v === undefined ? "n/a" : typeof v === "number" ? (Number.isInteger(v) ? String(v) : v.toFixed(d)) : esc(v);
+const when = t => (t || "").replace("T", " ").slice(0, 16) + "Z";
+const VERDICTS = ["pair", "possible_pair", "single", "moving", "unmeasured"];
+const FLAGS = [["ok", "OK"], ["wrong_verdict", "Wrong verdict"], ["bad_geometry", "Bad geometry"], ["other", "Other issue"]];
+const TRUTH = [["is_single", "Single"], ["is_moving", "Single (moving)"], ["is_pair", "Pair"]];
+const VERDICT_NAMES = {pair: "Pair", single: "Single", moving: "Single (moving)"};
+const alternatives = v => Object.keys(VERDICT_NAMES).filter(k => k !== v);
+const LABELLED = ["ok", "is_pair", "is_single", "is_moving"];
+const docId = id => id.replace(/[^A-Za-z0-9_-]/g, "_");
+const flags = {};
+let db = null, me = null, filter = "all";
+
+function facts() {
+  const r = D.run, s = r.singles_sample;
+  const rows = [["Hot spot", r.hot_spot || [...new Set(D.scenes.map(x => x.site))].join(", ")], ["Window", when(r.window[0]) + " to " + when(r.window[1])],
+    ["Sources", r.sources || "s1,s2"], ["Rules sha1", r.rules_sha1 || "n/a"], ["Commit", r.commit ? r.commit.slice(0, 10) : "n/a"],
+    ["Singles sample", s.n + " of " + s.of + " (seed " + s.seed + ")"]];
+  document.getElementById("facts").innerHTML = rows.map(([k, v]) => "<div><dt>" + esc(k) + "</dt><dd>" + esc(v) + "</dd></div>").join("");
+}
+
+function scenes() {
+  const cols = ["source", "time", "detector_s", "raw", "kept", "checked", ...VERDICTS];
+  const isN = c => !["source", "time"].includes(c);
+  const head = "<tr><th>scene</th>" + cols.map(c => "<th" + (isN(c) ? ' class="n"' : "") + ">" + esc(c) + "</th>").join("") + "</tr>";
+  const tot = {}; cols.filter(isN).forEach(k => tot[k] = 0);
+  const body = D.scenes.map(s => {
+    Object.keys(tot).forEach(k => tot[k] += s[k] || 0);
+    return "<tr><td class='mono' title='" + esc(s.scene_id) + "'>" + esc(s.scene_id.slice(0, 26) + "…" + s.scene_id.slice(-22)) + "</td>" +
+      cols.map(c => "<td class='" + (isN(c) ? "n" : "") + "'>" + (c === "time" ? when(s[c]) : c === "source" ? esc(s[c]).toUpperCase() : num(s[c], 0)) + "</td>").join("") + "</tr>";
+  }).join("");
+  const foot = "<tr><th>total " + D.scenes.length + "</th><th></th><th></th>" + cols.filter(isN).map(k => "<th class='n'>" + num(tot[k], 0) + "</th>").join("") + "</tr>";
+  document.getElementById("scenes").innerHTML = head + body + foot;
+}
+
+function card(h) {
+  const pics = h.raw
+    ? "<figure><img loading='lazy' src='" + esc(h.raw) + "' alt='Raw capture of " + esc(h.verdict) + " hull'><figcaption>Raw</figcaption></figure><figure><img loading='lazy' src='" + esc(h.overlay) + "' alt='Same crop with hull outlines'><figcaption>Outlines</figcaption></figure>"
+    : "<div class='nopic'>No pixels stored for this hull</div>";
+  const a = h.ai2 || {};
+  const ai2 = "Ai2 " + num(a.length_m, 0) + " × " + num(a.width_m, 0) + " m, heading " + num(a.heading, 0) + "°" + (a.speed_kn !== undefined && a.speed_kn !== null ? ", " + num(a.speed_kn, 1) + " kn" : "");
+  const m = Object.entries(h.measures || {}).map(([k, v]) => "<div><dt>" + esc(k) + "</dt><dd>" + num(v) + "</dd></div>").join("");
+  const id = docId(h.id);
+  const opts = (h.verdict === "unmeasured" ? TRUTH : FLAGS).map(([v, t]) => "<label><input type='radio' name='q-" + id + "' id='q-" + id + "-" + v + "' value='" + v + "'>" + t + "</label>").join("");
+  return "<article class='card' id='h-" + esc(h.id) + "' data-doc='" + id + "' data-flag=''>" +
+    "<div class='pics'>" + pics + "</div>" +
+    "<div class='cap'><span class='badge v-" + h.verdict + "'>" + h.verdict.replace("_", " ") + "</span><span class='mono'>" + h.source.toUpperCase() + " " + when(h.time) + "</span></div>" +
+    "<div class='mono'>" + num(h.lat, 5) + " N, " + num(h.lon, 5) + " E</div><div class='meta'>" + esc(ai2) + "</div>" +
+    "<dl class='m'>" + m + "</dl><div class='meta mono'>" + esc(h.id) + "</div>" +
+    "<div class='qa'><div class='opts' role='radiogroup' aria-label='QA flag'>" + opts + "</div>" +
+    (h.verdict === "unmeasured" ? "" : "<div class='fix' id='x-" + id + "' hidden><span class='meta'>Correct verdict:</span><div class='opts' role='radiogroup' aria-label='Correct verdict'>" +
+      alternatives(h.verdict).map(v => "<label><input type='radio' name='c-" + id + "' id='c-" + id + "-" + v + "' value='" + v + "'>" + VERDICT_NAMES[v] + "</label>").join("") + "</div></div>") +
+    "<textarea id='n-" + id + "' placeholder='What looks wrong? (optional)' rows='2'></textarea>" +
+    "<div class='row'><button class='save' id='s-" + id + "' disabled>Save flag</button><span class='saved' id='w-" + id + "'></span></div></div></article>";
+}
+
+function sections() {
+  const titles = {pair: "Pairs", possible_pair: "Possible pairs", unmeasured: "Unmeasured", moving: "Moving", single: "Singles (random sample)"};
+  document.getElementById("sections").innerHTML = ["pair", "possible_pair", "unmeasured", "moving", "single"].map(v => {
+    const hs = D.hulls.filter(h => h.verdict === v);
+    return "<h2>" + titles[v] + " (" + hs.length + (v === "single" ? " of " + D.run.singles_sample.of : "") + ")</h2>" +
+      (hs.length ? "<div class='grid'>" + hs.map(card).join("") + "</div>" : "<p class='meta'>None in this run.</p>");
+  }).join("");
+}
+
+function fixtures() {
+  const f = D.fixtures, el = document.getElementById("fixtures");
+  if (!f.passes.length) { el.innerHTML = "<p class='meta'>No labelled set covers this run.</p>"; return; }
+  const order = {differ: 0, missing: 1, outside_area: 2, agree: 3};
+  el.innerHTML = (f.totals ? "<p><b>" + f.totals.agree + " of " + f.totals.objects + " labelled objects agree</b>, " + f.totals.differ + " differ, " + f.totals.missing + " missing.</p>" : "") +
+    f.passes.map(p => {
+      if (!p.covered) return "<h3>" + esc(p.name) + " (" + p.source.toUpperCase() + ")</h3><p class='meta'>Not covered: no " + p.source.toUpperCase() + " scene on " + esc(p.date) + " in this run.</p>";
+      const t = p.totals, keys = [...new Set(p.items.flatMap(i => Object.keys(i.measures || {})))];
+      const reasons = Object.entries(t.missing_by_reason).map(([k, v]) => k.replace("_", " ") + " " + v).join(", ");
+      const rows = p.items.slice().sort((a, b) => order[a.status] - order[b.status]).map(i => {
+        const link = i.hull ? "<a href='#h-" + esc(i.hull) + "'>" + esc(i.key) + "</a>" : esc(i.key);
+        const meas = keys.map(k => { const m = (i.measures || {})[k] || [null, null]; return "<td class='n'>" + num(m[0]) + " / " + num(m[1]) + "</td>"; }).join("");
+        const why = i.status === "missing" ? esc((i.reason || "").replace("_", " ")) + (i.shore_m != null ? " (" + i.shore_m + " m from shore)" : "") : "";
+        return "<tr><td>" + link + "</td><td>" + esc(i.label_user || "") + "</td><td>" + esc(i.fixture_verdict) + "</td><td>" + esc(i.run_verdict || "") + "</td><td class='st-" + i.status + "'>" + i.status + "</td><td class='n'>" + num(i.distance_m, 0) + "</td>" + meas + "<td>" + why + "</td></tr>";
+      });
+      const head = "<tr><th>object</th><th>label</th><th>expected</th><th>run</th><th>status</th><th class='n'>m</th>" + keys.map(k => "<th class='n'>" + esc(k) + " (expected / run)</th>").join("") + "<th>why missing</th></tr>";
+      const split = p.items.filter(i => i.status !== "agree").length;
+      return "<h3>" + esc(p.name) + " (" + p.source.toUpperCase() + ")</h3><p>" + t.agree + " of " + t.objects + " agree, " + t.differ + " differ, " + t.missing + " missing" + (reasons ? " (" + esc(reasons) + ")" : "") + ".</p>" +
+        (split ? "<div class='wrap'><table>" + head + rows.slice(0, split).join("") + "</table></div>" : "") +
+        "<details><summary>Show the " + t.agree + " agreeing objects</summary><div class='wrap'><table>" + head + rows.slice(split).join("") + "</table></div></details>";
+    }).join("");
+}
+
+function paint(id) {
+  const c = document.querySelector(".card[data-doc='" + id + "']");
+  if (!c) return;
+  const f = flags[id];
+  c.dataset.flag = f ? f.status : "";
+  const r = f && document.getElementById("q-" + id + "-" + f.status);
+  if (r && !c.contains(document.activeElement)) {
+    r.checked = true; document.getElementById("n-" + id).value = f.note || "";
+    const cv = f.correct_verdict && document.getElementById("c-" + id + "-" + f.correct_verdict);
+    if (cv) cv.checked = true;
+  }
+  if (!f) c.querySelectorAll("input[type=radio]").forEach(x => x.checked = false);
+  showFix(c);
+  document.getElementById("w-" + id).textContent = f ? "Saved " + when(f.updated_utc) : "";
+  applyFilter(c);
+}
+
+function showFix(c) {
+  const x = document.getElementById("x-" + c.dataset.doc); if (!x) return;
+  const picked = c.querySelector("input[name='q-" + c.dataset.doc + "']:checked");
+  x.hidden = !(picked && picked.value === "wrong_verdict");
+}
+
+function ready(c) {
+  const id = c.dataset.doc, picked = c.querySelector("input[name='q-" + id + "']:checked");
+  if (!picked) return false;
+  return picked.value !== "wrong_verdict" || !!c.querySelector("input[name='c-" + id + "']:checked");
+}
+
+function applyFilter(c) {
+  const s = c.dataset.flag;
+  const issue = s && !LABELLED.includes(s);
+  c.hidden = filter === "unflagged" ? !!s : filter === "issue" ? !issue : filter === "ok" ? !s || issue : false;
+}
+
+function tally() {
+  const v = Object.values(flags), n = document.querySelectorAll(".card").length;
+  const labelled = v.filter(f => f.status.startsWith("is_")).length;
+  const issues = v.filter(f => !LABELLED.includes(f.status)).length, ok = v.length - issues - labelled;
+  document.getElementById("status").textContent = db ? v.length + " of " + n + " reviewed: " + ok + " OK, " + issues + " with issues, " + labelled + " unmeasured labelled." : "Flags are unavailable in this view; the report is read-only.";
+}
+
+function wire() {
+  document.getElementById("tally").addEventListener("click", e => {
+    const b = e.target.closest(".chip"); if (!b) return;
+    filter = b.dataset.f;
+    document.querySelectorAll(".chip").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    document.querySelectorAll(".card").forEach(applyFilter);
+  });
+  document.getElementById("sections").addEventListener("input", e => {
+    const c = e.target.closest(".card"); if (!c) return;
+    showFix(c);
+    if (db) document.getElementById("s-" + c.dataset.doc).disabled = !ready(c);
+  });
+  document.getElementById("sections").addEventListener("click", async e => {
+    const b = e.target.closest("button.save"); if (!b || !db) return;
+    const c = b.closest(".card"), id = c.dataset.doc, h = D.hulls.find(x => docId(x.id) === id);
+    if (!ready(c)) return;
+    const picked = c.querySelector("input[name='q-" + id + "']:checked");
+    const fix = picked.value === "wrong_verdict" ? c.querySelector("input[name='c-" + id + "']:checked").value : null;
+    const w = document.getElementById("w-" + id);
+    b.disabled = true; w.textContent = "Saving…";
+    const doc = {hull_id: h.id, scene_id: h.scene_id, source: h.source, verdict: h.verdict, lat: h.lat, lon: h.lon, status: picked.value, correct_verdict: fix,
+      note: document.getElementById("n-" + id).value.trim(), updated_utc: new Date().toISOString(), run: "__RUN__", by: me};
+    try { await db.doc("flags/" + id).set(doc); w.textContent = "Saved"; }
+    catch (err) { w.textContent = "Not saved: " + (err && err.code === "not_granted" ? "you can view this report but not flag it" : (err && err.message) || "try again"); b.disabled = false; }
+  });
+}
+
+async function connect() {
+  if (!window.claude || !window.claude.use) { tally(); return; }
+  db = await window.claude.use("db");
+  const user = await window.claude.use("user");
+  if (user) { try { me = await user.id(); } catch (e) { me = null; } }
+  if (!db) { tally(); return; }
+  db.collection("flags").onSnapshot(snap => {
+    snap.docChanges().forEach(ch => {
+      if (ch.type === "removed") delete flags[ch.doc.id]; else flags[ch.doc.id] = ch.doc.data();
+      paint(ch.doc.id);
+    });
+    tally();
+  }, () => { document.getElementById("status").textContent = "Flags could not be loaded; reload to try again."; });
+  tally();
+}
+
+facts(); scenes(); sections(); fixtures(); wire(); connect();
+</script>
