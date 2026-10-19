@@ -7,6 +7,15 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+AIS_MATCHES = """
+create table if not exists ais_matches (
+    scene_id text, site text, hull_id text, ship_id text, is_sat integer, name text, imo text, mmsi text, flag text,
+    seen_utc text, report_age_min real, method text, rep_lat real, rep_lon real, proj_lat real, proj_lon real,
+    dist_a_m real, dist_b_m real, limit_m real, ais_length_m real, ais_width_m real, meas_length_m real,
+    length_diff_m real, heading_diff_deg real, speed_kn real, chosen integer, slot text, reasons text
+);
+"""
+
 SCHEMA = """
 create table if not exists runs (
     run_id integer primary key autoincrement,
@@ -28,10 +37,6 @@ create table if not exists hulls (
     scene_id text, site text, hull_id text, lat real, lon real, ai2_length_m real, ai2_width_m real,
     ai2_heading real, verdict text, role text, record text,
     primary key (scene_id, site, hull_id)
-);
-create table if not exists ais_matches (
-    scene_id text, site text, hull_id text, mmsi text, candidate text, chosen integer, distance_m real,
-    reasons text
 );
 create table if not exists outputs (
     path text primary key, s3_uri text, created_utc text, capture_date text, site text, source text,
@@ -76,7 +81,7 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self.db.execute("pragma journal_mode=wal")
         self.db.execute("pragma busy_timeout=60000")
-        self.db.executescript(SCHEMA)
+        self.db.executescript(SCHEMA + AIS_MATCHES)
         self.depth = 0
 
     def close(self) -> None:

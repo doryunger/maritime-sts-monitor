@@ -613,6 +613,25 @@
     }
   },
   "ais_match": {
+    "search_window_min": {
+      "value": 180,
+      "unit": "min",
+      "basis": "guess"
+    },
+    "search_radius_km": {
+      "value": 5,
+      "unit": "km",
+      "basis": "guess"
+    },
+    "baseline_clearance_km": {
+      "value": 2,
+      "unit": "km",
+      "basis": "guess: chance baseline points keep this far from every hull and from land."
+    },
+    "baseline_seed": {
+      "value": 7,
+      "basis": "fixed seed for the chance baseline points."
+    },
     "max_distance_km": {
       "value": 1.0,
       "unit": "km",
@@ -624,9 +643,9 @@
       "basis": "guess"
     },
     "max_report_age_min": {
-      "value": null,
+      "value": 60,
       "unit": "min",
-      "basis": "tbd"
+      "basis": "user decision 2026-10-19: reports older than this at capture time are not used. Fujairah 12-19 Oct 2026, nearest report to checked hulls: median age 5-9 min, p95 17-55 min; a 154 min old report gave a likely wrong match ~110 m off its hull."
     },
     "length_tolerance_m": {
       "value": null,
@@ -637,6 +656,11 @@
       "value": null,
       "unit": "deg",
       "basis": "tbd"
+    },
+    "party_max_distance_m": {
+      "value": 300,
+      "unit": "m",
+      "basis": "user decision 2026-10-19: an AIS ship counts as a party only when its position projected to the capture time lies within this of its hull (S2: hull A or hull B; S1: the pair outline centre). On the Fujairah QA-confirmed pairs real partners sat 65-180 m from their hull, while the B ships picked by a 1 km plus half-outline allowance sat 850-1,100 m away and were other ships."
     }
   },
   "detectors": {

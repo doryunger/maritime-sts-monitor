@@ -68,8 +68,8 @@ are dropped.
    width and a second-hull search beside it; Sentinel-1 uses the radar outline and two light lines.
 4. **AIS enrichment**: from the AIS archive, the AIS positions in and around the
    hot spot near the pass time, projected to the capture time, matched to each hull by position,
-   length and heading. Result per hull: named (name, flag, type, size; IMO from the archive's `identities` view
-   where resolved; the archive has no MMSI), or no AIS match. A
+   length and heading. Result per hull: named (name, flag, type, size; IMO and MMSI from the archive's `identities` view
+   where resolved), or no AIS match. A
    pair with one or both hulls unmatched is a stronger lead, since a ship there without AIS is
    hiding. Matching parameters go in a rules graph, `null` / `basis: "tbd"` until measured.
 5. **AIS-only leads**: STS candidate pairs found in the AIS archive (two stopped tankers alongside,
