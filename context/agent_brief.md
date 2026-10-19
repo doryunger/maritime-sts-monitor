@@ -8,7 +8,8 @@ Conventions are in CLAUDE.md (already loaded). Read docs by section only: `grep 
   `s1pair.py` (Sentinel-1 outline pair), `ai2point.py` (Ai2 point half-pixel shift), `rules.py` (reads
   `rules/sts_graph.json`), `fixtures.py` (fixture loaders and tallies), `score.py` (CLI summary).
   Why notes: `maritime_tip_cue/context/sts.md`.
-- `maritime_tip_cue/config.py`, `db/`, `__main__.py initdb`: AIS-era scaffold, removed in stage 2.
+- `maritime_tip_cue/hotspots.py`: loads the shared hot-spot list from S3 (`config.yaml` `s3`, bucket and keys in `.env`).
+- `maritime_tip_cue/config.py`: `.env` and `config.yaml`. `db/`, `__main__.py initdb`: AIS-era scaffold, removed in stage 2.
 
 ## Rules
 - `rules/sts_graph.json`: scene selection, detection cleanup, pair check, AIS matching. Values only there; unknown stays `null` with `basis: "tbd"`.
@@ -25,3 +26,4 @@ Conventions are in CLAUDE.md (already loaded). Read docs by section only: `grep 
 ## Common commands (repo root)
 - `.venv/Scripts/python -m pytest tests -q` fixture tests (STS verdicts to 1e-6).
 - `.venv/Scripts/python -m maritime_tip_cue.sts.score` per-set STS tallies.
+- `.venv/Scripts/python -m maritime_tip_cue.hotspots [publish <file>]` print (or replace) the S3 hot-spot list.

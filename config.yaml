@@ -18,3 +18,7 @@ regions:
 track_retention_hours: 72
 coverage_cell_deg: 0.1
 coverage_window_hours: 24
+
+s3:
+  hotspots_key: hotspots/sts_hotspots.json
+  findings_prefix: sts/

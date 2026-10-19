@@ -34,8 +34,11 @@ Layers: **hot spot** (a site where STS is known to take place) → **pass** (one
 
 ## Hot spots
 
-One list for all repos, kept on S3; each repo reads it from there. Until it moves, the proof-of-
-concept list is `rules/sts_pairs.json` in `vessels-aggregator`:
+One list for all repos, kept on S3 at `hotspots/sts_hotspots.json` in the bucket named by
+`S3_BUCKET_NAME` (key in `config.yaml`); each repo reads it from there. This repo loads it with
+`maritime_tip_cue/hotspots.py` (`python -m maritime_tip_cue.hotspots` prints it). It was seeded on
+2026-10-19 from the proof-of-concept list in `vessels-aggregator` (`rules/sts_pairs.json`), which
+still reads its own copy:
 
 | Site | Area | Notes from the PoC (15 Jul – 15 Oct 2026) |
 |---|---|---|

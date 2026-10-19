@@ -12,3 +12,4 @@ pystac-client
 planetary-computer
 pytest
 ruff
+boto3
