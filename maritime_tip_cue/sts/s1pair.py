@@ -49,6 +49,20 @@ def light_separation(obj: dict, quantile: float) -> float | None:
     return None if sep is None else float(sep / width)
 
 
+def vessels(obj: dict) -> list[dict] | None:
+    par = (obj["d"] or {}).get("par")
+    if par is None or not obj.get("crs"):
+        return None
+    from rasterio.warp import transform as warp_transform
+
+    out = []
+    for p0, p1 in par["ext"]:
+        mx, my = (p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2
+        lon, lat = warp_transform(obj["crs"], "EPSG:4326", [float(mx)], [float(my)])
+        out.append({"lat": lat[0], "lon": lon[0], "line_m": float(np.hypot(*(np.asarray(p1) - np.asarray(p0))))})
+    return sorted(out, key=lambda v: -v["line_m"])
+
+
 def fill(d: dict, pixel: float) -> float:
     _, length, width = d["rect"]
     return len(d["xy"]) * pixel * pixel / max(length * width, 1e-9)
@@ -77,7 +91,7 @@ def evaluate(objects: list[dict], rules: dict) -> list[dict]:
     bl = blur(objects, c)
     rows = []
     for obj in objects:
-        rec = {"length_m": None, "width_beams": None, "light_separation": None, "overlap": None, "fill": None, "blur_m": bl}
+        rec = {"length_m": None, "width_beams": None, "light_separation": None, "overlap": None, "fill": None, "blur_m": bl, "vessels": None}
         d = obj["d"]
         if d is not None and obj["straight"]:
             _, length, width = d["rect"]
@@ -87,6 +101,7 @@ def evaluate(objects: list[dict], rules: dict) -> list[dict]:
                 width_beams=(width - bl) / (length / c["hull_length_to_beam"]),
                 light_separation=light_separation(obj, c["bright_quantile"]),
                 fill=fill(d, c["pixel_m"]),
+                vessels=vessels(obj),
             )
         v = verdict(rec, c)
         rec["weak_evidence"] = v == "possible_pair"

@@ -15,4 +15,7 @@
   and box. Below `ais_match.min_coverage_ships` the pair is "no archive data", never "no AIS": the archive has no
   reports over the Gulf of Oman before 2026-10-12, so run 1 (9 Oct) cannot be enriched. A matching run first clears
   the matches of hulls that are no longer pairs (after a re-check or QA), and only `pair` is matched.
+- Two vessels per pair: vessel 1 is hull A (S2) or the longer light line (S1), vessel 2 the hull B blob, the stepped
+  strip the S2 shape test found, or the other S1 light line. Each AIS slot is matched at its own vessel position, so
+  a named ship lands on the vessel it sits on. Before this both S1 slots sat on the outline centre.
 

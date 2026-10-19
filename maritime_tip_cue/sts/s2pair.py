@@ -425,7 +425,12 @@ def shape_step(win: dict, fix: dict, beam: float, cfg: dict) -> dict | None:
     slope, icpt, _ = trimmed_line(s[rest], e[rest], cfg["shape_trim_sigma"])
     base = slope * s[i:j] + icpt
     outward = (e[i:j] - base) * sign
+    rest_edge = float(np.median(e[rest]))
     return {
+        "b_t_m": rest_edge + sign * step_m / 2,
+        "b_s_m": float(np.mean(s[i:j])),
+        "b_width_m": step_m,
+        "b_length_m": (j - i) * cfg["grid_step_m"],
         "side": side,
         "step_beams": step_m / beam,
         "step_k": math.sqrt(max(gain, 0.0)),

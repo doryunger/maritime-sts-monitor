@@ -117,8 +117,12 @@ def hull_slots(row: dict) -> dict:
     length = rec.get("length_m") or rec.get("object_length_m")
     own = [d for d in (rec.get("object") or {}).get("detections", []) if d.get("own")]
     heading = own[0]["heading"] if own and own[0].get("heading") is not None else None
-    n = 2 if row["verdict"] in PAIR_VERDICTS else 1
-    slots = [{"slot": "ab"[i], "lat": row["lat"], "lon": row["lon"], "length": length, "heading": heading, "limit_extra_m": 0.0} for i in range(n)]
+    found = rec.get("vessels") or []
+    if row["verdict"] in PAIR_VERDICTS and len(found) == 2:
+        slots = [{"slot": "ab"[i], "lat": v["lat"], "lon": v["lon"], "length": length, "heading": heading, "limit_extra_m": 0.0} for i, v in enumerate(found)]
+    else:
+        n = 2 if row["verdict"] in PAIR_VERDICTS else 1
+        slots = [{"slot": "ab"[i], "lat": row["lat"], "lon": row["lon"], "length": length, "heading": heading, "limit_extra_m": 0.0} for i in range(n)]
     return {"source": "s1", "slots": slots, "centre": (row["lat"], row["lon"])}
 
 

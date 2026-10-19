@@ -31,3 +31,6 @@ Run page: facts,
 run vs after-QA verdict counts, and tabs for QA cards, scenes and the fixture comparison; tab and filter live in
 the URL so a view can be linked. Each card is headed by its detection ID (the hull id within the scene); `&hull=<id>`
 scrolls to that card and outlines it, and the card's link button copies that URL.
+Pair cards number the two vessels on the raw image (1 and 2, HTML markers over the untouched image, offset away
+from each other) from `vessels` in the run document, and list the AIS ship of each vessel below, N/A when unmatched.
+

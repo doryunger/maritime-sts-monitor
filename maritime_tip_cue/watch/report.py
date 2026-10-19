@@ -132,6 +132,41 @@ def window_of(scene: dict, rec: dict) -> str | None:
     return next((w["file"] for w in (scene["data"] or {}).get("index", []) if rec["hull_id"] in w["members"] and w["file"]), None)
 
 
+def vessel_points(root: Path, scene: dict, rec: dict, rules: dict) -> list[dict]:
+    folder = root / scene["folder"]
+    if scene["source"] == "s2":
+        chk = rec.get("check") or {}
+        pts = [(chk.get(f"hull_{w}_lat"), chk.get(f"hull_{w}_lon")) for w in ("a", "b")]
+        pts = [p for p in pts if None not in p]
+        window = window_of(scene, rec)
+        if len(pts) < 2 or window is None:
+            return []
+        z = np.load(folder / "s2_windows" / window)
+        tr = [float(v) for v in z["transform"][:6]]
+        h, w = z["band_B02"].shape
+        cx, cy = warp_transform("EPSG:4326", str(z["crs"]), [pts[0][1]], [pts[0][0]])
+        half = int(rules["review"]["crop_half_m"] / 10)
+        col0, row0 = (cx[0] - tr[2]) / tr[0], (tr[5] - cy[0]) / -tr[4]
+    else:
+        found = rec.get("vessels") or []
+        if len(found) < 2:
+            return []
+        obj = rec["object"]
+        z = np.load(folder / "chips" / obj["file"])
+        tr = [float(v) for v in z["transform"][:6]]
+        h, w = z["vh"].shape
+        pts = [(v["lat"], v["lon"]) for v in found]
+        half = min(int(rules["review"]["crop_half_m"] / 10), h // 2, w // 2)
+        col0, row0 = (obj["x"] - tr[2]) / tr[0], (tr[5] - obj["y"]) / -tr[4]
+    r0, c0, r1, c1 = review.crop_box(col0, row0, half, h, w)
+    xs, ys = warp_transform("EPSG:4326", str(z["crs"]), [p[1] for p in pts], [p[0] for p in pts])
+    out = []
+    for n, (x, y) in enumerate(zip(xs, ys), 1):
+        col, row = (x - tr[2]) / tr[0], (tr[5] - y) / -tr[4]
+        out.append({"n": n, "fx": (col - c0) / (c1 - c0), "fy": (row - r0) / (r1 - r0)})
+    return out
+
+
 def render(root: Path, scene: dict, rec: dict, rules: dict, overlay: bool) -> Image.Image | None:
     folder = root / scene["folder"]
     if scene["source"] == "s2":
@@ -332,6 +367,11 @@ def collect(folder: Path, n_singles: int = 24, seed: int = 0, keep: set | None =
         floor = rules["ais_match"]["min_coverage_ships"]
         for h in listed:
             h["ais"] = parties.get(h["id"], [])
+            scene_, rec_ = records[h["id"]]
+            try:
+                h["vessels"] = vessel_points(folder, scene_, rec_, rules)
+            except Exception:
+                h["vessels"] = []
             ships = coverage.get((h["scene_id"], h["site"]))
             h["ais_status"] = "matched" if h["ais"] else ("not_checked" if ships is None else ("no_data" if ships < floor else "no_match"))
         doc = {

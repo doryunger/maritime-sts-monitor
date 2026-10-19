@@ -186,8 +186,14 @@ def summarise(win: dict, res: dict) -> dict:
     }
     for k, v in (res.get("shape") or {}).items():
         out[f"shape_{k}"] = v
+    shape = res.get("shape") or {}
+    hulls = {"a": res.get("hull_a"), "b": res.get("hull_b")}
+    out["hull_b_source"] = "blob" if hulls["b"] else None
+    if hulls["b"] is None and res.get("shape_call") == "pair" and "b_t_m" in shape:
+        hulls["b"] = {"s_m": shape["b_s_m"], "t_m": shape["b_t_m"], "width_m": shape["b_width_m"], "length_m": shape["b_length_m"]}
+        out["hull_b_source"] = "shape"
     for which in ("a", "b"):
-        h = res.get(f"hull_{which}")
+        h = hulls[which]
         lat, lon = hull_centre(win, fix, h) if "x" in fix else (None, None)
         out |= {
             f"hull_{which}_lat": lat,

@@ -53,6 +53,7 @@ export default function HullCard({ run, hull, flag, onSaved, focused }: Props) {
   };
 
   const a = hull.ai2 || {};
+  const pair = hull.final_verdict === "pair";
   const changed = hull.final_verdict !== hull.verdict;
 
   return (
@@ -71,7 +72,20 @@ export default function HullCard({ run, hull, flag, onSaved, focused }: Props) {
         {hull.image ? (
           <>
             <figure onClick={() => setZoom("raw")}>
-              <img loading="lazy" src={api.image(run, hull.id, "raw")} alt={`Raw capture of ${label(hull.verdict)} hull`} />
+              <div className="pin-wrap">
+                <img loading="lazy" src={api.image(run, hull.id, "raw")} alt={`Raw capture of ${label(hull.verdict)} hull`} />
+                {pair && (hull.vessels || []).map((v, i, all) => {
+                  const o = all[1 - i] || v;
+                  const dx = v.fx - o.fx, dy = v.fy - o.fy, len = Math.hypot(dx, dy) || 1;
+                  const ox = (dx / len) * 16, oy = (dy / len) * 16 - (len === 1 ? 16 : 0);
+                  return (
+                    <span key={v.n}>
+                      <span className="dot" style={{ left: `${v.fx * 100}%`, top: `${v.fy * 100}%` }} />
+                      <span className="pin" style={{ left: `${v.fx * 100}%`, top: `${v.fy * 100}%`, transform: `translate(calc(-50% + ${ox}px), calc(-50% + ${oy}px))` }}>{v.n}</span>
+                    </span>
+                  );
+                })}
+              </div>
               <figcaption>Raw</figcaption>
             </figure>
             <figure onClick={() => setZoom("overlay")}>
@@ -93,7 +107,28 @@ export default function HullCard({ run, hull, flag, onSaved, focused }: Props) {
         Ai2 {num(a.length_m, 0)} × {num(a.width_m, 0)} m, heading {num(a.heading, 0)}°
         {a.speed_kn !== undefined && a.speed_kn !== null ? `, ${num(a.speed_kn, 1)} kn` : ""}
       </div>
-      {hull.ais?.length ? (
+      {pair && hull.ais_status !== "no_data" && hull.ais_status !== "not_checked" ? (
+        <div className="ais">
+          <div className="muted small">AIS</div>
+          {["a", "b"].map((slot, i) => {
+            const p = hull.ais.find((x) => x.slot === slot);
+            return (
+              <div key={slot} className="party">
+                <span className="pin static">{i + 1}</span>
+                {p ? (
+                  <span>
+                    <b>{p.name || p.mmsi || "unnamed"}</b>
+                    {p.flag ? ` (${p.flag})` : ""}
+                    {p.imo ? `, IMO ${p.imo}` : ""} <span className="muted">{num(p.distance_m, 0)} m, report {num(p.age_min, 0)} min old</span>
+                  </span>
+                ) : (
+                  <span className="muted">N/A</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : hull.ais?.length ? (
         <div className="ais">
           AIS:{" "}
           {hull.ais.map((p, i) => (

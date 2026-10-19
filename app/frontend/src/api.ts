@@ -56,6 +56,7 @@ export interface Hull {
   measures: Record<string, number | string | null>;
   ais: AisParty[];
   ais_status?: "matched" | "no_match" | "no_data" | "not_checked";
+  vessels?: { n: number; fx: number; fy: number }[];
 }
 
 export interface Flag {
