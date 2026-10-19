@@ -211,7 +211,7 @@ date (`date=YYYY-MM-DD/`), query them with DuckDB, and serve the map either as t
 from those files or as query results. No database server, which matches the "files in S3"
 decision.
 
-Measured in `vessels-aggregator` (DuckDB 1.5.6 with the spatial extension):
+Measured on the AIS archive's parquet files (DuckDB 1.5.6 with the spatial extension):
 
 | Step | Data | Time |
 |---|---|---|
@@ -233,13 +233,13 @@ Measured in `vessels-aggregator` (DuckDB 1.5.6 with the spatial extension):
 
 ## AIS archive limits for enrichment (recorded 2026-10-12)
 
-The `vessels-aggregator` archive is public vessel-map tiles read every 30 min, cargo and tanker
+The AIS archive is public vessel-map tiles read every 30 min, cargo and tanker
 types only (AIS ship types 7 and 8), 30 days kept. What that means for matching hulls:
 
 - **A sample, not full traffic.** ~13% of vessels drop out between snapshots, so a hull with no AIS
   match is not automatically a dark ship.
 - **No MMSI or IMO** in the rows: name, flag, type and dimensions only; IMO comes from the
-  aggregator's Equasis lookup where it resolved.
+  archive's `identities` view where it was resolved.
 - **Report time** comes from each tile's `Last-Modified` (cached up to 30 min by the provider's
   CDN), so a position can be up to 30 min older than its snapshot.
 - **Satellite-only rows** (`[SAT-AIS]`) get a new anonymous id on every serving and carry no

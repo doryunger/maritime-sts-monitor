@@ -2,8 +2,10 @@
 
 For what the project is (input, processing, output, decisions), see `README.md` — this file is
 about *how to work on it*. `PLAN.md` holds only the operative stages and open gaps; keep it current
-as stages finish. Measured research goes in `docs/feasibility.md`. AIS collection is out of scope here
-(it lives in the separate `vessels-aggregator` repo; this repo only queries its archive).
+as stages finish. Measured research goes in `docs/feasibility.md`. This repo holds all STS logic and is
+self-contained: AIS collection is the only thing outside it (the separate `vessels-aggregator`
+repo), reached solely through the AIS archive server. No code, rules or files are shared or
+referenced across the two; anything needed from there is copied in and owned here.
 
 **No comments in code files, anywhere in this repo** — no inline `#`/`//` comments, no explanatory
 docstrings, in any language, in any part of the tree. For the "why" behind a non-obvious design

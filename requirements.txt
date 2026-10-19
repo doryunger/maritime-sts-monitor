@@ -15,3 +15,6 @@ ruff
 boto3
 requests
 matplotlib
+adbc-driver-gizmosql
+pyarrow
+pandas

@@ -8,6 +8,7 @@ Conventions are in CLAUDE.md (already loaded). Read docs by section only: `grep 
   `s1pair.py` (Sentinel-1 outline pair), `ai2point.py` (Ai2 point half-pixel shift), `rules.py` (reads
   `rules/sts_graph.json`), `fixtures.py` (fixture loaders and tallies), `score.py` (CLI summary).
   Why notes: `maritime_tip_cue/context/sts.md`.
+- `maritime_tip_cue/ais/archive.py`: AIS archive client (GizmoSQL; `GIZMOSQL_*` in `.env`, cert path in `config.yaml`).
 - `maritime_tip_cue/hotspots.py`: loads the shared hot-spot list from S3 (`config.yaml` `s3`, bucket and keys in `.env`).
 - `maritime_tip_cue/config.py`: `.env` and `config.yaml`. `db/`, `__main__.py initdb`: AIS-era scaffold, removed in stage 2.
 
@@ -16,7 +17,7 @@ Conventions are in CLAUDE.md (already loaded). Read docs by section only: `grep 
 
 ## Data (gitignored `data/`)
 - `data/sts_fixtures/s1`, `data/sts_fixtures/s2`: expected verdicts of the STS proof of concept.
-- `data/poc_from_vessels_aggregator/`: imagery and STS outputs moved from vessels-aggregator.
+- `data/poc/`: proof-of-concept imagery and STS outputs (reference only).
 - Stage 0 detector bench (outside the repo): `C:\Users\Shadow\projects\ai2-detectors\` (README there).
 
 ## Docs

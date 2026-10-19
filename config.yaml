@@ -26,3 +26,7 @@ s3:
 land:
   - data/land/ne_10m_land.geojson
   - data/land/ne_10m_minor_islands.geojson
+
+ais_archive:
+  tls_root_cert: maritime_tip_cue/ais/archive_cert.pem
+  default_user: gizmosql_user

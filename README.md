@@ -6,7 +6,17 @@ hull alongside (a possible STS transfer), and then uses AIS to name the vessels 
 that they were not broadcasting. AIS alone can also point to a possible STS place and time outside
 the hot spots; that is a weaker lead, checked on the next pass.
 
-AIS collection lives in the separate `vessels-aggregator` repo; this repo only reads its archive.
+## Boundary
+
+| This repo | `vessels-aggregator` (separate) |
+|---|---|
+| Hot spots, imagery search, detection, STS pair check, AIS matching, AIS-only STS leads, output | AIS collection and the AIS archive server |
+
+The only interface is the AIS archive server (GizmoSQL on ubuntu3; views `vessels` and
+`identities`), queried with `maritime_tip_cue/ais/archive.py`, plus the shared hot-spot list on S3.
+No code, rules or files are shared; logic needed from the earlier proof of concept is copied in and
+owned here.
+
 The staged work is in [PLAN.md](PLAN.md); measured feasibility data is in
 [docs/feasibility.md](docs/feasibility.md).
 
@@ -25,7 +35,7 @@ hot-spot list (S3, shared) ──> scheduler: new S1 / S2 passes over each hot s
              S3 <── sts/<DD-MM-YYYY>/<hot_spot>/<source>.parquet ─┘
 viewer ──reads──> S3
 
-AIS STS candidate pairs (vessels-aggregator sts_pairs.py) ──> weaker lead: place and time
+AIS-only STS pairs (from the archive) ──> weaker lead: place and time
                                                                checked on the next pass
 ```
 
@@ -36,9 +46,7 @@ Layers: **hot spot** (a site where STS is known to take place) → **pass** (one
 
 One list for all repos, kept on S3 at `hotspots/sts_hotspots.json` in the bucket named by
 `S3_BUCKET_NAME` (key in `config.yaml`); each repo reads it from there. This repo loads it with
-`maritime_tip_cue/hotspots.py` (`python -m maritime_tip_cue.hotspots` prints it). It was seeded on
-2026-10-19 from the proof-of-concept list in `vessels-aggregator` (`rules/sts_pairs.json`), which
-still reads its own copy:
+`maritime_tip_cue/hotspots.py` (`python -m maritime_tip_cue.hotspots` prints it):
 
 | Site | Area | Notes from the PoC (15 Jul – 15 Oct 2026) |
 |---|---|---|
@@ -59,14 +67,14 @@ are dropped.
 3. **STS pair check** (`maritime_tip_cue/sts/`, parameters in `rules/sts_graph.json`): per tanker,
    `pair`, `possible_pair`, `single`, `moving` or `unmeasured`. Sentinel-2 uses the hull's spectral
    width and a second-hull search beside it; Sentinel-1 uses the radar outline and two light lines.
-4. **AIS enrichment**: from the `vessels-aggregator` archive, the AIS positions in and around the
+4. **AIS enrichment**: from the AIS archive, the AIS positions in and around the
    hot spot near the pass time, projected to the capture time, matched to each hull by position,
-   length and heading. Result per hull: named (name, flag, type, size; IMO where the aggregator's Equasis lookup
-   resolved it; the archive has no MMSI), or no AIS match. A
+   length and heading. Result per hull: named (name, flag, type, size; IMO from the archive's `identities` view
+   where resolved; the archive has no MMSI), or no AIS match. A
    pair with one or both hulls unmatched is a stronger lead, since a ship there without AIS is
    hiding. Matching parameters go in a rules graph, `null` / `basis: "tbd"` until measured.
-5. **AIS-only leads**: STS candidate pairs from AIS (`sts_pairs.py`) are recorded as weak leads and
-   checked on the next pass over that place.
+5. **AIS-only leads**: STS candidate pairs found in the AIS archive (two stopped tankers alongside,
+   away from shore) are recorded as weak leads and checked on the next pass over that place.
 6. **Publish** the STS findings per date, hot spot and source (see Output).
 
 ## Output
@@ -95,7 +103,7 @@ sts/<DD-MM-YYYY>/<hot_spot>/s2.parquet
 |---|---|---|
 | **Scheduler host** (existing Lightsail) | 24/7 | Looks for new passes over the hot spots, starts the GPU instance and hands it the jobs |
 | **AWS GPU instance** (existing) | Per batch | Job server started on boot: crop, detection, pair check, AIS enrichment, upload; shuts down when its queue is empty, with a max-runtime watchdog |
-| **ubuntu3** | 24/7 | The `vessels-aggregator` AIS archive (GizmoSQL), queried for enrichment |
+| **ubuntu3** | 24/7 | The AIS archive server (GizmoSQL), queried for enrichment |
 | **S3** | — | Hot-spot list, STS findings tree, crops |
 | **Shadow cloud PC** | Dev only | Editing, git, the stage 0 detector bench |
 
@@ -105,15 +113,14 @@ sts/<DD-MM-YYYY>/<hot_spot>/s2.parquet
 |---|---|---|
 | Sentinel-1 GRD | Planetary Computer (free) or AWS requester-pays | Free / pennies |
 | Sentinel-2 L1C | Public GCS / Earth Search STAC | Free |
-| AIS | `vessels-aggregator` archive on ubuntu3 | — |
+| AIS | Archive server on ubuntu3 (`GIZMOSQL_*` in `.env`) | — |
 
 ## Decisions
 
 - **Hot-spot driven, tip path dropped** (2026-10-19). Work is driven by new passes over known STS
   hot spots; the earlier design, where a tip naming one vessel started a search, is dropped.
-- **One shared hot-spot list on S3** (2026-10-19), read by every repo; the PoC list in
-  `vessels-aggregator` is the starting content.
-- **AIS by querying the archive** (2026-10-19): this repo reads the `vessels-aggregator` archive
+- **One shared hot-spot list on S3** (2026-10-19), read by every repo.
+- **AIS by querying the archive** (2026-10-19): this repo reads the AIS archive server
   directly by time and area around each pass; it does not collect AIS.
 - **Sentinel-1 and Sentinel-2 only** (2026-10-19); Landsat dropped for now.
 - **Output tree** (2026-10-19): `sts/<DD-MM-YYYY>/<hot_spot>/<source>.parquet`, written only where there
