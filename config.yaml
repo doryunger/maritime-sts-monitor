@@ -37,7 +37,7 @@ ai2:
     PYTHONIOENCODING: utf-8
 
 ais_archive:
-  tls_root_cert: maritime_tip_cue/ais/archive_cert.pem
+  tls_root_cert: data/secrets/ais_archive_cert.pem
   default_user: gizmosql_user
 
 structures:

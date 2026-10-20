@@ -16,6 +16,8 @@ The only interface is the AIS archive server (GizmoSQL on ubuntu3; views `vessel
 `identities`), queried with `maritime_tip_cue/ais/archive.py`, plus the shared hot-spot list on S3.
 No code, rules or files are shared; everything this repo needs is in it.
 
+For AIS archive access, place its TLS certificate at `data/secrets/ais_archive_cert.pem` on each machine that runs matching. This path is ignored by Git; the archive endpoint and credentials are read from `.env`.
+
 The staged work is in [PLAN.md](PLAN.md); measured feasibility data is in
 [docs/feasibility.md](docs/feasibility.md).
 
