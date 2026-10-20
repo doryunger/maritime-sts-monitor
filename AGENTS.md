@@ -35,9 +35,11 @@ checked in the others, and results are reported per region.
 
 Decisions (what to build, how to measure it, which rule or threshold, interpreting results) are kept
 apart from execution (running commands, tests and rounds, writing code to an agreed design, commits).
-A delegated agent starts cold and re-reads its context, so only long runs, rounds and read-heavy jobs are
-delegated, briefed with `context/agent_brief.md` plus exact commands; short edits, single commands and
-commits stay in the current session. Docs and context notes are read by section (`grep -n "^## "`, then
+A delegated agent starts cold and re-reads its context. Delegate lengthy processing and read-heavy jobs, such as
+completing missing scenes, to a subagent; `gpt-6-luna` with medium reasoning is suitable for routine
+execution. Brief it with `context/agent_brief.md`, exact commands, expected outputs, and how to report
+failures. Keep decisions, result interpretation, short edits, single commands, and commits in the current
+session. Docs and context notes are read by section (`grep -n "^## "`, then
 the range), never whole; scripts print compact summaries; only the images that matter are opened. Keep the
 brief current when modules, commands or data paths change.
 
