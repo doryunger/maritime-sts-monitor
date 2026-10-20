@@ -68,3 +68,23 @@ not used (2026-10-19): edge straightness and centreline symmetry of the binary o
 scatter more in pixel units, no separation), width variation along the hull (weak), spill outside the box (about 0
 for everything, the opening already removes thin rays). The 150-400 m length window stays the only absolute limit. The old possible band (`width_min_beams_possible`, `overlap_min_possible`) now only sets `weak_evidence`; the
 verdict is `single` (`weak_pair_verdict`), as for Sentinel-2.
+
+## s1shape
+
+The single-box veto traces half-power excess above a local sea median, not midpoint dB and not the binary
+15 dB outline. A logarithmic midpoint traces a wider halo and can turn a short bright head into a false step.
+Both body edges share one fitted slope; all finite row residuals contribute, so trimming cannot hide a
+second return. Local sea noise over edge gradient and pixel quantisation define edge uncertainty.
+
+Ai2 length supplies the longitudinal reference; only its central body is traced. The measured width is
+perpendicular to the fitted sides, but the displayed full box length remains an Ai2 prior rather than an
+independent pixel-derived vessel length. The pass blur belongs to the old outline extraction and must not be
+subtracted from a different intensity contour. Observed SAR dimensions are not exact steel-hull dimensions.
+
+A good one-beam fit alone cannot veto a pair: the half-power boundary can follow only the brighter hull.
+Every sampled central row is therefore also searched for a separately supported peak outside the fitted body.
+Any such peak blocks the veto. Missing central coverage, unknown dimensions or multiple own detections cannot
+supply single-hull evidence. Very close or unresolved weak returns remain a sensing limitation; this is a
+conservative veto of the existing pair rule, not a replacement two-vessel classifier. Parameters and measured
+basis live in `rules/sts_graph.json` under `s1_single_box`; old frozen graphs without that group retain their
+historical behavior. Measurements and rejected alternative box models are in the feasibility audit.

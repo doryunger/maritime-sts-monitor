@@ -8,7 +8,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 from rasterio.warp import transform as warp_transform
 
-from maritime_tip_cue.sts import fixtures, rules as rules_mod
+from maritime_tip_cue.sts import fixtures, rules as rules_mod, s1shape
 from maritime_tip_cue.watch import review, s1 as s1mod
 from maritime_tip_cue.watch.geo import Shore, haversine_m
 from maritime_tip_cue.watch.state import IGNORED_ROLES, VERDICTS, Store
@@ -83,6 +83,11 @@ def describe(scene: dict, rec: dict, taken: set) -> dict:
         box = (rec.get("ai2_boxes") or [{}])[0]
         base["ai2"] = {"length_m": rec.get("ai2_length_m"), "width_m": box.get("width_m"), "heading": box.get("heading"), "boxes": len(rec.get("ai2_boxes") or [])}
         base["measures"] = {k: rec.get(k) for k in S1_KEYS} | {"object_length_m": rec.get("object_length_m"), "object_width_m": rec.get("object_width_m")}
+        shape = rec.get("single_box")
+        if shape:
+            base["measures"].update({f"box_{k}": shape.get(k) for k in ("width_m", "width_ratio", "edge_noise", "support_length_m")})
+            if rec.get("single_box_veto"):
+                base["measures"]["box_verdict"] = "single"
     else:
         chk = rec.get("check") or {}
         base["ai2"] = {"length_m": rec.get("ai2_length_m"), "width_m": rec.get("ai2_width_m"), "heading": rec.get("ai2_heading"), "speed_kn": rec.get("ai2_speed_kn")}
@@ -114,7 +119,8 @@ def s1_tile(folder: Path, obj: dict, rules: dict, overlay: bool) -> Image.Image:
         if None in (det["length_m"], det["width_m"], det["heading"]):
             continue
         review.draw_rect(d, [px(*p) for p in review.corners(det["x"], det["y"], det["heading"], det["length_m"], det["width_m"])], (255, 255, 0) if det["own"] else (0, 255, 255), 1)
-    built = s1mod.build_object(folder / "chips", obj, rules)["d"]
+    rebuilt = s1mod.build_object(folder / "chips", obj, rules)
+    built = rebuilt["d"]
     if built is not None:
         t, length, width = built["rect"]
         u = np.array([math.cos(math.radians(t)), math.sin(math.radians(t))])
@@ -123,8 +129,13 @@ def s1_tile(folder: Path, obj: dict, rules: dict, overlay: bool) -> Image.Image:
         cu, cn = (pu.max() + pu.min()) / 2, (pn.max() + pn.min()) / 2
         corners = [u * (cu + a * length / 2) + n * (cn + b * width / 2) for a, b in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
         review.draw_rect(d, [px(*p) for p in corners], (255, 255, 255), 1)
-        for a, b in (built.get("par") or {}).get("ext", []):
-            d.line([px(*a), px(*b)], fill=(255, 60, 60), width=2)
+        cfg = rules.get("s1_single_box")
+        shape = s1shape.measure(rebuilt, cfg, rules["s1_outline"]["pixel_m"]) if cfg and cfg["enabled"] else None
+        if shape and shape["single"]:
+            review.draw_rect(d, [px(*p) for p in shape["corners"]], (80, 255, 120), 2)
+        else:
+            for a, b in (built.get("par") or {}).get("ext", []):
+                d.line([px(*a), px(*b)], fill=(255, 60, 60), width=2)
     return img
 
 

@@ -588,3 +588,214 @@ existing QA and links back to the app. Unreviewed singles may be absent from the
 the gallery still shows their stored images. No new QA labels, classifier rules or automatic verdicts were changed
 by this audit.
 
+## Sentinel-1 false pair w0_46174_276956 (measured 2026-10-21)
+
+Run 8, Fujairah, Sentinel-1 capture 2026-10-19 14:16 UTC: `w0_46174_276956` at
+25.041182 N, 56.620814 E. The original outline-only verdict reproduces as `pair`; the user's saved
+`wrong_verdict` correction made the `findings` verdict `single` before the geometry fix below.
+The raw chip and reconstructed overlay were visually checked. One elongated return has a brighter head;
+the two-line fit divides its bright pixels into lines of 166 m and 66 m. Fitting two lines does not establish
+two separate hulls, and the pair rule does not require two Ai2 detections (this object has one).
+
+| Pair check | Measured | Active requirement |
+|---|---:|---|
+| Fitted length | 229.823 m | 150–400 m |
+| Width after pass blur correction, in estimated beams | 1.853 | 1.55–2.50 |
+| Light separation / fitted width | 0.269766 | >= 0.26 |
+| Along-line overlap | 0.810637 | >= 0.72 |
+| Outline fill | 0.650533 | >= 0.60 |
+
+Every check passes the ordinary pair branch; the boxy exception is unnecessary. The estimated beam is
+length / 6, and pass blur is 28.012 m, leaving 70.980 m corrected radar width. The Ai2 box is only
+179 by 30 m. This discrepancy explains why the outline-based rule can interpret the single return as wide.
+The immediate classification failure is that this single return satisfies the empirical two-line shape test.
+
+AIS lookup did run. `ais_candidates` records VISHVA VIKAS (Cargo, AIS size 189 by 32 m), eligible for both
+slots and assigned once to slot b, with report age 9.059 min. Its stored candidate distances are 55.746 m to
+slot a and 7.355 m to slot b; LIBERTY HARVEST is rejected at over 3.5 km. No second eligible named ship is
+recorded. AIS enriches the radar verdict rather than determining it; absence of a second identity cannot alone
+prove a single vessel. The displayed 56 m comes from `ais_matches.dist_a_m`; S1 currently stores no
+`dist_b_m` even for a selected slot b, so this display is not the selected slot's actual distance.
+
+The missing 1/2 markers are a display consequence of QA, not a missing search: `HullCard.tsx` displays them
+only when `final_verdict` is `pair`. This record is already `single` after QA, so markers and the numbered AIS
+layout are hidden while the original PAIR badge and historical match remain. Recomputing `vessel_points`
+returns both valid points inside the crop, at fractions (0.529, 0.522) and (0.546, 0.422).
+
+Sensitivity was evaluated in memory on all 2,168 stored S1 hull snapshots in runs 2–9, across every shared hot
+spot, and separately on 261 recomputed S1 fixture objects. No S2 rules are affected. Counts include repeated
+observations across runs; these are not independent vessels. QA labels are available for only part of the data.
+
+| Site | Stored hulls | Baseline pair calls | QA pairs detected / labelled |
+|---|---:|---:|---:|
+| fujairah_outer | 1,064 | 19 | 18 / 18 |
+| off_sohar | 449 | 26 | 18 / 18 |
+| malaysia_eopl | 308 | 2 | 2 / 2 |
+| johor_east_scs | 347 | 3 | 3 / 4 |
+
+Each proposed threshold below rejects the target. Cells show total pair calls removed / confirmed QA pairs
+lost, with every other parameter held fixed. Only the target is a reviewed single removed in these sweeps;
+other removed calls without labels cannot be claimed as fixes.
+
+| Proposed minimum | Fujairah | Sohar | EOPL | Johor |
+|---|---:|---:|---:|---:|
+| Separation 0.27 | 2 / 1 | 1 / 0 | 0 / 0 | 0 / 0 |
+| Separation 0.28 | 2 / 1 | 3 / 1 | 0 / 0 | 1 / 1 |
+| Width 1.86 beams | 7 / 6 | 6 / 3 | 1 / 1 | 3 / 3 |
+| Width 1.90 beams | 7 / 6 | 7 / 3 | 1 / 1 | 3 / 3 |
+| Overlap 0.82 | 2 / 1 | 2 / 1 | 0 / 0 | 1 / 1 |
+| Fill 0.66 | 4 / 3 | 4 / 1 | 2 / 2 | 0 / 0 |
+
+The separate Fujairah fixture has 197 objects, eight labelled pairs, seven detected at baseline;
+Hormuz has 64 objects, 17 labelled pairs, all detected at baseline. Separation 0.27 loses one currently detected
+Fujairah fixture pair and no Hormuz pair. These fixture observations can overlap run observations and must not
+be summed with them. Fixtures supply no separate EOPL, Johor or Sohar set; those sites are covered by runs.
+
+The scalar sweeps do not justify changing those thresholds: even the nearest tested separation increase fixes
+this case at the cost of a QA-labelled pair. These labels require geometric review rather than being treated
+as independently verified hull counts. This example alone does not justify a vessel-type exclusion. The user's existing QA
+Single correction is retained. Reproducer and exact sweep output are outside the repository at
+`C:\Users\Shadow\AppData\Local\Temp\sts_target_sensitivity_20261021.py` and `.txt`; temporary visual verification
+is `C:\Users\Shadow\AppData\Local\Temp\sts-target-audit.png`. Run the reproducer from the repository root with
+`.venv/Scripts/python`; it reads local databases and fixtures without changing verdicts.
+
+## Sentinel-1 independent shape evidence (measured 2026-10-21)
+
+Follow-up to the preceding false-pair audit: testing another separation cutoff is insufficient. The current
+S1 extraction forces its two bright-pixel lines to share the outline angle, and therefore cannot use their
+apparent parallelism as evidence of separate hulls. All measurements below are read-only experiments;
+no automatic verdicts or QA labels were changed. Existing QA Pair labels are reference labels, not independently
+verified counts. Their disagreements with shape evidence require review rather than automatic relabelling.
+
+The experiment selected every current pair call and every QA-labelled S1 object in runs 2–9: 214 run records
+from the 2,168-record inventory, plus all 261 S1 fixture objects. A veto cannot promote an unselected single,
+so those singles are unaffected by the candidate veto experiments. Three selected objects have no rebuilt
+outline. The local cross-section experiment still accounts for all 475 objects, with zero load failures.
+Run and fixture counts include overlapping observations and must not be added as independent vessels.
+
+| Site | Selected run records | Automatic pairs | QA-labelled pairs currently detected |
+|---|---:|---:|---:|
+| fujairah_outer | 67 | 19 | 18 |
+| off_sohar | 50 | 26 | 18 |
+| malaysia_eopl | 53 | 2 | 2 |
+| johor_east_scs | 44 | 3 | 3 |
+
+Independent PCA axes of each top-quarter bright-pixel group expose the target's weak second shape: the two
+spans are 166.2 and 66.2 m; principal-axis elongations are 7.62 and 2.48. But demanding long, narrow bright
+clusters alone also rejects QA-labelled pairs: the strongest quarter can omit a dimmer hull. Requiring that
+a rejected object have both shorter/longer span below 0.45 and minimum elongation below 3 still rejects three
+Fujairah, two Sohar and one Johor labelled pairs, plus one pair in each fixture set. This is a measurement
+failure to investigate, not evidence that those labels are necessarily correct or necessarily wrong.
+
+Free-orientation one-versus-two Gaussian shape fits were evaluated at brightness quantiles 0.25, 0.40, 0.50,
+0.60, 0.75 and 0.85, using full-outline pixels rather than just the brightest quarter. The target consistently
+splits longitudinally: component centres differ by 88–126 m along the outline and 14–24 m across it.
+At the lower four quantiles it remains one connected elongated shape; the higher quantiles isolate bright
+end regions. Independent model axes and raw pixels were visually checked. A matched-complexity lateral-versus-
+longitudinal two-component comparison also favours longitudinal structure for the target at all six levels,
+but several labelled pairs favour it too. These likelihood models explain intensity structure, not vessel count.
+
+A separate experiment rotates the full chip into the outline frame, samples at 10 m and finds simultaneous
+across-track peaks per longitudinal row. Peak separation is at least 20 m, Gaussian smoothing is 0.5 or
+1 pixel, and minimum intervening-valley depth is 0.5, 1, 2 or 3 dB. With 0.5-pixel smoothing and 0.5 dB depth,
+the target has two peaks in only 3 of 23 rows (13.0%), with 30 m continuous support. At 1-pixel smoothing and
+3 dB it has none. Requiring at least 14% dual-peak rows is a retrospective screen, not a calibrated rule:
+
+| Site | Calls removed | QA Pair labels rejected | QA Single labels corrected | Unreviewed removed |
+|---|---:|---:|---:|---:|
+| fujairah_outer | 3 | 2 | 1 | 0 |
+| off_sohar | 3 | 0 | 0 | 3 |
+| malaysia_eopl | 0 | 0 | 0 | 0 |
+| johor_east_scs | 1 | 1 | 0 | 0 |
+
+The same screen rejects one of seven currently detected Fujairah fixture pairs and none of the 17 Hormuz
+fixture pairs. There are no separate Sohar, EOPL or Johor fixture sets; the run records cover those regions.
+Combining independent elongated-group support (span ratio at least 0.45 and minimum elongation at least 3)
+OR dual-peak support (at least 14%) retains all currently detected fixture pairs. It still rejects the target,
+run 8 Fujairah `w0_44663_283894` and run 7 Johor `w0_49715_35557` (both labelled Pair), and unreviewed run 9
+Sohar `w0_47112_272571`. These exploratory values were evaluated after seeing the target and are not held-out
+validation. They must not be presented as established production thresholds.
+
+Stored AIS assignments cannot resolve the conflicts. Baseline pair calls have two / one / zero distinct
+selected named identities as follows: Fujairah 1 / 16 / 2; Sohar 0 / 21 / 5; EOPL 1 / 0 / 1; Johor 0 / 1 / 2.
+The local-row screen's rejected QA-labelled pairs have one identity (run 2 Fujairah `w0_45398_278273`,
+LOULOULIGHT II, tanker 229 by 32 m), or none (the two conflicting cases above). The target has one cargo-vessel
+identity, as recorded in the preceding section. Requiring two identities would not rescue these labels and
+would discard many other pair calls; missing identities are not evidence of a single vessel.
+
+The full-silhouette experiment and implemented single-box veto are described below. A general two-box
+classifier remains unresolved. The existing S1 fill/minimum rectangle is only a coarse footprint; the new
+model follows intensity-derived edges rather than forcing a split of bright points. S2 thresholds are not
+assumed valid for SAR.
+
+Reproducers, raw measurements and plots are outside Git under
+`C:\Users\Shadow\AppData\Local\Temp\`: `sts_geometry_20261021.py`, `sts_geometry_multilevel.py`,
+`sts_geometry_directional.py`, `sts_local_ridges_20261021.py` and `sts_ais_fusion_20261021.py`, with their
+same-stem output directories and `.txt` logs. Run from the repository root with `.venv/Scripts/python`.
+`sts_geometry_gallery/review.html` contains raw crops and independent fits, existing QA and capture times,
+including the three local-row conflicts and controls from all four hot spots. Its `raw_contact.png`,
+`sts_geometry_multivis/multilevel_axes.png` and `sts_local_ridges_20261021/row_ridge_contact.png` were visually
+checked. No conflicting label was changed by inspecting these plots.
+
+## Sentinel-1 single-box veto (validated 2026-10-21)
+
+Implemented `sts/s1shape.py` as a conservative veto of the existing pair rule. It samples VH in linear power,
+subtracts a local sea median per row, traces half-peak boundaries over the central Ai2-referenced body, and
+fits both sides with one shared slope. A noise-consistent parallel box whose perpendicular width agrees with
+one Ai2 beam supplies single-hull evidence. All parameters are in `rules/sts_graph.json:s1_single_box`.
+The length reference is Ai2's estimate, not a newly measured physical hull length; no old outline-blur correction
+is applied to the new contour. The fitted box is drawn green, replacing the forced red pair lines when it
+explains a single hull. The app exposes its width, width ratio, edge residual and measured body support.
+
+The target fits a 32.57 m wide body against Ai2's 30.14 m width; its Ai2 length reference is 178.99 m and the
+traced side support spans 140 m over 15 native-resolution rows. Joint edge residual is 1.143 noise units.
+All central rows must have finite coverage and strong signal. Multiple own detections or unknown dimensions
+cannot trigger the veto. A separately supported outside peak in any central row also prevents the veto:
+without that guard, the brighter hull's half-power trace could hide a dimmer adjacent hull.
+
+The alternative one-versus-two rectangle search was also measured on the 475 selected records. Unconstrained
+two-box fits improve the target by putting a short extra box around its bright head. Requiring elongated,
+plausibly proportioned components favours one box for the target but also loses many labelled pairs. This is
+why the deployed change uses positive evidence for a single box plus the outside-return guard, rather than
+requiring a general two-box classifier to succeed on every pair.
+
+The final production implementation rebuilt every available S1 object in runs 2–9, grouped by run/site/pass
+so the old pass-blur calculation was preserved, plus both complete fixture sets. The disabled-veto baseline
+reproduced every stored verdict. Enabled-versus-disabled results:
+
+| Site or fixture | Objects | Pair calls before | Pair calls after | QA Pair labels newly vetoed |
+|---|---:|---:|---:|---:|
+| fujairah_outer | 1,064 | 19 | 18 | 0 / 18 |
+| off_sohar | 449 | 26 | 26 | 0 / 18 |
+| malaysia_eopl | 308 | 2 | 2 | 0 / 2 |
+| johor_east_scs | 347 | 3 | 3 | 0 / 4 |
+| Fujairah fixture | 197 | 7 | 7 | 0 / 8 |
+| Hormuz fixture | 64 | 17 | 17 | 0 / 17 |
+
+Of 2,429 observations, only the requested target changes Pair to Single. There are zero processing errors,
+zero baseline mismatches and zero nonfinite geometry records. Missing shape measurements skip the veto:
+45 Fujairah, 16 Sohar, 29 EOPL, 21 Johor, seven Fujairah fixture and one Hormuz fixture. Labels and observations
+can overlap across runs/fixtures; this is retrospective validation, not an independent holdout. All four
+shared hot spots have run data; the separate regional fixture limitations remain as described above.
+
+Eighteen targeted production checks passed, including six resolvable weaker-hull simulations at 10%, 20%
+and 35% brightness and 50/70 m separation, a single-hull control, missing coverage/dimensions and multiple
+own detections. Unresolved 30 m weak returns remain a sensing limitation. Native 10 m and oversampled 5 m
+measurements agree on the target. Edge limits 1.2 and 1.5 change only this target; 1.8 also removes unreviewed
+Sohar `w0_47194_273954`, so the selected limit retains that uncertain case.
+
+The four S1 fixture tests pass. The full suite has five passes and one pre-existing S2 score assertion failure:
+fixture `s3` number 9 (`hormuz_fujairah`) is labelled single but called pair. It reproduces with HEAD's original
+rules, so no S2 expectation or detector code was changed to hide it.
+
+Run 8 was locally rechecked: S1 pairs 9 to 8, singles 329 to 330. All 33 existing QA flags are byte-for-byte
+unchanged as database rows; the target is now Single both automatically and after QA. The local viewer was
+restarted to load the new overlay. This does not rewrite immutable completed-job artifacts.
+
+Final read-only validation scripts and results are under `C:\Users\Shadow\AppData\Local\Temp\`:
+`sts_geometry_production_validate.py` and its directory (`report.json`, `rows.json`, `sensitivity.json`,
+`target.json`, raw and overlay PNGs), `sts_single_box_production_checks_20261021.py`/`.json`, and
+`sts_geometry_s2_baseline.py`/`.txt`. The run 8 SQLite backup before recheck is
+`sts_geometry_run8_before_recheck_20261021.db`. The rejected rectangle experiment is
+`sts_rectangle_priors_20261021.py` and its same-stem directory. Run scripts from the repository root with
+`.venv/Scripts/python`. Geometry plots and the production overlay were visually checked.

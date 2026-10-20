@@ -633,6 +633,84 @@
       "basis": "decision (user, 2026-10-19): Sentinel-1 has no possible_pair; the possible band (width_min_beams_possible, overlap_min_possible) is kept only as weak_evidence in the record. On the QA of runs 2-5 all 4 hulls left in the band were judged not pairs."
     }
   },
+  "s1_single_box": {
+    "enabled": {
+      "value": true,
+      "basis": "Measured 2026-10-21 on 214 selected run records across all four hot spots and 261 S1 fixtures: a single-box veto corrects run 8 w0_46174_276956 and rejects no other baseline pair call or QA-labelled pair. Three selected singles have no outline. Exploratory retrospective validation, not an independent holdout."
+    },
+    "polarisation": {
+      "value": "vh",
+      "basis": "Use the same VH power as the S1 pair check; trace half-peak excess above local sea in linear power, not midpoint dB."
+    },
+    "grid_step_m": {
+      "value": 10,
+      "basis": "Measured at the native 10 m pixel spacing; the 5 m sensitivity check retained the same verdict changes."
+    },
+    "along_fraction": {
+      "value": 0.8,
+      "basis": "Fit the central 80% of the Ai2 length, leaving the bow and stern out of the parallel-sided body fit."
+    },
+    "sea_band_m": {
+      "value": 100,
+      "basis": "Across-track sampling extends 100 m beyond the outline half-width to estimate local sea background."
+    },
+    "sea_margin_m": {
+      "value": 30,
+      "basis": "Sea samples start 30 m outside the outline half-width."
+    },
+    "search_margin_m": {
+      "value": 40,
+      "basis": "Search for the row peak within the outline half-width plus 40 m."
+    },
+    "edge_fraction": {
+      "value": 0.5,
+      "basis": "Trace the half-power excess above each row sea median, leaving the low-intensity radar halo out of the hull-body shape."
+    },
+    "min_sea_cells": {
+      "value": 4,
+      "basis": "At least four finite local sea samples are required to estimate the median and robust noise."
+    },
+    "min_rows": {
+      "value": 6,
+      "basis": "At least six longitudinal rows are required for a single-box measurement. The target has 15; measured QA pairs have at least nine."
+    },
+    "min_row_fraction": {
+      "value": 1.0,
+      "basis": "Every sampled central-body row must have finite traced edges before a single-box veto is allowed; missing coverage cannot be interpreted as evidence of one hull."
+    },
+    "min_peak_sigma": {
+      "value": 6,
+      "basis": "Require every measured row peak to exceed sea noise by six robust sigma before vetoing. Target minimum is 176; measured QA pair minimum exceeds 32."
+    },
+    "outside_peak_sigma": {
+      "value": 6,
+      "basis": "Disable the veto if any central row contains a separate peak outside the fitted body with peak and valley prominence both at least six local sea-noise sigma. This prevents the half-power trace from ignoring a dimmer adjacent hull."
+    },
+    "outside_prominence_sigma": {
+      "value": 6,
+      "basis": "Target peripheral SAR bumps have prominence 3.4-4.9 sea-noise sigma. All six resolvable synthetic dim-hull controls (10%, 20%, 35% brightness; 50 m and 70 m separation) exceed six and retain their pair verdict. Unresolved returns are not independently proven absent."
+    },
+    "max_outside_peak_rows": {
+      "value": 0,
+      "basis": "Any independently supported outside peak prevents the single-box veto; no majority vote may erase evidence of a weaker second hull."
+    },
+    "max_own_detections": {
+      "value": 1,
+      "basis": "A single-box veto cannot override multiple own Ai2 vessel detections."
+    },
+    "max_edge_noise": {
+      "value": 1.5,
+      "basis": "Measured 2026-10-21 on 214 selected run records across all four hot spots and 261 S1 fixtures: a single-box veto corrects run 8 w0_46174_276956 and rejects no other baseline pair call or QA-labelled pair. Three selected singles have no outline. Exploratory retrospective validation, not an independent holdout. Joint parallel-sided residual RMS in measured edge-noise units: target 1.143; lowest QA pair 1.850. Noise includes local sea variation over edge gradient and 10 m pixel quantisation."
+    },
+    "min_width_ratio": {
+      "value": 0.7,
+      "basis": "A single-box veto also requires observed perpendicular body width to agree with one Ai2 beam within 30%. Target 32.57 m / 30.14 m = 1.081; no radar blur subtraction."
+    },
+    "max_width_ratio": {
+      "value": 1.3,
+      "basis": "Upper bound of the same one-beam consistency check. A straight but excessively wide box is not sufficient evidence of a single hull."
+    }
+  },
   "scene": {
     "s2_max_cloud_pct": {
       "value": 30,

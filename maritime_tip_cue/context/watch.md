@@ -64,6 +64,9 @@ Raw and overlay come from the same crop code, so they have the same pixel size. 
 object outline from the chip (white rectangle = footprint, red = the two parallel arms of the pair rule) next to the
 Ai2 boxes (yellow own, cyan others); Sentinel-2 draws hull A and B (red) and the Ai2 box (cyan). The singles sample
 is a seeded random draw over sorted hull ids, so the same seed gives the same list.
+When the S1 single-box test supplies a single-hull explanation, its green fitted box replaces the forced red
+arms. The card includes body width, width ratio, edge residual and measured side support; its full box length
+uses the Ai2 reference. The extraction rationale is in [s1shape](sts.md#s1shape).
 
 Fixture comparison matches a fixture object to the nearest run hull of the same date within 60 m (Sentinel-1 by the
 pass date in the fixture name, Sentinel-2 only for fixture sets named `<region>_<date>`; the undated sets `known`,

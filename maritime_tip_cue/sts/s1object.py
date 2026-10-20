@@ -181,7 +181,7 @@ def build(window: dict, start: tuple[float, float], detections: list[dict], rule
     a = analyse(window, st["x"], st["y"], c)
     near = (a["dist"] <= c["peak_radius_m"]) & a["valid"]
     peak = float(np.nanpercentile(a[pol][near], c["peak_percentile"]))
-    obj = {"a": a, "pol": pol, "d": None, "straight": False, "crs": window["crs"]}
+    obj = {"a": a, "pol": pol, "d": None, "straight": False, "crs": window["crs"], "detections": detections}
     m = grow(a, st["x"], st["y"], {pol: peak - c["outline_drop_db"]}, c)
     if m is None:
         return obj

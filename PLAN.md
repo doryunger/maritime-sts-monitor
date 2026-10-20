@@ -12,7 +12,8 @@ The user-selected missing pieces are a catalogue tracker and execution on the de
 instance. The user has supplied a dedicated Lightsail AIS/control host; its [preflight](docs/feasibility.md#dedicated-control-host-preflight-2026-10-20)
 confirms approximately 2 GiB RAM. AIS collection and the archive are deployed there; the old AIS deployment
 was removed from ubuntu3 after data and capture validation.
-Findings review and detector research continue alongside this work.
+The S1 single-box geometry veto is implemented and validated across all four regions
+([measurements](docs/feasibility.md#sentinel-1-single-box-veto-validated-2026-10-21)).
 
 1. Keep AIS collection coverage aligned with the active hot-spot boundaries and survey overrides. The
    [local geometry audit](docs/feasibility.md#ais-collection-coverage-audit-2026-10-20) passes for all four
@@ -57,6 +58,7 @@ Findings review and detector research continue alongside this work.
 | EOPL / Johor survey | Expanded survey batch launched; compare original versus added waters after processing ([map and coverage inventory](docs/feasibility.md#eopl-and-johor-expansion-survey-prepared-2026-10-20)); expanded shared boundaries now selected for tracking | Processing and review | 3, 4 |
 | Detector output cleanup | S2 test: one detection on an inland reservoir; one ship detected twice ~100 m apart (see feasibility) | Sea mask; merge overlapping detections | 4 |
 | Missed S1 pairs | Strong bright-line evidence can fail combined-outline length, width and fill checks; [all-region similarity audit](docs/feasibility.md#sentinel-1-missed-pair-similarity-audit-measured-2026-10-20) provides candidates and reviewed controls | Review cue; validate independent per-vessel support before changing automatic pair rules | 4 |
+| S1 shape generalisation | [Single-box veto](docs/feasibility.md#sentinel-1-single-box-veto-validated-2026-10-21) corrects the reported false pair without other verdict changes in stored runs or fixtures | Validate on independently reviewed new passes; unresolved weaker returns remain a sensing limit | 4 |
 | Whole-scene processing | Ai2's pipelines download and reproject the full scene (S1: ~250 × 170 km, ~3.5 min reprojection per image on one process), though a hot spot is ~100 × 100 km or less | Check the pipelines accept a cropped input with correct georeferencing and give the same detections as the full scene on that area | 4 |
 | Ships near ports | S1 test: a 170 m ship anchored in harbour (ADAM A) was not detected. Hot spots are anchorages, most within a few km of land (shore distance 2 km) | Check clutter vs Ai2's near-infrastructure filter on a hot-spot scene with known anchored ships | 4 |
 | S1 data source | Ai2's scene-ID mode reads AWS `sentinel-s1-l1c` (requester-pays); the test used Planetary Computer's free copies via local-file mode | Pick one for deploy: availability delay, rate limits, cost | 4 |

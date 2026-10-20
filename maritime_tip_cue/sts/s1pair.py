@@ -2,6 +2,7 @@ import math
 
 import numpy as np
 
+from maritime_tip_cue.sts import s1shape
 from maritime_tip_cue.sts.rules import s1_config
 
 
@@ -104,6 +105,12 @@ def evaluate(objects: list[dict], rules: dict) -> list[dict]:
                 vessels=vessels(obj),
             )
         v = verdict(rec, c)
+        shape_cfg = rules.get("s1_single_box")
+        if shape_cfg and shape_cfg["enabled"] and d is not None and obj["straight"]:
+            rec["single_box"] = s1shape.measure(obj, shape_cfg, c["pixel_m"])
+            if v in ("pair", "possible_pair") and rec["single_box"] and rec["single_box"]["single"]:
+                v = "single"
+                rec["single_box_veto"] = True
         rec["weak_evidence"] = v == "possible_pair"
         rec["verdict"] = c["weak_pair_verdict"] if v == "possible_pair" else v
         rows.append(rec)
