@@ -12,7 +12,7 @@ the hot spots; that is a weaker lead, checked on the next pass.
 |---|---|
 | Hot spots, imagery search, detection, STS pair check, AIS matching, AIS-only STS leads, output | AIS collection and the AIS archive server |
 
-The only interface is the AIS archive server (GizmoSQL on ubuntu3; views `vessels` and
+The only interface is the AIS archive server (GizmoSQL on the dedicated AIS/control host; views `vessels` and
 `identities`), queried with `maritime_tip_cue/ais/archive.py`, plus the shared hot-spot list on S3.
 No code, rules or files are shared; everything this repo needs is in it.
 
@@ -45,8 +45,9 @@ Layers: **hot spot** (a site where STS is known to take place) → **pass** (one
 
 ## Hot spots
 
-One list for all repos, kept on S3 at `hotspots/sts_hotspots.json` in the bucket named by
-`S3_BUCKET_NAME` (key in `config.yaml`); each repo reads it from there. This repo loads it with
+The canonical hot-spot list is kept on S3 at `hotspots/sts_hotspots.json` in the bucket named by
+`S3_BUCKET_NAME` (key in `config.yaml`). AIS collection uses separately configured capture views; their
+combined coverage must contain these regions and active survey extensions ([audit](docs/feasibility.md#ais-collection-coverage-audit-2026-10-20)). This repo loads the list with
 `maritime_tip_cue/hotspots.py` (`python -m maritime_tip_cue.hotspots` prints it):
 
 | Site | Area | Measured 15 Jul – 15 Oct 2026 |
@@ -140,9 +141,8 @@ go straight into the run's `qa_flags`. Start it with `app/start.cmd`; it serves 
 
 | Machine | Uptime | Runs |
 |---|---|---|
-| **Scheduler host** (existing Lightsail) | 24/7 | Looks for new passes over the hot spots, starts the GPU instance and hands it the jobs |
+| **Dedicated Lightsail AIS/control host** | 24/7 | Hourly AIS collection and archive (GizmoSQL), deployed; four-daily catalogue tracker and EC2 job controller planned |
 | **AWS GPU instance** (existing) | Per batch | Job server started on boot: crop, detection, pair check, AIS enrichment, upload; shuts down when its queue is empty, with a max-runtime watchdog |
-| **ubuntu3** | 24/7 | The AIS archive server (GizmoSQL), queried for enrichment |
 | **S3** | — | Hot-spot list, STS findings tree, crops |
 | **Shadow cloud PC** | Dev only | Editing, git, the stage 0 detector bench |
 
@@ -158,7 +158,12 @@ go straight into the run's `qa_flags`. Start it with `app/start.cmd`; it serves 
 
 - **Hot-spot driven, tip path dropped** (2026-10-19). Work is driven by new passes over known STS
   hot spots; the earlier design, where a tip naming one vessel started a search, is dropped.
-- **One shared hot-spot list on S3** (2026-10-19), read by every repo.
+- **One canonical hot-spot list on S3** (2026-10-19). AIS collection coverage is checked against it;
+  collection views are configured separately.
+- **Catalogue tracker on the dedicated Lightsail AIS/control host** (2026-10-20): four checks daily; newly available scenes trigger the
+  designated existing EC2 instance to run this repo's pipeline, then stop when its pending work finishes.
+  AIS collection regions must follow the same hot-spot boundaries. Findings research continues alongside
+  this operational work; it is not a prerequisite for implementing it.
 - **AIS by querying the archive** (2026-10-19): this repo reads the AIS archive server
   directly by time and area around each pass; it does not collect AIS.
 - **Sentinel-1 and Sentinel-2 only** (2026-10-19); Landsat dropped for now.

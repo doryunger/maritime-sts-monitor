@@ -41,6 +41,17 @@ Conventions are in AGENTS.md (loaded via CLAUDE.md for Claude). Read docs by sec
 - `.venv/Scripts/python -m maritime_tip_cue.watch.state summary <run folder>` per-scene counts.
 - `.venv/Scripts/python -m maritime_tip_cue.hotspots [publish <file>]` print (or replace) the S3 hot-spot list.
 
-## Where work stands (2026-10-19)
+## Where work stands (2026-10-20)
 - Runs 1-5 (Fujairah 9 Oct and 12-19 Oct, off_sohar, Johor, EOPL; 12-19 Oct 2026) reviewed, re-checked with the S1 and S2 shape rules, AIS-matched and published to S3 (45 findings, 8 parquet files). Johor and EOPL have one pair each; their singles are largely unreviewed.
-- Next: the web viewer on the S3 tree; open points in `PLAN.md`.
+- The active expanded EOPL/Johor batch and Gulf catch-up queue are controlled by the external
+  `C:\Users\Shadow\projects\maritime-sts-analysis\2026-10-20-malaysia-survey\background\supervisor.py`.
+  Its `manifest.json` freezes scenes, boundaries and rule hash; `progress.json` and supervisor logs record
+  processing. Run 6 began the queue; subsequent run numbers are allocated as each site starts. Do not launch
+  overlapping detectors: scene scratch paths are shared. Survey scripts and cache remain outside this repo.
+- Operational priorities are now the user's [catalogue tracker and EC2 workflow](../PLAN.md#current-priorities).
+- AIS collection and GizmoSQL now run on the dedicated Lightsail AIS/control host; connection settings
+  are in ignored `data/secrets/control_host.json`. The AIS URI now points there, not to ubuntu3. Both local
+  clients and a complete capture cycle passed. Old AIS services/files were removed from ubuntu3; unrelated
+  apps remain. See [migration verification](../docs/feasibility.md#ais-deployment-migration-verification-2026-10-20)
+  for the external backup and manifests. No endpoints or keys belong in Git. The catalogue tracker is not
+  implemented yet.

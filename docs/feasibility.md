@@ -373,3 +373,118 @@ waters over matching dates with unchanged detection rules. Report reviewed pair 
 per usable observation and per area, retaining Fujairah and Sohar as comparisons. Inspect density within the
 current boxes too: detecting a nearby cluster does not necessarily require expanding their boundaries.
 
+## AIS collection coverage audit (2026-10-20)
+
+The local collector's five enabled zoom-8 capture views jointly contain all four current/survey boxes,
+including the 5 km padding applied by `ais_match.search_radius_km`. Exact polygon containment passes for
+expanded EOPL, expanded Johor, Fujairah and Sohar with zero uncovered area. No collector region edit is
+needed for this geometry. This establishes configured geographic coverage, not completeness of AIS reports.
+
+Checking one view at a time would falsely report a Johor gap: `singapore_johor` reaches only 3.275864 N,
+but the overlapping `south_china_sea_north` view covers the rest of the expanded 3.3 N boundary and the
+query margin. Likewise, `hormuz_fujairah` covers Sohar's northern edge. Coverage must use the union of
+enabled views. The collector does not automatically read this repo's S3 hot-spot list; its capture view
+configuration is independent. This repo's AIS matcher uses the run's stored boundary snapshot, which
+already records the expanded EOPL box for run 6 and will record Johor's when its queued run starts.
+
+The audit evaluated the local collector configuration and its viewport geometry helper, using signed
+Web Mercator latitude bounds and the monitor's own AIS-padding function. `audit_ais.py`, `ais-coverage.json`
+and the visually checked `ais-coverage.png` are alongside the survey artifacts in the external analysis
+directory above. They are audit artifacts, not a runtime dependency between the two repos.
+
+Live verification subsequently succeeded using this PC's existing SSH key and the host from the ignored
+AIS archive URI. The deployed viewport and all five enabled view definitions match the local configuration
+exactly. Thus the configured live collection geometry also covers every current/survey box and query margin.
+
+## Always-on host placement audit (2026-10-20)
+
+These measurements describe ubuntu3 before migration. The current `GIZMOSQL_URI` points to the replacement
+host and must not be used to locate ubuntu3. Source connection metadata is preserved privately in the
+external migration directory described below. No endpoint, key material or credentials belong in Git.
+The read-only audit script `inspect_ubuntu3.py`, baseline `ubuntu3-audit.json` and
+`ubuntu3-capture-sample.json` are in the external survey analysis directory above; its original URI-based
+target lookup requires the frozen source metadata before reuse against ubuntu3.
+
+| Observation | Measured value |
+|---|---:|
+| CPUs visible to Linux | 2 |
+| RAM visible to Linux | 911.3 MiB |
+| Available RAM at initial idle snapshot | 373.1 MiB |
+| Swap allocated / initially occupied | 2,048 / 522 MiB |
+| Lowest available RAM during capture sampling | 256.4 MiB |
+| Highest total swap occupancy during sampling | 759.5 MiB |
+| Scheduled capture cgroup peak RAM | 529.9 MiB |
+| Highest sampled capture cgroup swap occupancy | 217.7 MiB |
+| Root disk available / used | 11 GiB / 72% |
+| AIS archive size | 189 MiB |
+
+The capture sample covers nine observations over 40 seconds during the existing 12:15 UTC cron job;
+the job was not triggered for this audit. It is not a day-long capacity study or a concurrent-query test.
+The initial load average was zero. Swap occupancy increased during capture; occupied swap alone is not
+an ongoing swap-rate measurement. OOM history could not be established from the kernel journal.
+
+The live machine also hosts two unrelated wake controllers and a media app. The GizmoSQL container has
+a 450 MiB RAM cap and 800 MiB combined RAM/swap limit. The capture has a 600 MiB RAM cap and 300 MiB swap
+cap. Those RAM caps alone exceed total physical memory when reached together, before the OS, other apps
+or a tracker. Successful recent capture logs do not establish capacity for simultaneous database queries.
+
+The shared memory pressure motivated the dedicated AIS/control host selected below. The measured migration
+validation includes a new capture overlapping archive queries; sustained production query peaks remain
+unmeasured. Heavy imagery processing remains assigned to the EC2 worker.
+
+DuckDB's configured memory limit is not a complete process-memory ceiling; its documentation describes
+allocations outside the buffer manager ([DuckDB OOM guidance](https://duckdb.org/docs/current/guides/performance/oom)).
+For a burstable Lightsail host, sustained CPU capacity must also be checked rather than inferred from idle
+CPU alone ([AWS CPU burst capacity](https://docs.aws.amazon.com/lightsail/latest/userguide/monitoring-cpu-burst-capacity.html)).
+CPU burst metrics and representative concurrent-query peaks remain unmeasured.
+
+## Dedicated control host preflight (2026-10-20)
+
+At initial preflight, SSH to the user-supplied dedicated Lightsail host succeeded. Measured resources differ from the earlier
+1 GiB / 40 GB candidate: Linux reports 1,906 MiB RAM, two CPUs and a 58 GiB root filesystem with 56 GiB
+available. Initial available memory was 1,514 MiB, without swap. The OS is Ubuntu 24.04.4 LTS
+with Python 3.12.3 and Git. Docker and project checkouts were absent at preflight; their deployed state is
+recorded in the migration verification below.
+
+Windows OpenSSH rejected the downloaded key's broad ACL. A separate copy in the user's `.ssh` directory,
+restricted to the current Windows account, connected successfully. The original Downloads file was not
+modified. Connection settings are in ignored `data/secrets/control_host.json`; endpoints and key material
+are excluded from these notes and Git. This host is selected for the always-on AIS/control workload;
+heavy scene processing remains on the EC2 worker, which stops after processing.
+
+## AIS deployment migration verification (2026-10-20)
+
+AIS collection and GizmoSQL now run on the dedicated Lightsail host. The source repository, untracked data,
+reference files, logs, service state and browser cache were transferred; the Python environment was rebuilt
+from the source's exact 15 package pins. Initial verification matched all 1,891 transferred files; the final
+quiescent repository sync matched all 1,287 repository files with no missing, extra or changed hashes.
+
+Before cutover, authenticated TLS queries on the new host matched the source: 2,964,489 rows, 273 captures
+and 499 resolved identities. A complete new-host capture and analysis cycle then succeeded, adding 10,588
+rows and one capture. Concurrent client queries also succeeded. The resulting archive has 2,975,077 rows,
+274 captures and 499 identities. Latest-capture counts inside the four current/survey boxes are EOPL 1,255,
+Johor 290, Fujairah 403 and Sohar 196; these are AIS rows, not imagery findings.
+
+The original hourly capture schedule (`15 * * * *`, server UTC) is enabled on the new host. Docker and cron
+are enabled at boot, and GizmoSQL retains the source image digest and `unless-stopped` restart policy.
+The host has 2 GiB swap, matching the source. The four-daily catalogue tracker and EC2 orchestration are
+separate implementation work and were not deployed as part of this migration.
+
+The user opened the original archive TCP port in Lightsail. The archive retains authentication and TLS,
+with a certificate for the new host. Both PC clients now use the new endpoint; certificate copies are in
+ignored `data/secrets/` directories. The aggregator client supports `GIZMOSQL_TLS_ROOT_CERT` so its tracked
+legacy certificate need not be replaced with deployment material. Connection settings stay in ignored
+`.env` and `data/secrets/control_host.json`. The new host's private deployment settings, reproducible archive
+starter and package freeze are in `~/.config/sts-ais/`; do not copy private settings into Git.
+
+The old AIS capture cron, GizmoSQL container, repository/data, GizmoSQL state and AIS browser cache were
+removed from ubuntu3 only after validation. Its three unrelated running containers and two host/security
+cron entries were checked unchanged. The old archive port no longer has a listener.
+
+Private migration inventories, before/after validation, complete hash manifests and
+`source-final-backup.tar.gz` are retained outside the app repository at
+`C:\Users\Shadow\projects\maritime-sts-analysis\2026-10-20-ais-migration\`.
+The backup is 331,410,246 bytes and contains source repository data and GizmoSQL state; the source venv
+and reconstructible browser cache are excluded. Its SHA-256 is
+`ecd6018229adb94727f0fc9cefeaa885ce82cb09122e1835f0d0e884360074b6`.
+

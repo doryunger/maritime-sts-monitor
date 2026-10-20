@@ -102,3 +102,20 @@ Runs are numbered, not named: `data/runs/registry.db` maps run number to folder 
 gets the next number and the folder `data/runs/<number>`. `watch.run --run <n>` resumes one; `--out` still
 registers an existing folder (runs launched before numbering). `registry adopt` renames a registered folder to its
 number once its last invocation has ended (an unfinished one is left alone, since a queued resume names it).
+
+## EC2 lifecycle reference
+
+The inspected geo-dataset-generator wake controller uses EC2 start/describe/stop calls and polls its app's
+readiness endpoint before forwarding work. Its shutdown is based on browser inactivity, which is not a
+batch-completion signal. Reuse the control pattern in this repo with worker readiness and durable scene
+completion; the example supplies neither a durable scene queue nor a maximum-runtime watchdog. No external
+source paths are runtime dependencies here.
+
+The selected network pattern uses AWS lifecycle calls, discovers the worker address after startup and checks
+HTTP readiness, matching the existing geo-dataset-generator EC2 deployment. The STS controller belongs on
+the dedicated Lightsail AIS/control host. An SSH alias is not part of this runtime handoff; local deployment access must be discovered from
+the existing private setup rather than assuming that the host's descriptive name is a configured SSH alias.
+
+`watch.run.main()` returns zero even when per-scene failures set the invocation status to `failed`.
+A future worker must inspect scene and invocation records before acknowledging jobs or declaring the batch
+complete; subprocess exit status alone would lose retries. Stop only after results and job state are durable.
