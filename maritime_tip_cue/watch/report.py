@@ -359,14 +359,72 @@ def collect(folder: Path, n_singles: int = 24, seed: int = 0, keep: set | None =
         fx = fixture_section(store, scenes, all_hulls, {h["id"] for h in listed}, site, rules)
         parties: dict = {}
         columns = {r["name"] for r in store.db.execute("pragma table_info(ais_matches)")}
-        for r in [] if "slot" not in columns else store.db.execute("select scene_id, hull_id, slot, name, flag, imo, mmsi, dist_a_m, dist_b_m, report_age_min from ais_matches where chosen = 1 order by slot"):
+        for r in [] if "slot" not in columns else store.db.execute("select scene_id, hull_id, slot, name, flag, imo, mmsi, dist_a_m, dist_b_m, report_age_min, is_sanctioned from ais_matches where chosen = 1 order by slot"):
             dist = r["dist_b_m"] if r["slot"] == "b" and r["dist_b_m"] is not None else r["dist_a_m"]
             parties.setdefault(f"{r['scene_id']}__{r['hull_id']}", []).append(
-                {"slot": r["slot"], "name": r["name"], "flag": r["flag"], "imo": r["imo"], "mmsi": r["mmsi"], "distance_m": dist, "age_min": r["report_age_min"]})
+                {"slot": r["slot"], "name": r["name"], "flag": r["flag"], "imo": r["imo"], "mmsi": r["mmsi"], "distance_m": dist, "age_min": r["report_age_min"], "is_sanctioned": bool(r["is_sanctioned"])})
+        diagnostics: dict[str, dict[str, list[dict]]] = {}
+        excluded: dict[str, dict[str, dict[str, int]]] = {}
+        candidate_table = store.db.execute("select 1 from sqlite_master where type='table' and name='ais_candidates'").fetchone()
+        if candidate_table:
+            candidate_rows = store.db.execute(
+                "select scene_id, hull_id, slot, ship_id, is_sat, name, type, type_code, flag, seen_utc, report_age_min, method, "
+                "before_age_min, after_age_min, bracket_gap_min, distance_m, ais_length_m, length_diff_m, heading_diff_deg, "
+                "ais_width_m, dwt, is_sanctioned, decision, reasons from ais_candidates order by scene_id, hull_id, slot, distance_m"
+            ).fetchall()
+            for row in candidate_rows:
+                key = f"{row['scene_id']}__{row['hull_id']}"
+                slot = row["slot"]
+                excluded.setdefault(key, {}).setdefault(slot, {"satellite": 0, "unnamed": 0})
+                if row["is_sat"]:
+                    excluded[key][slot]["satellite"] += 1
+                    continue
+                if not row["name"]:
+                    excluded[key][slot]["unnamed"] += 1
+                    continue
+                diagnostics.setdefault(key, {}).setdefault(slot, []).append(
+                    {
+                        "ship_id": row["ship_id"],
+                        "name": row["name"],
+                        "type": row["type"],
+                        "type_code": row["type_code"],
+                        "flag": row["flag"],
+                        "seen_utc": row["seen_utc"],
+                        "age_min": row["report_age_min"],
+                        "method": row["method"],
+                        "before_age_min": row["before_age_min"],
+                        "after_age_min": row["after_age_min"],
+                        "bracket_gap_min": row["bracket_gap_min"],
+                        "distance_m": row["distance_m"],
+                        "ais_length_m": row["ais_length_m"],
+                        "ais_width_m": row["ais_width_m"],
+                        "dwt": row["dwt"],
+                        "is_sanctioned": bool(row["is_sanctioned"]),
+                        "length_diff_m": row["length_diff_m"],
+                        "heading_diff_deg": row["heading_diff_deg"],
+                        "decision": row["decision"],
+                        "reasons": row["reasons"],
+                    }
+                )
+            for key, slot_rows in diagnostics.items():
+                for slot, items in slot_rows.items():
+                    items.sort(key=lambda item: (item["decision"] != "selected", item["distance_m"], item["age_min"]))
+        else:
+            candidate_rows = []
         coverage = {(r["scene_id"], r["site"]): r["ships"] for r in store.db.execute("select scene_id, site, ships from ais_coverage")}
         floor = rules["ais_match"]["min_coverage_ships"]
         for h in listed:
             h["ais"] = parties.get(h["id"], [])
+            key = h["id"]
+            h["ais_diagnostics"] = {
+                slot: {
+                    "candidate_count": len(diagnostics.get(key, {}).get(slot, [])),
+                    "satellite_excluded": excluded.get(key, {}).get(slot, {}).get("satellite", 0),
+                    "unnamed_excluded": excluded.get(key, {}).get(slot, {}).get("unnamed", 0),
+                    "candidates": diagnostics.get(key, {}).get(slot, [])[:5],
+                }
+                for slot in ("a", "b")
+            } if candidate_rows else None
             scene_, rec_ = records[h["id"]]
             try:
                 h["vessels"] = vessel_points(folder, scene_, rec_, rules)

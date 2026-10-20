@@ -113,7 +113,7 @@ def plot(passes: list[dict], sites: list[dict], path: str) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(prog="maritime_tip_cue.passes")
+    parser = argparse.ArgumentParser(prog="maritime-sts-monitor passes")
     parser.add_argument("--days", type=float, default=7)
     parser.add_argument("--end", help="ISO end time, default now")
     parser.add_argument("--map", help="PNG path for the footprint map")

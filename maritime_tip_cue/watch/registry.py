@@ -114,7 +114,7 @@ def adopt(no: int, force: bool = False) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(prog="maritime_tip_cue.watch.registry")
+    parser = argparse.ArgumentParser(prog="maritime-sts-monitor registry")
     parser.add_argument("command", choices=("list", "register", "adopt"))
     parser.add_argument("target", nargs="*")
     parser.add_argument("--force", action="store_true")

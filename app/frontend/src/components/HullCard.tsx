@@ -78,10 +78,11 @@ export default function HullCard({ run, hull, flag, onSaved, focused }: Props) {
                   const o = all[1 - i] || v;
                   const dx = v.fx - o.fx, dy = v.fy - o.fy, len = Math.hypot(dx, dy) || 1;
                   const ox = (dx / len) * 16, oy = (dy / len) * 16 - (len === 1 ? 16 : 0);
+                  const matched = hull.ais?.some((p) => p.slot === (i === 0 ? "a" : "b"));
                   return (
                     <span key={v.n}>
-                      <span className="dot" style={{ left: `${v.fx * 100}%`, top: `${v.fy * 100}%` }} />
-                      <span className="pin" style={{ left: `${v.fx * 100}%`, top: `${v.fy * 100}%`, transform: `translate(calc(-50% + ${ox}px), calc(-50% + ${oy}px))` }}>{v.n}</span>
+                      <span className={`dot ${matched ? "matched" : "unmatched"}`} style={{ left: `${v.fx * 100}%`, top: `${v.fy * 100}%` }} />
+                      <span className={`pin ${matched ? "matched" : "unmatched"}`} style={{ left: `${v.fx * 100}%`, top: `${v.fy * 100}%`, transform: `translate(calc(-50% + ${ox}px), calc(-50% + ${oy}px))` }}>{v.n}</span>
                     </span>
                   );
                 })}
@@ -118,6 +119,7 @@ export default function HullCard({ run, hull, flag, onSaved, focused }: Props) {
                 {p ? (
                   <span>
                     <b>{p.name || p.mmsi || "unnamed"}</b>
+                    {p.is_sanctioned && <strong className="warn"> Sanctioned</strong>}
                     {p.flag ? ` (${p.flag})` : ""}
                     {p.imo ? `, IMO ${p.imo}` : ""} <span className="muted">{num(p.distance_m, 0)} m, report {num(p.age_min, 0)} min old</span>
                   </span>
@@ -135,7 +137,8 @@ export default function HullCard({ run, hull, flag, onSaved, focused }: Props) {
             <span key={i}>
               {i ? " + " : ""}
               <b>{p.name || p.mmsi || "unnamed"}</b>
-              {p.flag ? ` (${p.flag})` : ""} {num(p.distance_m, 0)} m, {num(p.age_min, 0)} min
+              {p.is_sanctioned && <strong className="warn"> Sanctioned</strong>}
+                    {p.flag ? ` (${p.flag})` : ""} {num(p.distance_m, 0)} m, {num(p.age_min, 0)} min
             </span>
           ))}
         </div>
@@ -144,6 +147,33 @@ export default function HullCard({ run, hull, flag, onSaved, focused }: Props) {
           AIS:{" "}
           {hull.ais_status === "no_data" ? "no archive data at capture time" : hull.ais_status === "not_checked" ? "not matched yet" : "no ship matched"}
         </div>
+      )}
+      {hull.ais_diagnostics && (
+        <details className="ais-evidence">
+          <summary>AIS matching evidence</summary>
+          {(["a", "b"] as const).map((slot, i) => {
+            const d = hull.ais_diagnostics?.[slot];
+            if (!d) return null;
+            return (
+              <section key={slot}>
+                <b>Vessel {i + 1}</b>
+                <span className="muted small"> {d.candidate_count} named terrestrial candidates; excluded {d.satellite_excluded} satellite, {d.unnamed_excluded} unnamed</span>
+                {d.candidates.length ? d.candidates.map((c) => (
+                  <div className="ais-candidate" key={c.ship_id}>
+                    <b>{c.name}</b>{c.type ? ` · ${c.type}` : ""} <span className={`ais-decision ${c.decision}`}>{c.decision.replace(/_/g, " ")}</span>
+                    <div className="muted small">
+                      {num(c.distance_m, 0)} m · report {num(c.age_min, 0)} min old · {c.method}
+                      {`, brackets ${num(c.before_age_min, 0)}/${num(c.after_age_min, 0)} min`}
+                      {c.ais_length_m !== null ? ` · size ${num(c.ais_length_m, 0)} × ${num(c.ais_width_m, 0)} m (length Δ${num(c.length_diff_m, 0)} m)` : ""}
+                      {c.heading_diff_deg !== null ? ` · heading Δ${num(c.heading_diff_deg, 0)}°` : ""}
+                      {c.reasons ? ` · ${c.reasons}` : ""}
+                    </div>
+                  </div>
+                )) : <div className="muted small">No named terrestrial candidates recorded.</div>}
+              </section>
+            );
+          })}
+        </details>
       )}
       <dl className="m">
         {Object.entries(hull.measures || {}).map(([k, v]) => (

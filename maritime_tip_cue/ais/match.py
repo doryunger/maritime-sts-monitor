@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
+from scipy.optimize import linear_sum_assignment
 
 from maritime_tip_cue import hotspots
 from maritime_tip_cue.ais import archive
@@ -17,7 +18,14 @@ PAIR_VERDICTS = ("pair",)
 COLUMNS = (
     "scene_id site hull_id ship_id is_sat name imo mmsi flag seen_utc report_age_min method rep_lat rep_lon "
     "proj_lat proj_lon dist_a_m dist_b_m limit_m ais_length_m ais_width_m meas_length_m length_diff_m "
-    "heading_diff_deg speed_kn chosen slot reasons"
+    "heading_diff_deg speed_kn chosen slot reasons is_sanctioned"
+).split()
+CANDIDATE_COLUMNS = (
+    "scene_id site hull_id slot ship_id is_sat name type type_code gt_type_code flag dwt status state "
+    "seen_utc elapsed_min captured_utc tile_utc report_age_min method before_seen_utc before_age_min "
+    "after_seen_utc after_age_min bracket_gap_min rep_lat rep_lon proj_lat proj_lon distance_m limit_m "
+    "ais_length_m ais_width_m meas_length_m length_diff_m ais_heading hull_heading heading_diff_deg "
+    "speed_kn course rot decision reasons is_sanctioned"
 ).split()
 
 
@@ -55,7 +63,8 @@ def fetch_reports(capture: datetime, bbox: list[float], rule: dict):
     hi = capture + timedelta(minutes=rule["search_window_min"])
     fmt = "%Y-%m-%d %H:%M:%S"
     sql = (
-        "select distinct ship_id, name, is_sat, seen_utc, lat, lon, speed_kn, course, heading, length_m, width_m from vessels "
+        "select distinct ship_id, name, is_sat, type, type_code, gt_type_code, flag, lat, lon, speed_kn, course, heading, rot, "
+        "seen_utc, elapsed_min, destination, length_m, width_m, dwt, status, state, captured_utc, tile_utc, coalesce(is_sanctioned, false) as is_sanctioned from vessels "
         f"where seen_utc >= TIMESTAMPTZ '{lo.strftime(fmt)}+00' and seen_utc <= TIMESTAMPTZ '{hi.strftime(fmt)}+00' "
         f"and lat between {s} and {n} and lon between {w} and {e}"
     )
@@ -83,10 +92,15 @@ def project(reports: list[dict], capture: datetime, rule: dict) -> list[dict]:
         after = min((r for r in rs if r["seen_utc"] > capture), key=lambda r: r["seen_utc"], default=None)
         near = min((r for r in (before, after) if r), key=lambda r: abs((capture - r["seen_utc"]).total_seconds()))
         age = abs((capture - near["seen_utc"]).total_seconds()) / 60
+        before_age = abs((capture - before["seen_utc"]).total_seconds()) / 60 if before else None
+        after_age = abs((capture - after["seen_utc"]).total_seconds()) / 60 if after else None
         stationary = near["speed_kn"] is None or near["speed_kn"] <= rule["stationary_max_speed_kn"]
         if stationary:
             lat, lon, method = near["lat"], near["lon"], "closest"
-        elif before and after:
+        elif before and after and (
+            rule["max_report_age_min"] is None
+            or (before_age <= rule["max_report_age_min"] and after_age <= rule["max_report_age_min"])
+        ):
             f = (capture - before["seen_utc"]).total_seconds() / (after["seen_utc"] - before["seen_utc"]).total_seconds()
             lat = before["lat"] + f * (after["lat"] - before["lat"])
             lon = before["lon"] + f * (after["lon"] - before["lon"])
@@ -97,7 +111,23 @@ def project(reports: list[dict], capture: datetime, rule: dict) -> list[dict]:
         heading = near["heading"] if near["heading"] is not None and near["heading"] < 360 else None
         if heading is None and not stationary and near["course"] is not None and near["course"] < 360:
             heading = near["course"]
-        out.append(near | {"lat_rep": near["lat"], "lon_rep": near["lon"], "lat": lat, "lon": lon, "age": age, "method": method, "ais_heading": heading})
+        out.append(
+            near
+            | {
+                "lat_rep": near["lat"],
+                "lon_rep": near["lon"],
+                "lat": lat,
+                "lon": lon,
+                "age": age,
+                "method": method,
+                "ais_heading": heading,
+                "before_seen_utc": before["seen_utc"] if before else None,
+                "before_age": before_age,
+                "after_seen_utc": after["seen_utc"] if after else None,
+                "after_age": after_age,
+                "bracket_gap": (after["seen_utc"] - before["seen_utc"]).total_seconds() / 60 if before and after else None,
+            }
+        )
     return out
 
 
@@ -144,7 +174,7 @@ def candidates_for(hull: dict, projected: list[dict], rule: dict) -> list[dict]:
         out.append({"c": c, "dists": dists})
     for o in out:
         c = o["c"]
-        o["named"] = not c["is_sat"] and bool(c["name"])
+        o["known"] = not c["is_sat"] and bool(c["name"])
         o["per_slot"] = []
         for s, d in zip(slots, o["dists"]):
             limit = rule["party_max_distance_m"]
@@ -159,28 +189,63 @@ def candidates_for(hull: dict, projected: list[dict], rule: dict) -> list[dict]:
             hdiff = heading_diff(c["ais_heading"], s["heading"])
             if rule["heading_tolerance_deg"] is not None and hdiff is not None and hdiff > rule["heading_tolerance_deg"]:
                 reasons.append("heading")
-            if not o["named"]:
-                reasons.append("satellite_or_unnamed")
-            o["per_slot"].append({"slot": s["slot"], "dist": d, "limit": limit, "ldiff": ldiff, "hdiff": hdiff, "meas_length": s["length"], "reasons": reasons})
+            if c["is_sat"]:
+                reasons.append("satellite")
+            if not c["name"]:
+                reasons.append("unnamed")
+            o["per_slot"].append(
+                {
+                    "slot": s["slot"],
+                    "dist": d,
+                    "limit": limit,
+                    "ldiff": ldiff,
+                    "hdiff": hdiff,
+                    "meas_length": s["length"],
+                    "hull_heading": s["heading"],
+                    "reasons": reasons,
+                }
+            )
     return out
 
 
 def assign(hulls: dict[str, dict]) -> dict[tuple[str, str], int]:
-    edges = []
+    slots = [(hid, j) for hid in sorted(hulls) for j in range(len(hulls[hid]["slots"]))]
+    if not slots:
+        return {}
+    ships = sorted({o["c"]["ship_id"] for h in hulls.values() for o in h["cands"]})
+    if not ships:
+        return {}
+    slot_index = {key: i for i, key in enumerate(slots)}
+    ship_index = {ship: i for i, ship in enumerate(ships)}
+    edges = {}
     for hid, h in hulls.items():
-        for i, o in enumerate(h["cands"]):
+        for o in h["cands"]:
+            ship = o["c"]["ship_id"]
             for j, ps in enumerate(o["per_slot"]):
                 if not ps["reasons"]:
-                    edges.append((ps["dist"], hid, i, j, ps["slot"]))
-    edges.sort()
-    used_ships, used_slots, chosen = set(), set(), {}
-    for dist, hid, i, j, slot in edges:
-        ship = hulls[hid]["cands"][i]["c"]["ship_id"]
-        if ship in used_ships or (hid, slot) in used_slots:
-            continue
-        used_ships.add(ship)
-        used_slots.add((hid, slot))
-        chosen[(hid, ship)] = j
+                    i = slot_index[(hid, j)]
+                    age_s = round(o["c"]["age"] * 60)
+                    distance_mm = round(ps["dist"] * 1000)
+                    edges[(i, ship_index[ship])] = (distance_mm, age_s)
+    if not edges:
+        return {}
+    age_weight = max(age_s for _, age_s in edges.values()) * len(slots) + 1
+    valid_costs = {
+        key: distance_mm * age_weight + age_s
+        for key, (distance_mm, age_s) in edges.items()
+    }
+    unmatched_cost = max(valid_costs.values()) * len(slots) + 1
+    invalid_cost = unmatched_cost * (len(slots) + 1)
+    costs = np.full((len(slots), len(ships) + len(slots)), invalid_cost, dtype=np.int64)
+    costs[:, len(ships) :] = unmatched_cost
+    for (i, j), cost in valid_costs.items():
+        costs[i, j] = cost
+    rows, cols = linear_sum_assignment(costs)
+    chosen = {}
+    for i, j in zip(rows, cols):
+        if j < len(ships) and (i, j) in edges:
+            hid, slot = slots[i]
+            chosen[(hid, ships[j])] = slot
     return chosen
 
 
@@ -190,6 +255,10 @@ def load_identities(ship_ids: list[str]) -> dict:
     ids = ",".join("'" + s.replace("'", "''") + "'" for s in ship_ids)
     rows = archive.fetch(f"select ship_id, name, imo, mmsi, flag from identities where ship_id in ({ids})").to_pylist()
     return {r["ship_id"]: r for r in rows}
+
+
+def utc_text(value: datetime | None) -> str | None:
+    return value.strftime("%Y-%m-%dT%H:%M:%SZ") if value else None
 
 
 def select_hulls(store: Store, verdicts: tuple, all_checked: bool, stats: bool) -> list[dict]:
@@ -232,36 +301,49 @@ def run_match(store: Store, rows: list[dict], rules: dict, log=print) -> dict:
             hulls[r["hull_id"]] = h
         chosen = assign(hulls)
         idents = load_identities(sorted({ship for (_, ship) in chosen}))
-        out = []
+        matches = []
+        candidates = []
         for hid, h in hulls.items():
             for o in h["cands"]:
                 c = o["c"]
-                best = None
                 for j, ps in enumerate(o["per_slot"]):
-                    if (hid, c["ship_id"]) in chosen and chosen[(hid, c["ship_id"])] == j:
-                        best = j
-                        break
-                if best is None:
-                    best = min(range(len(o["per_slot"])), key=lambda j: o["per_slot"][j]["dist"])
-                ps = o["per_slot"][best]
-                ident = idents.get(c["ship_id"]) if best is not None and (hid, c["ship_id"]) in chosen and chosen[(hid, c["ship_id"])] == best else None
-                reasons = ",".join(ps["reasons"]) if ps["reasons"] else "ok"
-                if ps["reasons"] == [] and not ((hid, c["ship_id"]) in chosen and chosen[(hid, c["ship_id"])] == best):
-                    reasons = "ok_not_assigned"
-                is_chosen = int((hid, c["ship_id"]) in chosen and chosen[(hid, c["ship_id"])] == best)
-                dists = o["dists"]
-                out.append(
-                    (
-                        scene_id, site, hid, c["ship_id"], int(bool(c["is_sat"])), (ident or {}).get("name") or c["name"],
-                        (ident or {}).get("imo"), (ident or {}).get("mmsi"), (ident or {}).get("flag") or None,
-                        c["seen_utc"].strftime("%Y-%m-%dT%H:%M:%SZ"), c["age"], c["method"], c["lat_rep"], c["lon_rep"], c["lat"], c["lon"],
-                        dists[0], dists[1] if len(dists) > 1 and h["source"] == "s2" else None, ps["limit"], c["length_m"], c["width_m"],
-                        ps["meas_length"], ps["ldiff"], ps["hdiff"], c["speed_kn"], is_chosen, ps["slot"] if is_chosen else None, reasons,
+                    selected = chosen.get((hid, c["ship_id"])) == j
+                    decision = "selected" if selected else "rejected" if ps["reasons"] else "eligible_not_selected"
+                    candidates.append(
+                        (
+                            scene_id, site, hid, ps["slot"], c["ship_id"], int(bool(c["is_sat"])), c["name"], c.get("type"),
+                            c.get("type_code"), c.get("gt_type_code"), c.get("flag"), c.get("dwt"), c.get("status"), c.get("state"),
+                            utc_text(c["seen_utc"]), c.get("elapsed_min"), utc_text(c.get("captured_utc")), utc_text(c.get("tile_utc")),
+                            c["age"], c["method"], utc_text(c.get("before_seen_utc")), c.get("before_age"),
+                            utc_text(c.get("after_seen_utc")), c.get("after_age"), c.get("bracket_gap"), c["lat_rep"], c["lon_rep"],
+                            c["lat"], c["lon"], ps["dist"], ps["limit"], c.get("length_m"), c.get("width_m"), ps["meas_length"],
+                            ps["ldiff"], c.get("ais_heading"), ps["hull_heading"], ps["hdiff"], c.get("speed_kn"), c.get("course"),
+                            c.get("rot"), decision, ",".join(ps["reasons"]), int(bool(c.get("is_sanctioned"))),
+                        )
                     )
-                )
+                    if selected:
+                        ident = idents.get(c["ship_id"])
+                        dists = o["dists"]
+                        matches.append(
+                            (
+                                scene_id, site, hid, c["ship_id"], int(bool(c["is_sat"])), (ident or {}).get("name") or c["name"],
+                                (ident or {}).get("imo"), (ident or {}).get("mmsi"), (ident or {}).get("flag") or c.get("flag"),
+                                utc_text(c["seen_utc"]), c["age"], c["method"], c["lat_rep"], c["lon_rep"], c["lat"], c["lon"],
+                                dists[0], dists[1] if len(dists) > 1 and h["source"] == "s2" else None, ps["limit"], c.get("length_m"),
+                                c.get("width_m"), ps["meas_length"], ps["ldiff"], ps["hdiff"], c.get("speed_kn"), 1,
+                                ps["slot"], "ok", int(bool(c.get("is_sanctioned"))),
+                            )
+                        )
         with store.tx():
             store.db.executemany("delete from ais_matches where scene_id=? and site=? and hull_id=?", [(scene_id, site, r["hull_id"]) for r in hs])
-            store.db.executemany(f"insert into ais_matches ({','.join(COLUMNS)}) values ({','.join('?' * len(COLUMNS))})", out)
+            store.db.executemany("delete from ais_candidates where scene_id=? and site=? and hull_id=?", [(scene_id, site, r["hull_id"]) for r in hs])
+            if matches:
+                store.db.executemany(f"insert into ais_matches ({','.join(COLUMNS)}) values ({','.join('?' * len(COLUMNS))})", matches)
+            if candidates:
+                store.db.executemany(
+                    f"insert into ais_candidates ({','.join(CANDIDATE_COLUMNS)}) values ({','.join('?' * len(CANDIDATE_COLUMNS))})",
+                    candidates,
+                )
         result[(scene_id, site)] = {"hulls": hulls, "projected": projected, "chosen": chosen, "capture": capture, "bbox": bbox}
         log(f"{scene_id[:40]} {site}: {len(hs)} hulls, {len(projected)} ships, {sum(1 for _ in chosen)} chosen")
     return result
@@ -291,8 +373,8 @@ def pct(values: list[float]) -> str:
 
 
 def nearest_named(cands: list[dict]) -> dict | None:
-    named = [o for o in cands if o["named"]]
-    return min(named, key=lambda o: min(o["dists"])) if named else None
+    known = [o for o in cands if o["known"]]
+    return min(known, key=lambda o: min(o["dists"])) if known else None
 
 
 def stats(store: Store, result: dict, rules: dict) -> None:
@@ -371,10 +453,13 @@ def main() -> int:
     if not args.stats and not args.all_checked:
         ensure_table(store)
         keep = {(r["scene_id"], r["site"], r["hull_id"]) for r in rows}
-        stale = [k for k in store.db.execute("select distinct scene_id, site, hull_id from ais_matches") if tuple(k) not in keep]
+        stale = set()
         with store.tx():
-            store.db.executemany("delete from ais_matches where scene_id=? and site=? and hull_id=?", [tuple(k) for k in stale])
-        print(f"cleared AIS matches of {len(stale)} hulls that are no longer pairs")
+            for table in ("ais_matches", "ais_candidates"):
+                keys = [tuple(k) for k in store.db.execute(f"select distinct scene_id, site, hull_id from {table}") if tuple(k) not in keep]
+                stale.update(keys)
+                store.db.executemany(f"delete from {table} where scene_id=? and site=? and hull_id=?", keys)
+        print(f"cleared AIS records of {len(stale)} hulls that are no longer pairs")
     result = run_match(store, rows, rules)
     if args.stats:
         stats(store, result, rules)

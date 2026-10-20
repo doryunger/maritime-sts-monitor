@@ -30,6 +30,7 @@ export interface SceneRow {
 }
 
 export interface AisParty {
+  is_sanctioned: boolean;
   slot: string;
   name: string | null;
   flag: string | null;
@@ -37,6 +38,36 @@ export interface AisParty {
   mmsi: string | null;
   distance_m: number | null;
   age_min: number | null;
+}
+
+export interface AisCandidate {
+  is_sanctioned: boolean;
+  ship_id: string;
+  name: string;
+  type: string | null;
+  type_code: string | null;
+  flag: string | null;
+  seen_utc: string;
+  age_min: number;
+  method: string;
+  before_age_min: number | null;
+  after_age_min: number | null;
+  bracket_gap_min: number | null;
+  distance_m: number;
+  ais_length_m: number | null;
+  ais_width_m: number | null;
+  dwt: number | null;
+  length_diff_m: number | null;
+  heading_diff_deg: number | null;
+  decision: string;
+  reasons: string;
+}
+
+export interface AisSlotDiagnostics {
+  candidate_count: number;
+  satellite_excluded: number;
+  unnamed_excluded: number;
+  candidates: AisCandidate[];
 }
 
 export interface Hull {
@@ -55,6 +86,7 @@ export interface Hull {
   ai2: Record<string, number | null>;
   measures: Record<string, number | string | null>;
   ais: AisParty[];
+  ais_diagnostics?: Record<"a" | "b", AisSlotDiagnostics> | null;
   ais_status?: "matched" | "no_match" | "no_data" | "not_checked";
   vessels?: { n: number; fx: number; fy: number }[];
 }

@@ -89,7 +89,7 @@ def collect(no: int) -> list[dict]:
             parties = {
                 p["slot"]: dict(p)
                 for p in store.db.execute(
-                    "select slot, name, imo, mmsi, flag, dist_a_m, dist_b_m, report_age_min, ship_id from ais_matches "
+                    "select slot, name, imo, mmsi, flag, dist_a_m, dist_b_m, report_age_min, ship_id, is_sanctioned from ais_matches "
                     "where scene_id=? and site=? and hull_id=? and chosen=1",
                     (r["scene_id"], r["site"], r["hull_id"]),
                 )
@@ -200,6 +200,7 @@ def party_cols(f: dict, n: int, slot: str, pos) -> dict:
         f"vessel_{n}_imo": p.get("imo"),
         f"vessel_{n}_mmsi": p.get("mmsi"),
         f"vessel_{n}_flag": p.get("flag"),
+        f"vessel_{n}_is_sanctioned": bool(p.get("is_sanctioned")),
         f"vessel_{n}_ais_distance_m": dist,
         f"vessel_{n}_ais_report_age_min": p.get("report_age_min"),
     }
@@ -327,7 +328,7 @@ def record_and_upload(tables: dict, upload: bool) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(prog="maritime_tip_cue.publish")
+    parser = argparse.ArgumentParser(prog="maritime-sts-monitor publish")
     parser.add_argument("runs", nargs="+", type=int)
     parser.add_argument("--upload", action="store_true")
     args = parser.parse_args()

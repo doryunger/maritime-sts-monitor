@@ -9,7 +9,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BrowserRouter>
       <header className="top">
-        <Link to="/" className="brand">STS runs</Link>
+        <Link to="/" className="brand">Maritime STS Monitor</Link>
       </header>
       <main>
         <Routes>

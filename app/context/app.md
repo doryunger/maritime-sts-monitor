@@ -11,7 +11,7 @@ change end the pythonw process and run the vbs again.
 FastAPI (`server.py`) over `runs.py`, which reads `data/runs/registry.db` for the run list and each run's
 `state.db` per request; there is no database of its own. A run's document comes from
 `maritime_tip_cue.watch.report.collect` (about 3 s for a week at one hot spot), cached in memory per run and keyed
-by hull count, last scene update, AIS match count and invocation count, so a QA save does not rebuild it. Flags
+by hull count, last scene update, AIS match and candidate counts, and invocation count, so a QA save does not rebuild it. Flags
 and after-QA verdicts are read fresh on every request. Images are rendered on first request and cached as PNG in
 `<run>/cache/`, named by a hash of the hull id and the cache key. A Save is validated against the hull's run
 verdict (flags for measured hulls, single / moving / pair labels for unmeasured; a correct verdict other than the
@@ -32,5 +32,8 @@ run vs after-QA verdict counts, and tabs for QA cards, scenes and the fixture co
 the URL so a view can be linked. Each card is headed by its detection ID (the hull id within the scene); `&hull=<id>`
 scrolls to that card and outlines it, and the card's link button copies that URL.
 Pair cards number the two vessels on the raw image (1 and 2, HTML markers over the untouched image, offset away
-from each other) from `vessels` in the run document, and list the AIS ship of each vessel below, N/A when unmatched.
+from each other) from `vessels` in the run document, and list the selected AIS ship of each vessel below, N/A when unmatched.
+The expandable AIS matching evidence reads `ais_candidates` from SQLite and shows named terrestrial candidates and
+their decision evidence per slot, plus counts of satellite and unnamed exclusions. This is diagnostic context, not a
+vessel identity QA label; the imagery review flags remain the only user feedback stored by the app.
 

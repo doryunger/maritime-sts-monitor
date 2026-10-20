@@ -1,4 +1,4 @@
-# maritime-tip-cue
+# maritime-sts-monitor
 
 Watches known **ship-to-ship (STS) transfer hot spots** in free satellite imagery. On every new
 Sentinel-1 or Sentinel-2 pass over a hot spot it detects the ships, checks each tanker for a second
@@ -117,7 +117,8 @@ the last finished scene and never leaves a half-saved one.
 | `scenes` | One row per scene and hot spot: source, capture time, pass, status and stage, attempts, error, detector seconds, counts (raw, kept, checked, verdicts) |
 | `raw_detections` | The detector's own output per scene, before any filter |
 | `hulls` | Every checked hull: position, Ai2 size and heading, verdict, measurements |
-| `ais_matches` | Per hull, the AIS candidates considered and the chosen match with distance and reasons |
+| `ais_matches` | Selected vessel assignments used by publishing and the viewer, one row per matched hull slot |
+| `ais_candidates` | Per-slot AIS evidence for QA: named terrestrial candidates, rejected candidates, and satellite or unnamed exclusions with report timing, projection, distance, and comparison measures |
 | `outputs` | One row per parquet written: path and S3 URI, created time, date, hot spot, source, rows, pairs, possible pairs, scene ids, checksum, upload time, run id |
 | `captures` | One row per capture file: finding, local path, S3 URI, format |
 | `qa_flags` | The QA review: per hull, flag, correct verdict, note, reviewer (mirrored to the committed `reviews/<run>.json`) |

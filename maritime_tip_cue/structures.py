@@ -25,7 +25,7 @@ def fetch() -> dict:
     features, seen = [], set()
     for site in hotspots.load():
         for attempt in range(4):
-            r = requests.post(cfg["overpass_url"], data={"data": query(site["bbox"], filters)}, headers={"User-Agent": "maritime-tip-cue"}, timeout=180)
+            r = requests.post(cfg["overpass_url"], data={"data": query(site["bbox"], filters)}, headers={"User-Agent": "maritime-sts-monitor"}, timeout=180)
             if r.ok and r.text.lstrip().startswith("{"):
                 break
             time.sleep(20 * (attempt + 1))

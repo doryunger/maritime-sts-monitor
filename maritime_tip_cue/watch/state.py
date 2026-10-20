@@ -16,6 +16,20 @@ create table if not exists ais_matches (
 );
 """
 
+AIS_CANDIDATES = """
+create table if not exists ais_candidates (
+    scene_id text, site text, hull_id text, slot text, ship_id text, is_sat integer, name text,
+    type text, type_code text, gt_type_code text, flag text, dwt real, status text, state text,
+    seen_utc text, elapsed_min real, captured_utc text, tile_utc text, report_age_min real,
+    method text, before_seen_utc text, before_age_min real, after_seen_utc text, after_age_min real,
+    bracket_gap_min real, rep_lat real, rep_lon real, proj_lat real, proj_lon real, distance_m real,
+    limit_m real, ais_length_m real, ais_width_m real, meas_length_m real, length_diff_m real,
+    ais_heading real, hull_heading real, heading_diff_deg real, speed_kn real, course real, rot real,
+    decision text, reasons text,
+    primary key (scene_id, site, hull_id, slot, ship_id)
+);
+"""
+
 FINDINGS = """
 select h.scene_id, h.site, h.hull_id, s.source, s.capture_utc, h.lat, h.lon, h.role, h.verdict as run_verdict,
     f.status as qa_status, f.correct_verdict as qa_correct_verdict, f.note as qa_note, f.updated_utc as qa_updated_utc,
@@ -103,7 +117,11 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self.db.execute("pragma journal_mode=wal")
         self.db.execute("pragma busy_timeout=60000")
-        self.db.executescript(SCHEMA + AIS_MATCHES)
+        self.db.executescript(SCHEMA + AIS_MATCHES + AIS_CANDIDATES)
+        for table in ("ais_matches", "ais_candidates"):
+            columns = {r["name"] for r in self.db.execute(f"pragma table_info({table})")}
+            if "is_sanctioned" not in columns:
+                self.db.execute(f"alter table {table} add column is_sanctioned integer not null default 0")
         current = self.db.execute("select sql from sqlite_master where type = 'view' and name = 'findings'").fetchone()
         if current is None or current[0].split(" as", 1)[1].strip() != FINDINGS.strip():
             self.db.executescript("drop view if exists findings; create view findings as " + FINDINGS)
@@ -335,7 +353,7 @@ def qa_flags(folder: Path) -> list[dict]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(prog="maritime_tip_cue.watch.state")
+    parser = argparse.ArgumentParser(prog="maritime-sts-monitor state")
     parser.add_argument("command", choices=("import", "summary", "qa-import"))
     parser.add_argument("folder")
     parser.add_argument("flags", nargs="?")

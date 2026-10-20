@@ -194,7 +194,7 @@ def run(store: Store, run_id: int, args, rules: dict, site: dict, start: datetim
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(prog="maritime_tip_cue.watch.run")
+    parser = argparse.ArgumentParser(prog="maritime-sts-monitor run")
     parser.add_argument("--site", required=True)
     parser.add_argument("--end", required=True)
     parser.add_argument("--days", type=float, default=7)

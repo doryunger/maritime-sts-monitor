@@ -86,7 +86,11 @@ table.verdicts { width: auto; min-width: 100%; }
 .card.focused { outline: 3px solid var(--accent); outline-offset: 2px; }
 .pin-wrap { position: relative; }
 .pin { position: absolute; transform: translate(6px, calc(-100% - 6px)); min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: rgba(255, 214, 0, .92); color: #111; font: 700 11px/18px var(--sans); text-align: center; pointer-events: none; box-shadow: 0 0 0 1px rgba(0, 0, 0, .5); }
-.dot { position: absolute; width: 6px; height: 6px; border-radius: 3px; background: rgba(255, 214, 0, .95); transform: translate(-50%, -50%); box-shadow: 0 0 0 1px rgba(0, 0, 0, .6); pointer-events: none; }
+.pin.matched { background: rgba(255, 214, 0, .92); }
+.pin.unmatched { background: rgba(255, 255, 255, .96); }
+.dot { position: absolute; width: 6px; height: 6px; border-radius: 3px; transform: translate(-50%, -50%); box-shadow: 0 0 0 1px rgba(0, 0, 0, .6); pointer-events: none; }
+.dot.matched { background: rgba(255, 214, 0, .95); }
+.dot.unmatched { background: rgba(255, 255, 255, .96); }
 .pin.static { position: static; transform: none; display: inline-block; margin-right: 6px; }
 .party { display: flex; align-items: baseline; gap: 2px; font-size: 12.5px; margin: 2px 0; }
 .pics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
@@ -103,6 +107,12 @@ table.verdicts { width: auto; min-width: 100%; }
 .v-moving { background: var(--moving); }
 .v-excluded, .v-unresolved { background: var(--excluded); }
 .ais { font-size: 12.5px; }
+.ais-evidence { border-top: 1px solid var(--line); font-size: 12px; }
+.ais-evidence section { margin: 6px 0 10px; }
+.ais-candidate { border-left: 2px solid var(--line); padding: 3px 0 3px 8px; margin: 4px 0; }
+.ais-decision { font-size: 10px; text-transform: uppercase; color: var(--muted); }
+.ais-decision.selected { color: var(--ok); font-weight: 700; }
+.ais-decision.rejected { color: var(--pair); }
 dl.m { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 2px 10px; margin: 4px 0; }
 dl.m div { display: flex; justify-content: space-between; gap: 6px; font-size: 11.5px; }
 dl.m dt { color: var(--muted); }

@@ -246,6 +246,23 @@ types only (AIS ship types 7 and 8), 30 days kept. What that means for matching 
   identity or size; they can't be tracked or matched by length.
 - **Small craft are not stored**, so a tanker alongside a bunker barge shows in imagery only.
 
+Saved-run match coverage (32 pair findings, runs 1-5) is coverage only, not match accuracy: there is no vessel-identity
+ground truth to say whether a selected name is correct. Counts are reported per hot spot and source as findings with
+both slots matched / one slot matched / neither matched:
+
+| Hot spot | Source | Both | One | Neither | Findings |
+|---|---:|---:|---:|---:|---:|
+| fujairah_outer | S1 | 1 | 8 | 1 | 10 |
+| fujairah_outer | S2 | 0 | 2 | 0 | 2 |
+| off_sohar | S1 | 0 | 13 | 5 | 18 |
+| johor_east_scs | S1 | 0 | 1 | 0 | 1 |
+| malaysia_eopl | S1 | 1 | 0 | 0 | 1 |
+
+The imbalance is a reason to retain candidate evidence for QA, not evidence that one specific rule caused the misses.
+At off_sohar, 181 satellite candidate rows were seen and 21 were within 300 m; one was older than the current 60-minute
+gate and 20 exceeded the distance gate. Satellite candidates remain excluded because they do not provide stable vessel
+identity or dimensions. These saved-run counts do not establish a general threshold across the hot-spot list.
+
 ## Sentinel-2 hull shape test (measured 2026-10-19)
 Set: 192 labelled stationary S2 hulls, 36 pairs and 156 non-pairs: the QA of runs 1 and 2 (fujairah_outer,
 9 and 12-19 Oct 2026, with the user's recheck of 44971, 45616/45617, 46095/46096) and the user-labelled S2

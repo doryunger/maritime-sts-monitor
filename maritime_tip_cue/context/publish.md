@@ -15,7 +15,7 @@ Rows: point geometry (WKB, GeoParquet 1.0 `geo` metadata, OGC:CRS84 by default) 
 date, hot spot, source, scene, run and hull ids, QA status (`confirmed`, `corrected` or `unreviewed`), the source's
 measurements as JSON, and vessel 1 and 2 (the same numbering as the app: S2 hull A and B or shape step, S1 longer and
 shorter light line), each with position and AIS name, IMO, MMSI, flag, match distance and report age, null when
-unmatched; `ais_covered` false means the archive had no ships at that time, so "no name" is not evidence.
+unmatched. `vessel_1_is_sanctioned` and `vessel_2_is_sanctioned` are always boolean; missing or null archive values, including unmatched slots, are false; `ais_covered` false means the archive had no ships at that time, so "no name" is not evidence.
 
 Captures: the same crop as the QA card (`review.crop_half_m`) as a GeoTIFF of the stored pixel values (S2 L1C bands
 as uint16 digital numbers, S1 VV and VH linear power as float32) and a PNG with the card's fixed stretch and nothing

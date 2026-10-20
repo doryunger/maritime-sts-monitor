@@ -154,7 +154,8 @@ def warm() -> None:
 
 def stamp(store: Store) -> tuple:
     return tuple(store.db.execute(
-        "select (select count(*) from hulls), (select max(updated_utc) from scenes), (select count(*) from ais_matches), (select count(*) from runs)"
+        "select (select count(*) from hulls), (select max(updated_utc) from scenes), (select count(*) from ais_matches), "
+        "(select count(*) from ais_candidates), (select count(*) from runs)"
     ).fetchone())
 
 

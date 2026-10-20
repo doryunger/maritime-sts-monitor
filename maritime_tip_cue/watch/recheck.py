@@ -39,7 +39,7 @@ def recheck(no: int, sources: tuple[str, ...] = ("s1", "s2")) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(prog="maritime_tip_cue.watch.recheck")
+    parser = argparse.ArgumentParser(prog="maritime-sts-monitor recheck")
     parser.add_argument("runs", nargs="+", type=int)
     parser.add_argument("--sources", default="s1,s2")
     args = parser.parse_args()

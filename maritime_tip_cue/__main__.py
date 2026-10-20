@@ -3,7 +3,7 @@ import logging
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="maritime_tip_cue")
+    parser = argparse.ArgumentParser(prog="maritime-sts-monitor")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("initdb")
     args = parser.parse_args()
