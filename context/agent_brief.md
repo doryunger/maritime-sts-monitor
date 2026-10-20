@@ -1,6 +1,6 @@
 # Agent brief (read this instead of the full docs)
 
-Conventions are in CLAUDE.md (already loaded). Read docs by section only: `grep -n '^## ' <file>`, then
+Conventions are in AGENTS.md (loaded via CLAUDE.md for Claude). Read docs by section only: `grep -n '^## ' <file>`, then
 `sed -n` the range. Use `.venv/Scripts/python`. Print compact output.
 
 ## Module map
