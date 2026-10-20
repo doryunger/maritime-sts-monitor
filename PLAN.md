@@ -26,6 +26,7 @@ results are reported per hot spot, and one without data is named as such.
 | Area | Gap | Needs | By stage |
 |---|---|---|---|
 | Hot-spot file | Who edits it and how (now `python -m maritime_tip_cue.hotspots publish <file>`) | Decision | 2 |
+| EOPL / Johor survey | Select adjacent waters from the [draft map and coverage inventory](docs/feasibility.md#eopl-and-johor-expansion-survey-prepared-2026-10-20), check acquisition coverage and compare original versus added waters; live boundaries unchanged | Survey area decision, then processing | 3, 4 |
 | Detector output cleanup | S2 test: one detection on an inland reservoir; one ship detected twice ~100 m apart (see feasibility) | Sea mask; merge overlapping detections | 4 |
 | Whole-scene processing | Ai2's pipelines download and reproject the full scene (S1: ~250 × 170 km, ~3.5 min reprojection per image on one process), though a hot spot is ~100 × 100 km or less | Check the pipelines accept a cropped input with correct georeferencing and give the same detections as the full scene on that area | 4 |
 | Ships near ports | S1 test: a 170 m ship anchored in harbour (ADAM A) was not detected. Hot spots are anchorages, most within a few km of land (shore distance 2 km) | Check clutter vs Ai2's near-infrastructure filter on a hot-spot scene with known anchored ships | 4 |

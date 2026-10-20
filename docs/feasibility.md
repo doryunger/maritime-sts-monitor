@@ -342,3 +342,34 @@ The Johor corrected pair stayed `single` at every cutoff. Its width grew from 1.
 21 dB the fitted length also exceeded the 400 m maximum. Lowering the brightness cutoff therefore did not fix this
 case and lost previously detected reviewed pairs in every other hot spot. The active 15 dB rule was kept.
 
+## EOPL and Johor expansion survey (prepared 2026-10-20)
+
+The boundary and coverage map, SVG, GeoJSON, summary and reproducible `build_map.py` are outside the app repo at
+`C:\Users\Shadow\projects\maritime-sts-analysis\2026-10-20-malaysia-survey\`.
+The map was visually checked against local coastlines. Current boundaries were read from the shared S3 list.
+Coverage polygons come from the recorded detector prediction windows in runs 1-5: pixel bounds multiplied by
+their signed resolutions, transformed from their recorded CRS to WGS84, then clipped to each configured box.
+They show nominal processed extent, not usable water, cloud-free area or independent observations.
+
+| Hot spot | S1 scenes | S2 scenes | Capture dates | After-QA pair hull records |
+|---|---:|---:|---|---:|
+| malaysia_eopl | 4 | 0 | 16-17 Oct 2026 | 1 |
+| johor_east_scs | 3 | 0 | 16-17 Oct 2026 | 2 |
+| fujairah_outer | 6 | 13 | 9-19 Oct 2026 | 38 |
+| off_sohar | 3 | 8 | 13-19 Oct 2026 | 27 |
+
+Counts are scene records, not independent passes; pair hull records are not unique STS events or proof of
+cargo transfer. No S2 observations were processed for either Malaysian site. These short Malaysian samples
+do not establish low activity. The added waters have no processed observations in these runs.
+
+The draft survey boxes are EOPL `[103.0, 0.3, 106.5, 1.8]` and Johor `[103.5, 1.8, 106.5, 3.3]`
+(west, south, east, north). Each extends selected existing edges by 0.5 degrees, approximately 55 km.
+These are exploratory envelopes, not measured activity boundaries or active selection rules; the live S3
+list and detection rules are unchanged. Land and the existing shore-distance exclusion still apply when
+evaluating candidate waters. Imagery availability in the extensions has not yet been checked.
+
+Next: select survey waters from the map, check S1/S2 acquisition coverage, and compare original versus added
+waters over matching dates with unchanged detection rules. Report reviewed pair calls and missed-pair samples
+per usable observation and per area, retaining Fujairah and Sohar as comparisons. Inspect density within the
+current boxes too: detecting a nearby cluster does not necessarily require expanding their boundaries.
+
