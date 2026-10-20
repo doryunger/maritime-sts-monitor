@@ -63,6 +63,20 @@ Rewriting already-pushed history needs explicit confirmation, and watch for IDE 
 background pull/push) re-merging old history back in before you push; re-check `origin/main`'s actual tip
 right before pushing.
 
+## Repository privacy
+
+- Keep deployment material out of Git, including public TLS certificates, certificate chains,
+  private keys, credentials, and connection details that expose private infrastructure. Public
+  certificates can still reveal server names or IP addresses. Store the AIS archive certificate
+  under the ignored `data/secrets/` directory and refer to its local path from `config.yaml`.
+- Before every commit, inspect `git status --short`, `git diff --cached --name-only`, and the
+  staged diff for certificates, PEM blocks, tokens, passwords, and infrastructure addresses.
+  Check that deployment files are ignored with `git check-ignore`. Ignore rules do not protect
+  files that Git already tracks, so inspect staged deletions and additions as well.
+- If sensitive deployment material reaches a commit, remove it from the current tree and check
+  whether it remains in reachable history. Do not describe it as hidden from GitHub while it is
+  still reachable there. Rewriting pushed history requires the explicit confirmation above.
+
 ## General working style
 
 - Prefer actually running the thing over predicting its outcome — "let's check" beats "I'd
