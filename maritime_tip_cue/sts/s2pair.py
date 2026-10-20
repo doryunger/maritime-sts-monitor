@@ -582,10 +582,10 @@ def check(win: dict, box: dict, cfg: dict) -> dict:
 
 
 def check_hull(win: dict, hull: dict, cfg: dict) -> dict:
+    legacy_limit = cfg.get("stopped_speed_kn")
     speed = hull.get("speed_kn")
-    if speed is not None and speed > cfg["stopped_speed_kn"]:
-        limit = cfg["stopped_speed_kn"]
-        return blank_result("moving", f"Ai2 speed {speed:.1f} kn is above the stopped limit {limit:g} kn")
+    if legacy_limit is not None and speed is not None and speed > legacy_limit:
+        return blank_result("moving", f"Ai2 speed {speed:.1f} kn is above the stopped limit {legacy_limit:g} kn")
     x, y = s2window.to_xy(win, hull["lon"], hull["lat"])
     box = {"x": x, "y": y, "length_m": hull["length_m"], "width_m": hull["width_m"], "heading": hull["heading"]}
     return check(win, box, cfg)

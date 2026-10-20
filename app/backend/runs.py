@@ -10,11 +10,11 @@ from maritime_tip_cue.sts import rules as rules_mod
 from maritime_tip_cue.watch import registry, report
 from maritime_tip_cue.watch.state import QA_COLUMNS, Store, now, qa_flags, upsert_flags
 
-LISTED = ("pair", "possible_pair", "unmeasured", "moving")
+LISTED = ("pair", "possible_pair", "unmeasured")
 SINGLES = 24
 FLAGS = ("ok", "wrong_verdict", "bad_geometry", "other")
-LABELS = ("is_single", "is_moving", "is_pair")
-CORRECT = ("pair", "single", "moving")
+LABELS = ("is_single", "is_pair")
+CORRECT = ("pair", "single")
 STALE_MIN = 60
 
 CACHE: dict[int, tuple] = {}
@@ -73,7 +73,7 @@ def summary(row: dict) -> dict:
         last_event = store.db.execute("select max(time_utc) from events").fetchone()[0]
         run_v, final = counts(store, "run_verdict"), counts(store, "verdict")
         reviewed = store.db.execute("select count(*) from qa_flags").fetchone()[0]
-        flagged = store.db.execute("select count(*) from qa_flags f where not exists (select 1 from findings h where h.scene_id || '__' || h.hull_id = f.hull_id and (h.run_verdict in ('pair', 'possible_pair', 'unmeasured', 'moving')))").fetchone()[0]
+        flagged = store.db.execute("select count(*) from qa_flags f where not exists (select 1 from findings h where h.scene_id || '__' || h.hull_id = f.hull_id and (h.run_verdict in ('pair', 'possible_pair', 'unmeasured')))").fetchone()[0]
         captured = list(store.db.execute("select min(capture_utc), max(capture_utc) from scenes").fetchone())
     finally:
         store.close()
@@ -193,8 +193,24 @@ def detail(no: int) -> dict:
     doc, _ = cached(no)
     final = finals(no)
     hulls = [h | {"final_verdict": final.get(h["id"], h["verdict"])} for h in doc["hulls"]]
+    by_id = {h["id"]: h for h in hulls}
+    flags = []
+    for flag in qa_flags(folder(no)):
+        h = by_id.get(flag["hull_id"])
+        if h is None:
+            flags.append(flag)
+            continue
+        shown = flag | {"verdict": h["verdict"]}
+        if flag["status"] in ("ok", "wrong_verdict", "is_single", "is_moving", "is_pair") and h["final_verdict"] in ("pair", "single"):
+            if h["verdict"] == "unmeasured":
+                shown |= {"status": f"is_{h['final_verdict']}", "correct_verdict": None}
+            elif h["verdict"] == h["final_verdict"]:
+                shown |= {"status": "ok", "correct_verdict": None}
+            else:
+                shown |= {"status": "wrong_verdict", "correct_verdict": h["final_verdict"]}
+        flags.append(shown)
     row = next(r for r in registry.listing() if r["run_no"] == no)
-    return doc | {"number": no, "summary": summary(row), "hulls": hulls, "flags": qa_flags(folder(no))}
+    return doc | {"number": no, "summary": summary(row), "hulls": hulls, "flags": flags}
 
 
 def image(no: int, hull_id: str, kind: str) -> bytes | None:

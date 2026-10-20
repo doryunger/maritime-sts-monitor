@@ -387,11 +387,6 @@
       "unit": "m",
       "basis": "One-sided excess counts as a pair only over at least this much hull length."
     },
-    "stopped_speed_kn": {
-      "value": 2,
-      "unit": "kn",
-      "basis": "A ship under this speed is stopped or drifting; a hull with no speed estimate counts as stopped."
-    },
     "profile_bands": {
       "value": [
         "B08",

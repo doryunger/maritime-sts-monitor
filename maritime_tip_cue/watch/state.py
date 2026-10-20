@@ -31,16 +31,16 @@ create table if not exists ais_candidates (
 """
 
 FINDINGS = """
-select h.scene_id, h.site, h.hull_id, s.source, s.capture_utc, h.lat, h.lon, h.role, h.verdict as run_verdict,
+select h.scene_id, h.site, h.hull_id, s.source, s.capture_utc, h.lat, h.lon, h.role,
+    case when h.verdict = 'moving' then 'single' else h.verdict end as run_verdict,
     f.status as qa_status, f.correct_verdict as qa_correct_verdict, f.note as qa_note, f.updated_utc as qa_updated_utc,
     case
-        when f.status = 'wrong_verdict' then coalesce(f.correct_verdict, 'unresolved')
-        when f.status = 'is_single' then 'single'
-        when f.status = 'is_moving' then 'moving'
+        when f.status = 'wrong_verdict' then case when f.correct_verdict = 'moving' then 'single' else coalesce(f.correct_verdict, 'unresolved') end
+        when f.status in ('is_single', 'is_moving') then 'single'
         when f.status = 'is_pair' then 'pair'
         when f.status in ('bad_geometry', 'other') then 'excluded'
-        when f.status = 'ok' then f.verdict
-        else h.verdict
+        when f.status = 'ok' then case when f.verdict = 'moving' then 'single' else f.verdict end
+        else case when h.verdict = 'moving' then 'single' else h.verdict end
     end as verdict
 from hulls h join scenes s using (scene_id, site)
 left join qa_flags f on f.hull_id = h.scene_id || '__' || h.hull_id
@@ -94,7 +94,7 @@ create table if not exists events (
 
 IGNORED_ROLES = ("duplicate", "hull_b_box")
 HEADER_KEYS = ("scene", "source", "site", "time")
-VERDICTS = ("pair", "possible_pair", "single", "moving", "unmeasured")
+VERDICTS = ("pair", "possible_pair", "single", "unmeasured")
 
 
 def now() -> str:
@@ -106,7 +106,7 @@ def dump(value) -> str:
 
 
 def verdict_counts(hulls: list[dict]) -> dict:
-    return dict(Counter(h["verdict"] for h in hulls if h.get("role") not in IGNORED_ROLES))
+    return dict(Counter("single" if h["verdict"] == "moving" else h["verdict"] for h in hulls if h.get("role") not in IGNORED_ROLES))
 
 
 class Store:
@@ -298,10 +298,11 @@ def summary(folder: Path) -> list[str]:
         v = c.get("verdicts", {})
         kept = c.get("dets", {}).get("kept", 0)
         total.update(v)
+        total["single"] += v.get("moving", 0)
         total["kept"] += kept
         total["checked"] += c.get("checked", 0)
         secs += s["detector_s"] or 0
-        counts = " ".join(f"{k} {v.get(k, 0)}" for k in VERDICTS)
+        counts = " ".join(f"{k} {v.get(k, 0) + (v.get('moving', 0) if k == 'single' else 0)}" for k in VERDICTS)
         lines.append(f"{s['source']} {s['capture_utc'][:16]} {s['scene_id'][:40]} {s['status']}: kept {kept}, checked {c.get('checked', 0)}, {counts}, detector {s['detector_s'] or 0:.0f} s")
     counts = " ".join(f"{k} {total[k]}" for k in VERDICTS)
     lines.append(f"total {len(scenes)} scenes: kept {total['kept']}, checked {total['checked']}, {counts}, detector {secs:.0f} s")

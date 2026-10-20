@@ -270,7 +270,7 @@ def select_hulls(store: Store, verdicts: tuple, all_checked: bool, stats: bool) 
     rows = [dict(r) for r in store.db.execute(q)]
     rows = [r for r in rows if r["role"] not in IGNORED_ROLES]
     if stats:
-        rows = [r for r in rows if r["verdict"] != "moving" and (all_checked or r["qa_status"] == "ok")]
+        rows = [r for r in rows if all_checked or r["qa_status"] == "ok"]
     elif not all_checked:
         rows = [r for r in rows if r["verdict"] in verdicts]
     return rows

@@ -14,7 +14,7 @@ FastAPI (`server.py`) over `runs.py`, which reads `data/runs/registry.db` for th
 by hull count, last scene update, AIS match and candidate counts, and invocation count, so a QA save does not rebuild it. Flags
 and after-QA verdicts are read fresh on every request. Images are rendered on first request and cached as PNG in
 `<run>/cache/`, named by a hash of the hull id and the cache key. A Save is validated against the hull's run
-verdict (flags for measured hulls, single / moving / pair labels for unmeasured; a correct verdict other than the
+verdict (flags for measured hulls, single / pair labels for unmeasured; a correct verdict other than the
 current one), then upserted into `qa_flags` and mirrored to `reviews/<run>.json`. Status: an invocation with an end
 time shows its status; without one it is `running`, or `stopped` once the last event is over an hour old (a run
 killed when the PC shut down).
@@ -23,7 +23,7 @@ killed when the PC shut down).
 React, Vite and TypeScript in `frontend/`; `dist/` and `node_modules/` are gitignored and rebuilt by
 `start.cmd` when missing. During development `npm run dev` proxies `/api` to the server. Runs table: one row per scene, since each capture has its own timestamp and that is the time detections carry: run,
 area, source (with the S2 tile or S1 orbit), captured, created (when that scene's processing finished), run status
-and review status, all sortable; a row opens the run's QA filtered to that scene (`?scene=`). The sort is in the URL (`?sort=&dir=`, so Back restores it) and in localStorage (`runs.sort`, used when the table is opened without one); no app-wide store is needed while the table is the only shared view state. Review status:
+and review status, all sortable; a row opens the run's QA filtered to that scene (`?scene=`). Scenes with no listed QA cards are hidden by default, with a checkbox to show them; failed scenes remain visible, and the checkbox choice lives in localStorage (`runs.show_empty`). The sort is in the URL (`?sort=&dir=`, so Back restores it) and in localStorage (`runs.sort`, used when the table is opened without one); no app-wide store is needed while the table is the only shared view state. Review status:
 `waiting for run` while the run is going, `nothing to review` for a failed scene or one with no listed hulls,
 `not started`, `in progress` (unflagged hulls left or an `unresolved` wrong verdict), `done`. Review counts come from
 the cached run document, warmed in a thread when the server starts.
@@ -33,6 +33,9 @@ the URL so a view can be linked. Each card is headed by its detection ID (the hu
 scrolls to that card and outlines it, and the card's link button copies that URL.
 Pair cards number the two vessels on the raw image (1 and 2, HTML markers over the untouched image, offset away
 from each other) from `vessels` in the run document, and list the selected AIS ship of each vessel below, N/A when unmatched.
+Both the image markers and the details list use yellow numbers for matched vessels and white numbers for unmatched vessels.
+Historical `moving` verdicts display as singles; the Ai2 speed remains visible in the card details.
+After a pair-rule recheck, the app presents earlier QA choices against the current run verdict while preserving the original SQLite and review JSON records.
 The expandable AIS matching evidence reads `ais_candidates` from SQLite and shows named terrestrial candidates and
 their decision evidence per slot, plus counts of satellite and unnamed exclusions. This is diagnostic context, not a
 vessel identity QA label; the imagery review flags remain the only user feedback stored by the app.

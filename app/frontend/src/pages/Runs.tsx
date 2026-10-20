@@ -15,7 +15,16 @@ const COLUMNS: { key: Key; title: string }[] = [
 ];
 
 const STORE = "runs.sort";
+const SHOW_EMPTY = "runs.show_empty";
 const KEYS = COLUMNS.map((c) => c.key);
+
+function rememberedShowEmpty(): boolean {
+  try {
+    return localStorage.getItem(SHOW_EMPTY) === "true";
+  } catch {
+    return false;
+  }
+}
 
 function remembered(): { key: Key; dir: 1 | -1 } | null {
   try {
@@ -31,6 +40,7 @@ const sortValue = (r: SceneRow, k: Key): string | number => (k === "run" ? r.run
 export default function Runs() {
   const [rows, setRows] = useState<SceneRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showEmpty, setShowEmpty] = useState(rememberedShowEmpty);
   const [params, setParams] = useSearchParams();
   const go = useNavigate();
   const fromUrl = params.get("sort") as Key | null;
@@ -61,7 +71,16 @@ export default function Runs() {
   }, [rows, sort.key, sort.dir]);
 
   const toggle = (key: Key) => setSort({ key, dir: sort.key === key ? (sort.dir === 1 ? -1 : 1) : 1 });
+  const toggleEmpty = (checked: boolean) => {
+    setShowEmpty(checked);
+    try {
+      localStorage.setItem(SHOW_EMPTY, String(checked));
+    } catch {
+      return;
+    }
+  };
   const open = (r: SceneRow) => go(`/runs/${r.run}?scene=${encodeURIComponent(r.scene_id)}`);
+  const visible = showEmpty ? sorted : sorted.filter((r) => r.review !== "nothing to review" || r.status === "failed");
 
   if (error) return <p className="error">Could not load runs: {error}</p>;
   if (!rows) return <p className="muted">Loading runs…</p>;
@@ -70,6 +89,10 @@ export default function Runs() {
     <section>
       <h1>Runs</h1>
       <p className="muted">One row per scene. Click a column title to sort, a row to open its QA.</p>
+      <div className="table-options">
+        <label><input type="checkbox" checked={showEmpty} onChange={(e) => toggleEmpty(e.target.checked)} /> Show scenes with no review cards</label>
+        <span className="muted small">Showing {visible.length} of {sorted.length} scenes</span>
+      </div>
       <div className="wrap">
         <table className="runs">
           <thead>
@@ -85,7 +108,7 @@ export default function Runs() {
             </tr>
           </thead>
           <tbody>
-            {sorted.map((r) => (
+            {visible.map((r) => (
               <tr key={`${r.run}-${r.scene_id}`} onClick={() => open(r)} tabIndex={0} onKeyDown={(e) => e.key === "Enter" && open(r)}>
                 <td className="mono">{r.run}</td>
                 <td>{label(r.area)}</td>

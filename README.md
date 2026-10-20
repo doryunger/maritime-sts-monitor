@@ -66,7 +66,7 @@ are dropped.
 2. **Detection**: Ai2 detectors (one per sensor) on the hot-spot crop. Output per ship: position,
    length, width, heading, type. Detections on land or within the site's shore distance are dropped.
 3. **STS pair check** (`maritime_tip_cue/sts/`, parameters in `rules/sts_graph.json`): per tanker,
-   `pair`, `single`, `moving` or `unmeasured` (no `possible_pair`: weak evidence is reported as single and kept in the record). Sentinel-2 uses the hull's spectral
+   `pair`, `single` or `unmeasured` (no `possible_pair`: weak evidence is reported as single and kept in the record). Sentinel-2 uses the hull's spectral
    width and a second-hull search beside it; Sentinel-1 uses the radar outline and two light lines.
 4. **AIS enrichment**: from the AIS archive, the AIS positions in and around the
    hot spot near the pass time, projected to the capture time, matched to each hull by position,
@@ -94,7 +94,7 @@ captures/<DD-MM-YYYY>/<hot_spot>/<source>/<finding>[_<vessel names>].tif / .png
 - `<DD-MM-YYYY>` is the UTC capture date; `<hot_spot>` is the site name from the hot-spot list.
 - A file is written only when that source has STS findings (`pair`, after QA) at that hot
   spot on that date. No findings at a hot spot means no hot-spot folder; no STS anywhere on a date
-  means no date folder. Passes with no STS, `single`, `moving` and `unmeasured` hulls are not
+  means no date folder. Passes with no STS, `single` and `unmeasured` hulls are not
   published.
 - One row per STS finding (GeoParquet, point geometry): position, capture time, source, scene id,
   verdict and its measurements, involved parties and their vessel data where AIS matched them (name,

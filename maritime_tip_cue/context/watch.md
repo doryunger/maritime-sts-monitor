@@ -72,20 +72,20 @@ raw detections: none within 60 m (`no_detection`); a raw detection that no kept 
 dropped, outside the hot spot box or by shore distance (`outside_hot_spot`, `shore_distance` with the measured shore
 distance); a kept detection without a hull was not checked (`not_checked`, an object under the minimum length). The
 shore distance threshold of the run is not stored, so the reason is derived from the box and the measured distance,
-not from the threshold. The fixture verdict is the one the fixture rules give, which ignore speed, so a stopped-ship
-fixture that the run calls `moving` counts as a difference.
+not from the threshold. The fixture verdict is the one the fixture rules give; a pair fixture that the run calls
+`single` counts as a difference.
 
 ## qa
 QA is done in the runs app (`app/context/app.md`): one card per listed hull with a flag (OK, wrong verdict with the
-correct one, bad geometry, other; unmeasured hulls take single, single moving or pair directly) and a note. A Save
+correct one, bad geometry, other; unmeasured hulls take single or pair directly) and a note. A Save
 writes `state.db` `qa_flags` (one row per hull, upserted) and rewrites the committed `reviews/<run>.json`, since
 `state.db` is gitignored; `state.py qa-import <run> <reviews/<run>.json>` reloads it into a fresh database.
 QA changes the findings through the `findings` view: its `verdict` is the reviewer's correct verdict for
 `wrong_verdict` (`unresolved` while none is picked), the labelled one for unmeasured hulls, `excluded` for
-`bad_geometry` and `other` (rigs, barges, broken outlines), else the run verdict, kept as `run_verdict`. AIS
-matching and publishing read `findings`; the cards keep the run verdict, since that is what is judged, and show
-"after QA" where it changed. The view is created only if missing, so opening a run that is still being written
-needs no write lock.
+`bad_geometry` and `other` (rigs, barges, broken outlines), else the run verdict, kept as `run_verdict`.
+Legacy `moving` verdicts and QA labels are read as `single`; the original speed measurement stays in the hull record.
+AIS matching and publishing read `findings`; the cards keep the run verdict, since that is what is judged, and show
+"after QA" where it changed. The view is refreshed when its definition changes.
 First use (fujairah_outer 12-19 Oct 2026, 64 hulls): 11 of 18 pairs OK, 4 wrong, 2 rigs or barges, 1 small
 craft alongside; all 10 unmeasured were single ships.
 

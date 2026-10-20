@@ -9,10 +9,9 @@ const FLAGS: [string, string][] = [
 ];
 const LABELS: [string, string][] = [
   ["is_single", "Single"],
-  ["is_moving", "Single (moving)"],
   ["is_pair", "Pair"],
 ];
-const NAMES: Record<string, string> = { pair: "Pair", single: "Single", moving: "Single (moving)" };
+const NAMES: Record<string, string> = { pair: "Pair", single: "Single" };
 
 interface Props {
   run: number;
@@ -115,7 +114,7 @@ export default function HullCard({ run, hull, flag, onSaved, focused }: Props) {
             const p = hull.ais.find((x) => x.slot === slot);
             return (
               <div key={slot} className="party">
-                <span className="pin static">{i + 1}</span>
+                <span className={`pin static ${p ? "matched" : "unmatched"}`}>{i + 1}</span>
                 {p ? (
                   <span>
                     <b>{p.name || p.mmsi || "unnamed"}</b>

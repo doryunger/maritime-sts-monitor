@@ -304,3 +304,41 @@ Fujairah fixture 7/8, EOPL 1/1, run 2 9/9 with 3 false when its labels are left 
 0.58): the fill margin is thin. Re-check of runs 2-5 against the QA: 27 of 27 reviewed pairs called pair, no false
 pair; the 3 hulls left in the possible band (run 2) are all non-pairs.
 
+## Sentinel-1 thin second return audit (measured 2026-10-20)
+
+Run 4 hull `w0_49165_21194` at Johor was called single and corrected to pair in QA. Its extracted bright lines are
+286 m and 160 m long, with separation 0.263 and overlap 0.745. The outline rule still rejects it: fitted length
+406 m exceeds 400 m, width 1.45 beams is below 1.55, and fill 0.485 is below 0.60. The raw crop has two adjacent
+elongated returns, but the lower-right return is diffuse, so the line measurements alone do not prove a pair.
+
+A retrospective QA cue requiring length 150-430 m, width at least 1.3 beams, separation at least 0.26, overlap at
+least 0.72, fill at least 0.45, and two extracted lines at least 100 m long flags 13 of 1,267 stored S1 singles or
+possible pairs across runs 2-5: 8 Fujairah, 4 off Sohar, 1 Johor, 0 EOPL. Seven were already reviewed: one corrected
+pair (this case), three singles, and three ambiguous cases involving suspected structures or a smaller adjacent
+vessel. Six had no QA flag at the time of the audit. This is a small, selected sample, so the cue is suitable for
+prioritizing QA, not for changing the automatic pair verdict yet.
+
+The six unreviewed crops were then inspected raw and with overlays. Most showed one elongated return or clutter;
+`w0_47515_271699` was visually ambiguous but not a clear pair. A cross-track VH profile of the Johor case had a
+broad plateau with only a roughly 1-2 dB notch. Similar shallow shoulders or irregular profiles appeared in the
+unreviewed crops and reviewed singles, so a simple two-peak valley test did not separate these cases. The two-line
+cue remains a QA priority signal; none of the six was assigned a verdict from this inspection.
+
+## Sentinel-1 lower brightness cutoff sweep (measured 2026-10-20)
+
+The outline includes pixels at or above the local peak minus `outline_drop_db`; increasing the drop from 15 dB
+admits dimmer pixels. Stored chips for 1,298 S1 objects across 12 passes in runs 2-5 were evaluated in memory at
+15, 17, 19 and 21 dB, leaving every other rule unchanged and writing no run data.
+
+| Drop below peak | Reviewed pairs called pair | Reviewed singles called pair | Pair calls across runs 2-5 |
+|---:|---:|---:|---:|
+| 15 dB | 30 / 31 | 0 | 30 |
+| 17 dB | 24 / 31 | 1 | 28 |
+| 19 dB | 20 / 31 | 0 | 21 |
+| 21 dB | 8 / 31 | 0 | 9 |
+
+The Johor corrected pair stayed `single` at every cutoff. Its width grew from 1.45 beams at 15 dB to 2.08 at
+17 dB, but measured light-line separation fell from 0.263 to 0.121, below the 0.26 pair threshold. At 19 and
+21 dB the fitted length also exceeded the 400 m maximum. Lowering the brightness cutoff therefore did not fix this
+case and lost previously detected reviewed pairs in every other hot spot. The active 15 dB rule was kept.
+

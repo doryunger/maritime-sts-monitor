@@ -9,7 +9,6 @@
   --pair: #c0392b;
   --possible: #d68910;
   --single: #4a6fa5;
-  --moving: #7d5ba6;
   --unmeasured: #7f8c8d;
   --excluded: #555555;
   --ok: #2e8b57;
@@ -75,11 +74,13 @@ table.verdicts { width: auto; min-width: 100%; }
 .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 12px; font: 600 13px var(--sans); color: var(--muted); cursor: pointer; }
 .tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
 .toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; }
+.table-options { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 8px 0; font-size: 13px; }
+.table-options label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
 .chip { font: 600 12px var(--sans); border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 999px; padding: 3px 10px; cursor: pointer; }
 .chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
 .card { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 4px; }
-.card.flag-ok, .card.flag-is_single, .card.flag-is_moving, .card.flag-is_pair { border-left-color: var(--ok); }
+.card.flag-ok, .card.flag-is_single, .card.flag-is_pair { border-left-color: var(--ok); }
 .card.flag-wrong_verdict, .card.flag-bad_geometry, .card.flag-other { border-left-color: var(--warn); }
 .hid { display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
 .copy { font: 600 11px var(--sans); background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 4px; padding: 1px 6px; cursor: pointer; }
@@ -104,7 +105,6 @@ table.verdicts { width: auto; min-width: 100%; }
 .v-pair { background: var(--pair); }
 .v-possible_pair { background: var(--possible); }
 .v-single { background: var(--single); }
-.v-moving { background: var(--moving); }
 .v-excluded, .v-unresolved { background: var(--excluded); }
 .ais { font-size: 12.5px; }
 .ais-evidence { border-top: 1px solid var(--line); font-size: 12px; }

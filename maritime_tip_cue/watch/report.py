@@ -15,7 +15,7 @@ from maritime_tip_cue.watch.state import IGNORED_ROLES, VERDICTS, Store
 
 SCALE = 6
 S1_DB_RANGE = (22.0, 50.0)
-SECTIONS = ("pair", "possible_pair", "unmeasured", "moving", "single")
+SECTIONS = ("pair", "possible_pair", "unmeasured", "single")
 DATE = re.compile(r"_(\d{4}-\d{2}-\d{2})$")
 S1_KEYS = ("length_m", "width_beams", "light_separation", "overlap", "fill", "blur_m")
 S2_KEYS = ("width_ratio", "ratio_ab", "unmeasured_reason", "shape_step_beams", "shape_step_k", "shape_continuity", "shape_straight_k", "shape_call", "weak_evidence")
@@ -58,7 +58,7 @@ def scene_section(scenes: list[dict]) -> list[dict]:
                 "raw": d.get("raw"),
                 "kept": d.get("kept"),
                 "checked": c.get("checked"),
-                **{k: v.get(k, 0) for k in VERDICTS},
+                **{k: v.get(k, 0) + (v.get("moving", 0) if k == "single" else 0) for k in VERDICTS},
                 "error": s["error"],
             }
         )
@@ -78,7 +78,7 @@ def describe(scene: dict, rec: dict, taken: set) -> dict:
     if hid in taken:
         hid += f"__{scene['site']}"
     taken.add(hid)
-    base = {"id": hid, "scene_id": scene["scene_id"], "site": scene["site"], "hull_id": rec["hull_id"], "source": scene["source"], "time": scene["capture_utc"], "lat": rec["lat"], "lon": rec["lon"], "verdict": rec["verdict"], "role": rec["role"]}
+    base = {"id": hid, "scene_id": scene["scene_id"], "site": scene["site"], "hull_id": rec["hull_id"], "source": scene["source"], "time": scene["capture_utc"], "lat": rec["lat"], "lon": rec["lon"], "verdict": "single" if rec["verdict"] == "moving" else rec["verdict"], "role": rec["role"]}
     if scene["source"] == "s1":
         box = (rec.get("ai2_boxes") or [{}])[0]
         base["ai2"] = {"length_m": rec.get("ai2_length_m"), "width_m": box.get("width_m"), "heading": box.get("heading"), "boxes": len(rec.get("ai2_boxes") or [])}
@@ -353,7 +353,7 @@ def collect(folder: Path, n_singles: int = 24, seed: int = 0, keep: set | None =
         picked = {h["id"] for h in singles if h["id"] in keep}
         rest = [h for h in singles if h["id"] not in picked]
         picked |= {h["id"] for h in random.Random(seed).sample(rest, max(0, min(n_singles - len(picked), len(rest))))}
-        listed = [h for h in all_hulls if h["verdict"] in ("pair", "possible_pair", "unmeasured", "moving") or h["id"] in picked or h["id"] in keep]
+        listed = [h for h in all_hulls if h["verdict"] in ("pair", "possible_pair", "unmeasured") or h["id"] in picked or h["id"] in keep]
         listed.sort(key=lambda h: (SECTIONS.index(h["verdict"]) if h["verdict"] in SECTIONS else 9, h["time"], h["id"]))
         site = site_of(store, scenes)
         fx = fixture_section(store, scenes, all_hulls, {h["id"] for h in listed}, site, rules)

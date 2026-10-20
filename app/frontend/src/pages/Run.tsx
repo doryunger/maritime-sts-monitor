@@ -3,9 +3,9 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, Flag, label, num, RunDetail, sceneTag, when } from "../api";
 import HullCard from "../components/HullCard";
 
-const SECTIONS = ["pair", "unmeasured", "moving", "single"];
-const VERDICTS = ["pair", "single", "moving", "unmeasured", "excluded", "unresolved"];
-const LABELLED = ["ok", "is_single", "is_moving", "is_pair"];
+const SECTIONS = ["pair", "unmeasured", "single"];
+const VERDICTS = ["pair", "single", "unmeasured", "excluded", "unresolved"];
+const LABELLED = ["ok", "is_single", "is_pair"];
 const FILTERS: [string, string][] = [
   ["all", "All"],
   ["unflagged", "Unflagged"],
