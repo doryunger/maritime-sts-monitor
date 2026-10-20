@@ -29,6 +29,30 @@ export interface SceneRow {
   review: string;
 }
 
+export interface LocalScene {
+  run: number;
+  site: string;
+  source: string;
+  scene_id: string;
+  captured: string;
+  status: string;
+}
+
+export interface QueueJob {
+  job_id: string;
+  site: string;
+  status: string;
+  created_utc: string;
+  scene_details: { scene_id: string; source: string; captured: string; local_runs: LocalScene[] }[];
+}
+
+export interface QueueSnapshot {
+  checked_utc: string;
+  jobs: QueueJob[] | null;
+  local: LocalScene[];
+  error: string | null;
+}
+
 export interface AisParty {
   is_sanctioned: boolean;
   slot: string;
@@ -161,6 +185,7 @@ async function json<T>(r: Response): Promise<T> {
 }
 
 export const api = {
+  jobs: () => fetch("/api/jobs").then((r) => json<QueueSnapshot>(r)),
   runs: () => fetch("/api/runs").then((r) => json<RunSummary[]>(r)),
   scenes: () => fetch("/api/scenes").then((r) => json<SceneRow[]>(r)),
   run: (n: number) => fetch(`/api/runs/${n}`).then((r) => json<RunDetail>(r)),

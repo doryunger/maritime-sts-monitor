@@ -8,6 +8,16 @@ repo venv, output to `app/server.log`); after a frontend change run `npm run bui
 change end the pythonw process and run the vbs again.
 
 ## backend
+`queue.py` reads shared S3 job manifests, claims and receipts on request for `/api/jobs`; it never claims or
+changes jobs. Local scene status is read directly from registered SQLite runs without rendering QA reports.
+Matching uses area, sensor and scene ID only, so it is advisory: older local runs can have different boundaries
+or rules and cannot serve as completion receipts. A failed S3 read returns an unavailable queue, never an empty one.
+
+QA saves resolve IDs against the complete persisted hull table, including hulls outside the sampled review cards.
+The single-hull sample changes as processing adds detections or flags reserve sample slots; validating against
+only the current card list rejected valid cards from an already-open page as `unknown hull`. Saving invalidates
+the report cache so the corrected hull stays in the review list through its persisted flag.
+
 FastAPI (`server.py`) over `runs.py`, which reads `data/runs/registry.db` for the run list and each run's
 `state.db` per request; there is no database of its own. A run's document comes from
 `maritime_tip_cue.watch.report.collect` (about 3 s for a week at one hot spot), cached in memory per run and keyed
@@ -20,6 +30,9 @@ time shows its status; without one it is `running`, or `stopped` once the last e
 killed when the PC shut down).
 
 ## frontend
+The `/jobs` page shows pending shared jobs and local scene matches, with an option to include completed jobs.
+Refresh retrieves current S3 state. Locally running scenes also appear when the shared queue is empty.
+
 React, Vite and TypeScript in `frontend/`; `dist/` and `node_modules/` are gitignored and rebuilt by
 `start.cmd` when missing. During development `npm run dev` proxies `/api` to the server. Runs table: one row per scene, since each capture has its own timestamp and that is the time detections carry: run,
 area, source (with the S2 tile or S1 orbit), captured, created (when that scene's processing finished), run status

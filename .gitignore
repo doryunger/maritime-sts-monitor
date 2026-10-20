@@ -1,4 +1,8 @@
 .env
+.env.*
+!.env.example
+config.local.yaml
+config.*.local.yaml
 *.pem
 *.key
 *.crt
@@ -7,8 +11,10 @@
 *.pfx
 .venv/
 __pycache__/
+.pytest_cache/
+.ruff_cache/
+*.log
 data/
 app/frontend/node_modules/
 app/frontend/dist/
-app/server.log
 app/frontend/*.tsbuildinfo

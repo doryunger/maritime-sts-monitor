@@ -31,4 +31,7 @@ def env(name: str) -> str:
 
 @cache
 def settings() -> dict:
-    return yaml.safe_load((ROOT / "config.yaml").read_text())
+    path = Path(os.environ.get("STS_CONFIG_PATH") or ROOT / "config.yaml")
+    if not path.is_absolute():
+        path = ROOT / path
+    return yaml.safe_load(path.read_text())

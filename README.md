@@ -50,17 +50,24 @@ The canonical hot-spot list is kept on S3 at `hotspots/sts_hotspots.json` in the
 combined coverage must contain these regions and active survey extensions ([audit](docs/feasibility.md#ais-collection-coverage-audit-2026-10-20)). This repo loads the list with
 `maritime_tip_cue/hotspots.py` (`python -m maritime_tip_cue.hotspots` prints it):
 
-| Site | Area | Measured 15 Jul – 15 Oct 2026 |
+| Site | Current area | Prior-box availability, 15 Jul – 15 Oct 2026 |
 |---|---|---|
-| `malaysia_eopl` | EOPL / Singapore Strait east, 103.5–106.0 E, 0.8–1.8 N | S1 on 27 days, S2 38 clear days; 74% coastal AIS |
-| `johor_east_scs` | Johor east / South China Sea, 103.5–106.0 E, 1.8–2.8 N | S1 27 days, S2 35 clear days; 28% coastal AIS, mostly satellite AIS |
+| `malaysia_eopl` | EOPL / Singapore Strait east, 103.0–106.5 E, 0.3–1.8 N | S1 on 27 days, S2 38 clear days; 74% coastal AIS |
+| `johor_east_scs` | Johor east / South China Sea, 103.5–106.5 E, 1.8–3.3 N | S1 27 days, S2 35 clear days; 28% coastal AIS, mostly satellite AIS |
 | `fujairah_outer` | Outer Fujairah / Khor Fakkan, 56.3–57.2 E, 24.8–25.8 N | S1 60 days, S2 40 clear days; 76% coastal AIS |
 | `off_sohar` | Gulf of Oman off Sohar, 56.6–57.6 E, 24.2–24.9 N | S1 36 days, S2 41 clear days; 44% coastal AIS |
 
 Per site: bounding box and minimum distance from shore (2 km for all, decision 2026-10-19); detections nearer to land
 are dropped.
 
+The expanded Malaysian boxes were published on 2026-10-20. Availability and AIS percentages above were
+measured on the original boxes; those measurements have not been repeated for the extensions.
+
 ## Processing
+
+The deployed [catalogue tracker](deploy/catalogue/README.md) checks all sites four times daily and logs its
+discoveries. It writes exact scene/rules manifests to S3. An explicitly invoked EC2 worker consumes those
+jobs and uploads detection artifacts and a completion receipt; instance startup and shutdown remain separate.
 
 1. **Pass search**: Sentinel-1 GRD and Sentinel-2 L1C scenes covering each hot spot since the last
    run, via STAC.
@@ -85,6 +92,10 @@ Two kinds of data, kept apart: **run state** is local SQLite that the process ne
 to account for what it did; the **product** is GeoParquet on S3 plus the captures it points to.
 
 ### Product (S3)
+
+Processing artifacts are under `catalogue/artifacts/<job_id>/<attempt>/`: all-hull `detections.parquet`,
+`raw_detections.parquet`, a SQLite snapshot, manifest and rules. These include singles and unmeasured hulls.
+They are separate from the reviewed, pair-only product below; worker attempts do not overwrite daily STS files.
 
 ```
 sts/<DD-MM-YYYY>/<hot_spot>/s1.parquet
@@ -141,7 +152,7 @@ go straight into the run's `qa_flags`. Start it with `app/start.cmd`; it serves 
 
 | Machine | Uptime | Runs |
 |---|---|---|
-| **Dedicated Lightsail AIS/control host** | 24/7 | Hourly AIS collection and archive (GizmoSQL), deployed; four-daily catalogue tracker and EC2 job controller planned |
+| **Dedicated Lightsail AIS/control host** | 24/7 | Hourly AIS collection/archive and four-daily catalogue discovery, logs and S3 job queue, deployed |
 | **AWS GPU instance** (existing) | Per batch | Job server started on boot: crop, detection, pair check, AIS enrichment, upload; shuts down when its queue is empty, with a max-runtime watchdog |
 | **S3** | — | Hot-spot list, STS findings tree, crops |
 | **Shadow cloud PC** | Dev only | Editing, git, the stage 0 detector bench |

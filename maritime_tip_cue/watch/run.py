@@ -139,8 +139,19 @@ def stored_info(row: dict) -> dict:
     return row["counts"] | {"detector_s": round(row["detector_s"])}
 
 
-def run(store: Store, run_id: int, args, rules: dict, site: dict, start: datetime, end: datetime, out: Path) -> bool:
-    found = [p for p in passes.find(start, end, [site], None) if p["source"] in args.sources.split(",")]
+def run(
+    store: Store,
+    run_id: int,
+    args,
+    rules: dict,
+    site: dict,
+    start: datetime,
+    end: datetime,
+    out: Path,
+    found: list[dict] | None = None,
+) -> bool:
+    if found is None:
+        found = [p for p in passes.find(start, end, [site], rules) if p["source"] in args.sources.split(",")]
     log(f"{len(found)} scenes: " + ", ".join(f"{p['source']} {p['time'][:16]}" for p in found))
     shore = Shore(site["bbox"], site["min_shore_distance_m"])
     structures = Structures(site["bbox"], rules["fixed_structures"]["exclusion_m"], structures_mod.load())

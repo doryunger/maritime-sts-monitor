@@ -246,10 +246,23 @@ def check_flag(h: dict, body: dict) -> str | None:
 
 
 def save_flag(no: int, hull_id: str, body: dict) -> tuple[dict | None, str | None]:
-    doc, _ = cached(no)
-    h = next((x for x in doc["hulls"] if x["id"] == hull_id), None)
-    if h is None:
+    store = Store(folder(no) / "state.db", folder(no))
+    try:
+        matches = store.db.execute(
+            "select h.scene_id, s.source, h.verdict, h.lat, h.lon from hulls h "
+            "join scenes s using (scene_id, site) "
+            "where (h.scene_id || '__' || h.hull_id = ? "
+            "or h.scene_id || '__' || h.hull_id || '__' || h.site = ?) "
+            "and coalesce(h.role, '') not in ('duplicate', 'hull_b_box')",
+            (hull_id, hull_id),
+        ).fetchall()
+    finally:
+        store.close()
+    if len(matches) != 1:
         return None, "unknown hull"
+    h = dict(matches[0]) | {"id": hull_id}
+    if h["verdict"] == "moving":
+        h["verdict"] = "single"
     error = check_flag(h, body)
     if error:
         return None, error
@@ -259,6 +272,8 @@ def save_flag(no: int, hull_id: str, body: dict) -> tuple[dict | None, str | Non
         "note": (body.get("note") or "").strip(), "reviewer": body.get("reviewer") or "local", "updated_utc": now(),
     }
     upsert_flags(folder(no), [row])
+    with LOCKS.setdefault(no, threading.Lock()):
+        CACHE.pop(no, None)
     mirror(no)
     return row | {"final_verdict": finals(no).get(hull_id)}, None
 

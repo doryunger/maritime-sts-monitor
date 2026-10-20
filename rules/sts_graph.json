@@ -930,6 +930,13 @@
       "basis": "guess: a detection within this of a charted structure is dropped; covers a platform's own size and a tanker of up to ~250 m moored to a buoy."
     }
   },
+  "catalogue": {
+    "lookback_days": {
+      "value": 7,
+      "unit": "days",
+      "basis": "User-approved operational overlap, 2026-10-20: baseline current scenes and discover new arrivals in a rolling seven-day window; not a measured upper bound on catalogue delay."
+    }
+  },
   "publish": {
     "dedupe_time_s": {
       "value": 120,

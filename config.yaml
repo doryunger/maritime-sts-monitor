@@ -47,6 +47,17 @@ structures:
 runs:
   path: data/runs
 
+catalogue:
+  database: data/catalogue/tracker.db
+  log_path: data/catalogue/scans.jsonl
+  jobs_prefix: catalogue/jobs/
+  results_prefix: catalogue/results/
+  claims_prefix: catalogue/claims/
+  artifacts_prefix: catalogue/artifacts/
+
+worker:
+  path: data/worker
+
 app:
   host: 127.0.0.1
   port: 8765

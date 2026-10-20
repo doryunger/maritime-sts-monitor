@@ -1,0 +1,14 @@
+[Unit]
+Description=STS catalogue discovery and scene queue
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/maritime-sts-monitor
+EnvironmentFile=/home/ubuntu/maritime-sts-monitor/.env
+ExecStart=/home/ubuntu/maritime-sts-monitor/.venv/bin/python -m maritime_tip_cue.catalogue scan
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077

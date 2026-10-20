@@ -364,14 +364,9 @@ do not establish low activity. The added waters have no processed observations i
 
 The draft survey boxes are EOPL `[103.0, 0.3, 106.5, 1.8]` and Johor `[103.5, 1.8, 106.5, 3.3]`
 (west, south, east, north). Each extends selected existing edges by 0.5 degrees, approximately 55 km.
-These are exploratory envelopes, not measured activity boundaries or active selection rules; the live S3
-list and detection rules are unchanged. Land and the existing shore-distance exclusion still apply when
-evaluating candidate waters. Imagery availability in the extensions has not yet been checked.
-
-Next: select survey waters from the map, check S1/S2 acquisition coverage, and compare original versus added
-waters over matching dates with unchanged detection rules. Report reviewed pair calls and missed-pair samples
-per usable observation and per area, retaining Fujairah and Sohar as comparisons. Inspect density within the
-current boxes too: detecting a nearby cluster does not necessarily require expanding their boundaries.
+These are exploratory search envelopes, not measured activity boundaries. Their subsequent use for live
+catalogue tracking is recorded below. Land and the existing shore-distance exclusion still apply. The map
+predates the live catalogue baseline; it contains only the earlier processed observations.
 
 ## AIS collection coverage audit (2026-10-20)
 
@@ -487,4 +482,109 @@ Private migration inventories, before/after validation, complete hash manifests 
 The backup is 331,410,246 bytes and contains source repository data and GizmoSQL state; the source venv
 and reconstructible browser cache are excluded. Its SHA-256 is
 `ecd6018229adb94727f0fc9cefeaa885ce82cb09122e1835f0d0e884360074b6`.
+
+## Catalogue tracker and handoff verification (2026-10-20)
+
+The dedicated Lightsail host now runs the catalogue tracker through a persistent systemd timer at 00:05,
+06:05, 12:05 and 18:05 UTC. The user selected baseline-only initialization and the expanded Malaysian boxes;
+the shared hot-spot object was updated conditionally, preserving the other regions and shore exclusions.
+Its previous and updated documents are retained outside the repo with the validation artifacts.
+
+| Hot spot | Baseline S1 records | Baseline S2 records | New records on repeat scan |
+|---|---:|---:|---:|
+| malaysia_eopl | 4 | 1 | 0 |
+| johor_east_scs | 4 | 1 | 0 |
+| fujairah_outer | 6 | 9 | 0 |
+| off_sohar | 5 | 7 | 0 |
+
+Both live scans succeeded on all eight channels. The 37 eligible baseline records produced no historical
+jobs; the second scan produced no duplicate jobs. Scene identities and counts are in the JSONL scan log;
+SQLite retains observations, baseline markers, outbox and scan history. The enabled timer's next activation
+was verified through systemd. Service inactivity between polls is expected for a oneshot service.
+
+The retained integration suite passed 54 tests: 15 tracker cases and 39 worker cases, covering all four sites,
+both sensors, first-run failures, late S1 slices, new arrivals, rule/boundary versions, duplicate suppression,
+S3 write retries, corrupt/missing receipts, artifact verification, claims, explicit resume and queue draining.
+Real GeoParquet exports were checked for all hull roles, empty schemas and WKB coordinate order.
+
+A separate real-S3 test exercised four isolated jobs through immutable dispatch, exclusive claims, uploads,
+success receipts and tracker reconciliation. It uploaded 20 artifact objects and checked downloaded Parquet
+contents; all 32 objects in that validation namespace were deleted and the prefix was verified empty.
+Detector execution was mocked for that S3 test. No actual EC2 GPU job, instance wake or shutdown was run.
+
+Existing detector fixtures were also run: five passed and `test_s2_scores` failed on one single classified
+as pair. Repeating that test with the previously committed rule graph produced the identical failure and
+confusion counts. Detection rules were not changed to hide the pre-existing classifier failure.
+
+Tests, S3 validation script/report, live scan summaries and deployment bundle are retained outside the app
+repo under `C:\Users\Shadow\projects\maritime-sts-analysis\2026-10-20-catalogue\`.
+Use `tests/` there for the tracker/worker suite and `s3_handshake.py` for the isolated S3 check; the passing
+S3 report is in `s3-handshake-47a8e8a1b48d4a8b8a236834cc805858/report.json`. Runtime behavior and recovery are
+documented in [the component context](../maritime_tip_cue/context/catalogue.md).
+
+## Sentinel-1 missed pair similarity audit (measured 2026-10-20)
+
+The user corrected run 6 EOPL hull `w0_45473_19759` to pair. Rebuilding its stored chip reproduces the stored
+measurements. Its bright lines are 352 m and 191 m long, separated by about 57 m across the fitted axis.
+The combined outline measures 473 by 108 m. This is a case where strong line evidence is overridden by the
+combined outline checks:
+
+| Measurement | This case | Current pair requirement | Result |
+|---|---:|---:|---|
+| Outline length | 472.67 m | 150-400 m | Fails maximum |
+| Width after blur correction, in estimated beams | 1.00 | 1.55-2.50 | Fails minimum |
+| Light-line separation / outline width | 0.530 | At least 0.260 | Passes |
+| Light-line overlap | 0.950 | At least 0.720, or boxy exception | Passes |
+| Outline fill | 0.544 | At least 0.600 | Fails |
+
+Width in beams is `6 * (outline_width - pass_blur) / outline_length`. An oversized outline length therefore
+penalizes both the length gate and normalized width; sparse outline extensions also reduce fill. The diagnostic
+plot shows a longer main return beside a shorter return, with outline extensions beyond the extracted bright
+lines. This supports investigating per-vessel evidence rather than relaxing all three combined-outline gates.
+The bright line lengths are radar measurements, not independently established vessel dimensions.
+
+The inventory covered 1,672 stored S1 objects in registered runs 1-8, deduplicated to 1,396 by region, scene and
+hull ID, choosing the latest run's measurements. The selected records contain 1,362 stored singles, 31 pairs and
+3 unmeasured objects. Latest available QA was retained across reruns. Run 8 was processing during the snapshot;
+later detections are absent. Different IDs or adjacent scene slices can still refer to the same physical vessel,
+and reruns with different boundaries are not a controlled validation dataset.
+
+The broad review signal selects stored singles that pass the existing light separation and overlap predicates,
+including the boxy-overlap exception, but fail at least one length, width or fill gate. The exact pattern selects
+those failing only maximum length, minimum width and fill, as in the corrected EOPL case. No thresholds were fitted.
+
+| Hot spot | S1 objects | Broad review signal | Exact failure pattern | Exact pattern QA |
+|---|---:|---:|---:|---|
+| malaysia_eopl | 166 | 12 | 1 | This corrected pair |
+| johor_east_scs | 213 | 18 | 7 | One earlier corrected pair, six unreviewed |
+| fujairah_outer | 726 | 26 | 0 | No exact matches |
+| off_sohar | 291 | 12 | 0 | No exact matches |
+
+The broad signal contains 2 reviewed pairs, 7 reviewed singles, 3 other QA exclusions and 56 unreviewed cases.
+The exclusions include suspected platforms and a smaller adjacent vessel; they are not all confirmed non-pairs.
+Visual inspection of the exact eight and selected controls from every region shows that similar failed gates can
+also come from oversized merged returns or structures. These candidates must not all become automatic pairs.
+
+An exploratory screen requiring both extracted bright lines to fall within the existing 150-400 m outline range
+reduces the broad group to 24: EOPL 4, Johor 5, Fujairah 10, Sohar 5. It retains both reviewed pairs but also one
+reviewed single and all three other exclusions; 18 are unreviewed. Five of the six new exact-pattern Johor cases
+have a bright line longer than 400 m. Applying an outline length range to each bright line is an unvalidated
+experiment, not a proposed production threshold or a demonstrated precision gain.
+
+Recommendation: surface the conflicting evidence as a review reason first, preserving the automatic verdict.
+For a detector change, test two independently supported elongated ridges, each with its own orientation,
+longitudinal support and extent, against a single-ridge explanation. The current extraction forces the two lines
+to share the outline angle: drawing two parallel lines is therefore not independent proof of two parallel hulls.
+Measure the weaker return's continuity and support along the stronger one, and fit each return's shape without
+letting dim tails define the whole object's length. Validate against reviewed singles and suspected structures
+as well as corrected pairs in all regions; new acceptance thresholds remain undetermined. Earlier brightness
+cutoff sweeps and a simple cross-track valley test already failed to separate the earlier Johor case reliably
+(see the preceding thin-return and cutoff audits), so repeating those as an automatic fix is not supported.
+
+Read-only scripts, object inventory/CSV, diagnostic plots and `review.html` are outside the repo at
+`C:\Users\Shadow\projects\maritime-sts-analysis\2026-10-20-pair-review\`. The gallery contains raw and overlay
+images for all 68 broad candidates (136 images, zero render failures), the eight exact-pattern cases first,
+existing QA and links back to the app. Unreviewed singles may be absent from the app's sampled card list;
+the gallery still shows their stored images. No new QA labels, classifier rules or automatic verdicts were changed
+by this audit.
 

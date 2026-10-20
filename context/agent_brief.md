@@ -12,6 +12,10 @@ Conventions are in AGENTS.md (loaded via CLAUDE.md for Claude). Read docs by sec
 - `app/`: runs app, FastAPI `backend/` + React `frontend/`. Why notes: `app/context/app.md`.
 - `maritime_tip_cue/structures.py`: charted offshore structures from OSM (`fetch` writes `data/structures/osm_structures.geojson`); detections within `fixed_structures.exclusion_m` are dropped.
 - `maritime_tip_cue/passes.py`: S1/S2 passes over a hot spot (`--map` burns footprints). `maritime_tip_cue/land.py`: coastline from `data/land/`.
+- `maritime_tip_cue/catalogue.py`: Lightsail catalogue scans, SQLite baseline/outbox, JSONL discovery logs and
+  immutable S3 jobs. `worker.py` and `watch/jobs.py`: explicit processing on EC2, claims, pinned manifests/rules,
+  detection Parquets and completion receipts. See `maritime_tip_cue/context/catalogue.md` and
+  `deploy/catalogue/README.md` for the deployed timer, commands and recovery behavior.
 - `maritime_tip_cue/ais/match.py`: AIS parties per hull from the archive into selected `ais_matches` and per-slot `ais_candidates`, including boolean `is_sanctioned` (null becomes false) (`<run>` [--all-checked] [--stats]). Why notes: `maritime_tip_cue/context/ais.md`.
 - `maritime_tip_cue/ais/archive.py`: AIS archive client (GizmoSQL; `GIZMOSQL_*` in `.env`, cert path in `config.yaml`).
 - `maritime_tip_cue/hotspots.py`: loads the shared hot-spot list from S3 (`config.yaml` `s3`, bucket and keys in `.env`).
@@ -40,6 +44,10 @@ Conventions are in AGENTS.md (loaded via CLAUDE.md for Claude). Read docs by sec
 - `app\start.cmd` runs app at http://127.0.0.1:8765/ (runs table, run pages, QA saved to `qa_flags`).
 - `.venv/Scripts/python -m maritime_tip_cue.watch.state summary <run folder>` per-scene counts.
 - `.venv/Scripts/python -m maritime_tip_cue.hotspots [publish <file>]` print (or replace) the S3 hot-spot list.
+- `python -m maritime_tip_cue.catalogue scan|status`: discovery/logging on Lightsail; baseline is already set.
+- `python -m maritime_tip_cue.worker list|drain`: inspect or process ready S3 jobs on an already-running EC2;
+  `run --job-key <key> [--resume]` handles one job. No wake/stop calls. `STS_CONFIG_PATH` selects a complete
+  deployment config, including Linux detector paths. Do not run GPU processing on Lightsail.
 
 ## Where work stands (2026-10-20)
 - Runs 1-5 (Fujairah 9 Oct and 12-19 Oct, off_sohar, Johor, EOPL; 12-19 Oct 2026) reviewed, re-checked with the S1 and S2 shape rules, AIS-matched and published to S3 (45 findings, 8 parquet files). Johor and EOPL have one pair each; their singles are largely unreviewed.
@@ -53,5 +61,9 @@ Conventions are in AGENTS.md (loaded via CLAUDE.md for Claude). Read docs by sec
   are in ignored `data/secrets/control_host.json`. The AIS URI now points there, not to ubuntu3. Both local
   clients and a complete capture cycle passed. Old AIS services/files were removed from ubuntu3; unrelated
   apps remain. See [migration verification](../docs/feasibility.md#ais-deployment-migration-verification-2026-10-20)
-  for the external backup and manifests. No endpoints or keys belong in Git. The catalogue tracker is not
-  implemented yet.
+  for the external backup and manifests. No endpoints or keys belong in Git.
+- The catalogue tracker is deployed with its four-daily timer. All eight site/sensor channels were baselined
+  without historical dispatch; repeat polling produced no duplicates. Expanded Malaysian bounds are now
+  published in the shared list. Worker execution is implemented and its S3 handshake tested; an actual EC2
+  detector run and automatic lifecycle are not verified or enabled by this delivery. External tests and
+  measurements are in `docs/feasibility.md`.

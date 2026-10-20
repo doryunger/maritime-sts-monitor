@@ -41,14 +41,21 @@ def datatake(sid: str, source: str) -> str:
     return sid.rsplit("_", 1)[0] if source == "s2" else sid
 
 
-def find(start: datetime, end: datetime, sites: list[dict], rules: dict | None = None) -> list[dict]:
+def processing_group(source: str, sid: str) -> str:
+    if source == "s1":
+        parts = sid.split("_")
+        return "_".join([parts[0], parts[6], parts[7]])
+    return sid
+
+
+def find(start: datetime, end: datetime, sites: list[dict], rules: dict | None = None, sources=None) -> list[dict]:
     cfg = (rules or rules_mod.load())["scene"]
     found: dict[str, dict] = {}
     latest: dict[str, str] = {}
     when = f"{start:%Y-%m-%dT%H:%M:%SZ}/{end:%Y-%m-%dT%H:%M:%SZ}"
     for site in sites:
         whole = box(*site["bbox"])
-        for source in SOURCES:
+        for source in SOURCES if sources is None else sources:
             url, collection = cfg["catalogs"][source]
             for item in search(url, {"collections": [collection], "bbox": site["bbox"], "datetime": when, "limit": 200}):
                 sid = scene_id(source, item)

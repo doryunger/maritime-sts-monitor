@@ -7,7 +7,7 @@ from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.backend import runs
+from app.backend import queue, runs
 from maritime_tip_cue.config import settings
 
 DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
@@ -30,6 +30,11 @@ def list_runs():
 @app.get("/api/scenes")
 def list_scenes():
     return runs.scene_rows()
+
+
+@app.get("/api/jobs")
+def list_jobs():
+    return queue.snapshot()
 
 
 @app.get("/api/runs/{no}")
