@@ -28,6 +28,34 @@
   "imported_utc": "2026-10-20T14:20:07Z"
  },
  {
+  "hull_id": "S1D_IW_GRDH_1SDV_20261016T111620_20261016T111645_005039_00986D__w0_64264_10814",
+  "scene_id": "S1D_IW_GRDH_1SDV_20261016T111620_20261016T111645_005039_00986D",
+  "source": "s1",
+  "verdict": "single",
+  "lat": 0.9781432804881718,
+  "lon": 106.28197777342584,
+  "status": "ok",
+  "correct_verdict": null,
+  "note": "",
+  "reviewer": "local",
+  "updated_utc": "2026-10-20T17:35:23Z",
+  "imported_utc": "2026-10-20T17:35:23Z"
+ },
+ {
+  "hull_id": "S1D_IW_GRDH_1SDV_20261016T111645_20261016T111710_005040_00986D__w0_39548_14429",
+  "scene_id": "S1D_IW_GRDH_1SDV_20261016T111645_20261016T111710_005040_00986D",
+  "source": "s1",
+  "verdict": "single",
+  "lat": 1.3053277498186848,
+  "lon": 104.06052777711781,
+  "status": "ok",
+  "correct_verdict": null,
+  "note": "",
+  "reviewer": "local",
+  "updated_utc": "2026-10-20T17:36:11Z",
+  "imported_utc": "2026-10-20T17:36:11Z"
+ },
+ {
   "hull_id": "S1D_IW_GRDH_1SDV_20261016T111645_20261016T111710_005040_00986D__w0_39570_14632",
   "scene_id": "S1D_IW_GRDH_1SDV_20261016T111645_20261016T111710_005040_00986D",
   "source": "s1",
@@ -40,6 +68,20 @@
   "reviewer": "local",
   "updated_utc": "2026-10-20T14:20:16Z",
   "imported_utc": "2026-10-20T14:20:16Z"
+ },
+ {
+  "hull_id": "S1D_IW_GRDH_1SDV_20261016T111645_20261016T111710_005040_00986D__w0_39636_14865",
+  "scene_id": "S1D_IW_GRDH_1SDV_20261016T111645_20261016T111710_005040_00986D",
+  "source": "s1",
+  "verdict": "single",
+  "lat": 1.34478110388682,
+  "lon": 104.06847768327704,
+  "status": "ok",
+  "correct_verdict": null,
+  "note": "",
+  "reviewer": "local",
+  "updated_utc": "2026-10-20T17:36:37Z",
+  "imported_utc": "2026-10-20T17:36:37Z"
  },
  {
   "hull_id": "S1D_IW_GRDH_1SDV_20261016T111645_20261016T111710_005040_00986D__w0_39719_14271",
@@ -188,12 +230,12 @@
   "verdict": "single",
   "lat": 1.787612297843643,
   "lon": 104.59298758691202,
-  "status": "wrong_verdict",
-  "correct_verdict": "pair",
+  "status": "ok",
+  "correct_verdict": null,
   "note": "",
   "reviewer": "local",
-  "updated_utc": "2026-10-20T14:18:57Z",
-  "imported_utc": "2026-10-20T14:18:57Z"
+  "updated_utc": "2026-10-20T17:36:17Z",
+  "imported_utc": "2026-10-20T17:36:17Z"
  },
  {
   "hull_id": "S1D_IW_GRDH_1SDV_20261016T111645_20261016T111710_005040_00986D__w0_46487_19128",
@@ -208,6 +250,20 @@
   "reviewer": "local",
   "updated_utc": "2026-10-20T14:15:01Z",
   "imported_utc": "2026-10-20T14:15:01Z"
+ },
+ {
+  "hull_id": "S1D_IW_GRDH_1SDV_20261016T111645_20261016T111710_005040_00986D__w0_46489_19848",
+  "scene_id": "S1D_IW_GRDH_1SDV_20261016T111645_20261016T111710_005040_00986D",
+  "source": "s1",
+  "verdict": "single",
+  "lat": 1.7957647746192233,
+  "lon": 104.68434060894349,
+  "status": "ok",
+  "correct_verdict": null,
+  "note": "",
+  "reviewer": "local",
+  "updated_utc": "2026-10-20T17:36:22Z",
+  "imported_utc": "2026-10-20T17:36:22Z"
  },
  {
   "hull_id": "S1D_IW_GRDH_1SDV_20261016T111645_20261016T111710_005040_00986D__w0_47485_19129",
@@ -264,6 +320,48 @@
   "reviewer": "local",
   "updated_utc": "2026-10-20T14:19:56Z",
   "imported_utc": "2026-10-20T14:19:56Z"
+ },
+ {
+  "hull_id": "S1D_IW_GRDH_1SDV_20261017T223905_20261017T223930_005061_00992C__w0_50461_16505",
+  "scene_id": "S1D_IW_GRDH_1SDV_20261017T223905_20261017T223930_005061_00992C",
+  "source": "s1",
+  "verdict": "single",
+  "lat": 1.493326512292108,
+  "lon": 105.04152366598612,
+  "status": "ok",
+  "correct_verdict": null,
+  "note": "",
+  "reviewer": "local",
+  "updated_utc": "2026-10-20T17:37:06Z",
+  "imported_utc": "2026-10-20T17:37:06Z"
+ },
+ {
+  "hull_id": "S1D_IW_GRDH_1SDV_20261017T223905_20261017T223930_005061_00992C__w0_51080_18610",
+  "scene_id": "S1D_IW_GRDH_1SDV_20261017T223905_20261017T223930_005061_00992C",
+  "source": "s1",
+  "verdict": "single",
+  "lat": 1.6837756663550476,
+  "lon": 105.09717810658205,
+  "status": "ok",
+  "correct_verdict": null,
+  "note": "",
+  "reviewer": "local",
+  "updated_utc": "2026-10-20T17:38:47Z",
+  "imported_utc": "2026-10-20T17:38:47Z"
+ },
+ {
+  "hull_id": "S1D_IW_GRDH_1SDV_20261017T223905_20261017T223930_005061_00992C__w0_55174_19263",
+  "scene_id": "S1D_IW_GRDH_1SDV_20261017T223905_20261017T223930_005061_00992C",
+  "source": "s1",
+  "verdict": "single",
+  "lat": 1.7427712652087965,
+  "lon": 105.46522566404235,
+  "status": "ok",
+  "correct_verdict": null,
+  "note": "",
+  "reviewer": "local",
+  "updated_utc": "2026-10-20T17:37:09Z",
+  "imported_utc": "2026-10-20T17:37:09Z"
  },
  {
   "hull_id": "S2B_MSIL1C_20261016T031719_N0513_R118_T48NTG_20261016T064806__27754_-16604",

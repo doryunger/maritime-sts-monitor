@@ -187,7 +187,13 @@ async function json<T>(r: Response): Promise<T> {
 export const api = {
   jobs: () => fetch("/api/jobs").then((r) => json<QueueSnapshot>(r)),
   runs: () => fetch("/api/runs").then((r) => json<RunSummary[]>(r)),
-  scenes: () => fetch("/api/scenes").then((r) => json<SceneRow[]>(r)),
+  scenes: async (etag?: string | null, signal?: AbortSignal) => {
+    const response = await fetch("/api/scenes", { headers: etag ? { "If-None-Match": etag } : {}, signal });
+    return {
+      rows: response.status === 304 ? null : await json<SceneRow[]>(response),
+      etag: response.headers.get("ETag"),
+    };
+  },
   run: (n: number) => fetch(`/api/runs/${n}`).then((r) => json<RunDetail>(r)),
   image: (n: number, id: string, kind: "raw" | "overlay") => `/api/runs/${n}/hulls/${encodeURIComponent(id)}/${kind}.png`,
   saveFlag: (n: number, id: string, body: { status: string; correct_verdict: string | null; note: string }) =>

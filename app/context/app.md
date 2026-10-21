@@ -18,11 +18,18 @@ The single-hull sample changes as processing adds detections or flags reserve sa
 only the current card list rejected valid cards from an already-open page as `unknown hull`. Saving invalidates
 the report cache so the corrected hull stays in the review list through its persisted flag.
 
-FastAPI (`server.py`) over `runs.py`, which reads `data/runs/registry.db` for the run list and each run's
-`state.db` per request; there is no database of its own. A run's document comes from
-`maritime_tip_cue.watch.report.collect` (about 3 s for a week at one hot spot), cached in memory per run and keyed
-by hull count, last scene update, AIS match and candidate counts, and invocation count, so a QA save does not rebuild it. Flags
-and after-QA verdicts are read fresh on every request. Images are rendered on first request and cached as PNG in
+FastAPI (`server.py`) over `runs.py` reads `data/runs/registry.db` for the run list. Scene summaries use a separate
+per-run cache of minimal SQLite rows, invalidated by the main database and WAL file's path, modification time and
+size. Unchanged runs require only file metadata checks. Changed runs are read in a single read-only transaction;
+record JSON, AIS candidates, chips and fixtures are not loaded. The shared `report.select_review_hulls` function
+preserves exactly the full report's seeded review sample, including flagged singles. Running/stopped status is
+derived on every request so a quiet run can age into stopped without a database write.
+
+`/api/scenes` returns an ETag and a 304 response when the visible rows have not changed. A run's detailed document
+comes from `maritime_tip_cue.watch.report.collect` only when opened, cached in memory per run and keyed by hull
+count, last scene update, AIS match and candidate counts, and invocation count; a QA save invalidates that run's
+document so its flagged sample stays current. Startup does not preload detailed reports. Flags and after-QA
+verdicts are read fresh on every run request. Images are rendered on first request and cached as PNG in
 `<run>/cache/`, named by a hash of the hull id and the cache key. A Save is validated against the hull's run
 verdict (flags for measured hulls, single / pair labels for unmeasured; a correct verdict other than the
 current one), then upserted into `qa_flags` and mirrored to `reviews/<run>.json`. Status: an invocation with an end
@@ -39,7 +46,10 @@ area, source (with the S2 tile or S1 orbit), captured, created (when that scene'
 and review status, all sortable; a row opens the run's QA filtered to that scene (`?scene=`). Scenes with no listed QA cards are hidden by default, with a checkbox to show them; failed scenes remain visible, and the checkbox choice lives in localStorage (`runs.show_empty`). The sort is in the URL (`?sort=&dir=`, so Back restores it) and in localStorage (`runs.sort`, used when the table is opened without one); no app-wide store is needed while the table is the only shared view state. Review status:
 `waiting for run` while the run is going, `nothing to review` for a failed scene or one with no listed hulls,
 `not started`, `in progress` (unflagged hulls left or an `unresolved` wrong verdict), `done`. Review counts come from
-the cached run document, warmed in a thread when the server starts.
+the lightweight scene index, using the same sampling as the detailed run document. The last scene list and its
+ETag are stored in localStorage (`runs.scene_index.v1`) and displayed immediately while a conditional request
+checks for changes. Visible pages check every 15 seconds and on focus; an unchanged response transfers no rows.
+Failed refreshes keep the cached table visible with an error message, and leaving the page aborts its request.
 Run page: facts,
 run vs after-QA verdict counts, and tabs for QA cards, scenes and the fixture comparison; tab and filter live in
 the URL so a view can be linked. Each card is headed by its detection ID (the hull id within the scene); `&hull=<id>`

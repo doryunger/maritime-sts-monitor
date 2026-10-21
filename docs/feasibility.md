@@ -588,6 +588,76 @@ existing QA and links back to the app. Unreviewed singles may be absent from the
 the gallery still shows their stored images. No new QA labels, classifier rules or automatic verdicts were changed
 by this audit.
 
+## Scene list loading (measured 2026-10-20)
+
+The old `/api/scenes` built full cached reports for every finished run to obtain review counts. This also read
+record JSON, AIS evidence and fixtures before returning the table, and startup warmed those reports in a thread
+that the first request could wait for. Sorting 48 scene rows in the browser was not the delay.
+
+The scene index now reads minimal SQLite columns in a read-only transaction and caches each run separately,
+checking both the main database and WAL file for changes. The same extracted review-selection helper serves
+the index and detailed reports, preserving the seeded singles sample and flagged cards. Detailed reports are
+not built at startup or by the list request. The browser shows its previous scene list immediately, checks on
+focus and every 15 seconds while visible, and keeps cached rows visible on refresh failure. Conditional ETags
+return no row payload when nothing has changed; updates rebuild only changed run summaries.
+
+| Check | Before | After |
+|---|---:|---:|
+| First scene-index call in a fresh process | 12.94 s | 0.044 s |
+| Repeated scene-index call | 0.264 s | 0.008 s |
+| Live HTTP initial list | Not measured in the same cold comparison | 0.077 s |
+| Live HTTP unchanged list | No conditional response | 0.009 s, HTTP 304, zero body bytes |
+
+All 48 existing scene rows match the baseline, including review status and sampling. Per-region row counts:
+EOPL 9, Johor 8, Fujairah 20, Sohar 11. All eight existing run review samples also match. The retained regression
+audit passed 28 checks covering those equivalences, no full-report/Store calls, no run-database writes, changed-run
+refresh from QA writes in an open WAL, running-to-stopped clock rollover without a write, registry additions and
+removals, and conditional HTTP responses. These timings are observations on the development machine, not service
+latency guarantees. Source run databases remain authoritative; the browser cache is a provisional view until refreshed.
+
+Baseline data, regression script and results are outside the repo at
+`C:\Users\Shadow\projects\maritime-sts-analysis\2026-10-20-scene-index\` (`before.json`, `before_samples.json`,
+`validate_scene_index.py` and `validation.json`). The frontend production build passed. A separate live Chromium
+check passed 10 assertions: initial visible table in 203 ms, cached reload in 60 ms while the update request was
+blocked, ETag reuse, and preservation of all 48 cached rows and the visible table after an injected refresh failure.
+The browser script, results and screenshot are retained there as `browser_check.cjs`, `browser-validation.json`
+and `scene-index-cached.png`. No detection rules changed.
+
+## Shared-queue local launcher (verified 2026-10-20)
+
+`run-scenes.cmd` reads the shared S3 job queue instead of searching for scenes or asking for a lookback
+period. Interactive selection offers ready jobs and explicitly resumable claims owned by this machine.
+`--all` processes only ready jobs; `--resume` recovers the saved session. Queue counts include all four
+hot spots, including those without jobs. No EC2 lifecycle actions or scheduled local processing were added.
+
+The launcher delegates to the existing worker for conditional claims, pinned scene/rule inputs, processing,
+review creation, pair AIS, detection Parquet uploads and completion receipts. Completed jobs leave the
+pending view through their success receipt; immutable manifests, receipts and artifacts remain for audit.
+Failed or interrupted work retains its claim and requires explicit recovery from the original workspace.
+New local selection resets only the session state/log after successful selection; run databases, QA and
+worker workspaces are retained. See [local operations](../maritime_tip_cue/context/local_runner.md).
+
+The retained suite passed 34 tests covering all four regions and both sensors, queue/claim states, ownership,
+manifest identity, durable resume, failure continuation, interruption, locks and cancellation. Integration
+cases call the real worker with in-memory S3 and a mocked scene-execution boundary, producing actual SQLite
+snapshots and GeoParquets, five artifacts per job, upload checksums and final receipts. They verify duplicate
+suppression, upload failure before success acknowledgement, and explicit recovery after replacing a local
+session. Noninteractive processing does not silently resume claimed jobs or touch foreign claims.
+
+Tests and results are outside the repo at
+`C:\Users\Shadow\projects\maritime-sts-analysis\2026-10-20-queue-launcher\` (`test_queue_launcher.py`,
+`validation.json`). The two explicitly requested Gulf catch-up jobs were also adopted into the real shared
+tracker/outbox with their existing local owner workspaces and run numbers, for a live end-to-end test without
+duplicate detector work. Live handoff stages and artifact verification are recorded in `live-e2e-report.json`.
+The live test passed: Fujairah run 8 completed one scene (338 exported detections, 556 raw detections), and
+Sohar run 9 completed two scenes (158 detections, 237 raw). The real launcher uploaded ten artifacts plus
+success receipts; every downloaded artifact matched its size/SHA256, and GeoParquet points were valid WGS84.
+Duplicate resume changed neither receipts, artifact sets nor run folders. Lightsail reconciliation recorded
+both jobs succeeded, and `/api/jobs` showed neither pending. The uploaded run 8 state retained the user's
+latest Single correction. This exercised real detector output and AIS, followed by queue adoption using the
+same run databases; completed detector work was reused rather than launched a second time.
+Detection rules were not changed.
+
 ## Sentinel-1 false pair w0_46174_276956 (measured 2026-10-21)
 
 Run 8, Fujairah, Sentinel-1 capture 2026-10-19 14:16 UTC: `w0_46174_276956` at

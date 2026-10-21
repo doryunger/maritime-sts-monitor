@@ -1,9 +1,10 @@
+import hashlib
+import json
 import sys
-import threading
 from pathlib import Path
 
 import uvicorn
-from fastapi import Body, FastAPI, HTTPException
+from fastapi import Body, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -28,8 +29,14 @@ def list_runs():
 
 
 @app.get("/api/scenes")
-def list_scenes():
-    return runs.scene_rows()
+def list_scenes(if_none_match: str | None = Header(default=None)):
+    payload = json.dumps(runs.scene_rows(), ensure_ascii=False, separators=(",", ":")).encode()
+    etag = '"' + hashlib.sha256(payload).hexdigest() + '"'
+    headers = {"ETag": etag, "Cache-Control": "private, no-cache"}
+    tags = {tag.strip().removeprefix("W/") for tag in (if_none_match or "").split(",")}
+    if etag in tags or "*" in tags:
+        return Response(status_code=304, headers=headers)
+    return Response(payload, media_type="application/json", headers=headers)
 
 
 @app.get("/api/jobs")
@@ -78,7 +85,6 @@ def main() -> int:
         sys.stdout = sys.stderr = log
     if not DIST.exists():
         print("frontend not built: cd app/frontend && npm install && npm run build", flush=True)
-    threading.Thread(target=runs.warm, daemon=True).start()
     uvicorn.run(app, host=cfg["host"], port=cfg["port"], log_level="warning")
     return 0
 

@@ -343,6 +343,19 @@ def fixture_section(store: Store, scenes: list[dict], hulls: list[dict], listed:
     return {"passes": passes, "totals": total}
 
 
+def select_review_hulls(hulls: list[dict], n_singles: int, seed: int = 0, keep: set | None = None):
+    singles = sorted((h for h in hulls if h["verdict"] == "single"), key=lambda h: h["id"])
+    keep = keep or set()
+    picked = {h["id"] for h in singles if h["id"] in keep}
+    rest = [h for h in singles if h["id"] not in picked]
+    picked |= {h["id"] for h in random.Random(seed).sample(rest, max(0, min(n_singles - len(picked), len(rest))))}
+    listed = [
+        h for h in hulls
+        if h["verdict"] in ("pair", "possible_pair", "unmeasured") or h["id"] in picked or h["id"] in keep
+    ]
+    return listed, picked, len(singles)
+
+
 def collect(folder: Path, n_singles: int = 24, seed: int = 0, keep: set | None = None) -> tuple[dict, dict]:
     store = Store(folder / "state.db", folder)
     try:
@@ -359,12 +372,7 @@ def collect(folder: Path, n_singles: int = 24, seed: int = 0, keep: set | None =
                 h["image"] = s["source"] == "s1" or window_of(s, rec) is not None
                 all_hulls.append(h)
                 records[h["id"]] = (s, rec)
-        singles = sorted((h for h in all_hulls if h["verdict"] == "single"), key=lambda h: h["id"])
-        keep = keep or set()
-        picked = {h["id"] for h in singles if h["id"] in keep}
-        rest = [h for h in singles if h["id"] not in picked]
-        picked |= {h["id"] for h in random.Random(seed).sample(rest, max(0, min(n_singles - len(picked), len(rest))))}
-        listed = [h for h in all_hulls if h["verdict"] in ("pair", "possible_pair", "unmeasured") or h["id"] in picked or h["id"] in keep]
+        listed, picked, singles_count = select_review_hulls(all_hulls, n_singles, seed, keep)
         listed.sort(key=lambda h: (SECTIONS.index(h["verdict"]) if h["verdict"] in SECTIONS else 9, h["time"], h["id"]))
         site = site_of(store, scenes)
         fx = fixture_section(store, scenes, all_hulls, {h["id"] for h in listed}, site, rules)
@@ -444,7 +452,9 @@ def collect(folder: Path, n_singles: int = 24, seed: int = 0, keep: set | None =
             ships = coverage.get((h["scene_id"], h["site"]))
             h["ais_status"] = "matched" if h["ais"] else ("not_checked" if ships is None else ("no_data" if ships < floor else "no_match"))
         doc = {
-            "run": run_section(store, scenes) | {"singles_sample": {"n": len(picked), "of": len(singles), "seed": seed}, "site": site},
+            "run": run_section(store, scenes) | {
+                "singles_sample": {"n": len(picked), "of": singles_count, "seed": seed}, "site": site
+            },
             "scenes": scene_section(scenes),
             "hulls": listed,
             "fixtures": fx,

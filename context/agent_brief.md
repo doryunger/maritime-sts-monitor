@@ -9,13 +9,16 @@ Conventions are in AGENTS.md (loaded via CLAUDE.md for Claude). Read docs by sec
   `rules/sts_graph.json`), `fixtures.py` (fixture loaders and tallies), `score.py` (CLI summary).
   Why notes: `maritime_tip_cue/context/sts.md`.
 - `maritime_tip_cue/watch/`: hot-spot run. `run.py` (CLI: passes -> detector -> shore filter -> pair check), `detector.py` + `ai2_runner.py` (Ai2 in the ai2-detectors venv; ai2_runner is re-read per scene), `s1.py`, `s2.py` (chips / windows from the detector scratch), `state.py` (SQLite run state, `findings` view, `import`, `summary`), `registry.py` (run numbers), `report.py` (run document and tiles for the app). Why notes: `maritime_tip_cue/context/watch.md`.
-- `app/`: runs app, FastAPI `backend/` + React `frontend/`. Why notes: `app/context/app.md`.
+- `app/`: runs app, FastAPI `backend/` + React `frontend/`. `runs.scene_rows` uses a lightweight per-run
+  index; full reports load only on opening a run. Cache and refresh rationale: `app/context/app.md`.
 - `maritime_tip_cue/structures.py`: charted offshore structures from OSM (`fetch` writes `data/structures/osm_structures.geojson`); detections within `fixed_structures.exclusion_m` are dropped.
 - `maritime_tip_cue/passes.py`: S1/S2 passes over a hot spot (`--map` burns footprints). `maritime_tip_cue/land.py`: coastline from `data/land/`.
 - `maritime_tip_cue/catalogue.py`: Lightsail catalogue scans, SQLite baseline/outbox, JSONL discovery logs and
   immutable S3 jobs. `worker.py` and `watch/jobs.py`: explicit processing on EC2, claims, pinned manifests/rules,
   detection Parquets and completion receipts. See `maritime_tip_cue/context/catalogue.md` and
   `deploy/catalogue/README.md` for the deployed timer, commands and recovery behavior.
+- `maritime_tip_cue/local_runner.py`: shared-queue terminal selection and resumable local worker processing;
+  session state and logs live under ignored `data/local_runner/`. See `maritime_tip_cue/context/local_runner.md`.
 - `maritime_tip_cue/ais/match.py`: AIS parties per hull from the archive into selected `ais_matches` and per-slot `ais_candidates`, including boolean `is_sanctioned` (null becomes false) (`<run>` [--all-checked] [--stats]). Why notes: `maritime_tip_cue/context/ais.md`.
 - `maritime_tip_cue/ais/archive.py`: AIS archive client (GizmoSQL; `GIZMOSQL_*` in `.env`, cert path in `config.yaml`).
 - `maritime_tip_cue/hotspots.py`: loads the shared hot-spot list from S3 (`config.yaml` `s3`, bucket and keys in `.env`).
@@ -42,6 +45,8 @@ Conventions are in AGENTS.md (loaded via CLAUDE.md for Claude). Read docs by sec
 - `.venv/Scripts/python -m maritime_tip_cue.watch.recheck <run numbers>` re-runs the S2 pair check of runs from their stored windows (after a rule change; no detector).
 - `.venv/Scripts/python -m maritime_tip_cue.publish <runs> [--upload]` builds the GeoParquet and captures from the runs' after-QA pairs (dedupe across tiles and hot spots) into `data/publish/`, and uploads with `--upload`. Why notes: `maritime_tip_cue/context/publish.md`.
 - `app\start.cmd` runs app at http://127.0.0.1:8765/ (runs table, run pages, QA saved to `qa_flags`).
+- `run-scenes.cmd` lists numbered shared queue jobs; `python -m maritime_tip_cue.local_runner --all` consumes ready
+  jobs, `--resume` recovers the saved session, and `--status` reads local/shared state without processing.
 - `.venv/Scripts/python -m maritime_tip_cue.watch.state summary <run folder>` per-scene counts.
 - `.venv/Scripts/python -m maritime_tip_cue.hotspots [publish <file>]` print (or replace) the S3 hot-spot list.
 - `python -m maritime_tip_cue.catalogue scan|status`: discovery/logging on Lightsail; baseline is already set.
@@ -51,11 +56,12 @@ Conventions are in AGENTS.md (loaded via CLAUDE.md for Claude). Read docs by sec
 
 ## Where work stands (2026-10-20)
 - Runs 1-5 (Fujairah 9 Oct and 12-19 Oct, off_sohar, Johor, EOPL; 12-19 Oct 2026) reviewed, re-checked with the S1 and S2 shape rules, AIS-matched and published to S3 (45 findings, 8 parquet files). Johor and EOPL have one pair each; their singles are largely unreviewed.
-- The active expanded EOPL/Johor batch and Gulf catch-up queue are controlled by the external
-  `C:\Users\Shadow\projects\maritime-sts-analysis\2026-10-20-malaysia-survey\background\supervisor.py`.
-  Its `manifest.json` freezes scenes, boundaries and rule hash; `progress.json` and supervisor logs record
-  processing. Run 6 began the queue; subsequent run numbers are allocated as each site starts. Do not launch
-  overlapping detectors: scene scratch paths are shared. Survey scripts and cache remain outside this repo.
+- Expanded EOPL/Johor runs 6 and 7 finished. Gulf catch-up uses Fujairah run 8 and Sohar run 9; both explicit
+  jobs were adopted into the shared tracker/outbox and claimed by their existing local workspaces. The local
+  launcher's schema 2 session points to those shared jobs. Current status belongs in
+  `data/local_runner/session.json`, not the superseded external survey supervisor's progress file.
+  Its frozen survey manifest remains outside the repo under the earlier analysis directory. Do not launch
+  overlapping detectors: scene scratch paths are shared.
 - Operational priorities are now the user's [catalogue tracker and EC2 workflow](../PLAN.md#current-priorities).
 - AIS collection and GizmoSQL now run on the dedicated Lightsail AIS/control host; connection settings
   are in ignored `data/secrets/control_host.json`. The AIS URI now points there, not to ubuntu3. Both local

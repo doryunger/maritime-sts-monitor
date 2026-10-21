@@ -1,6 +1,7 @@
 import hashlib
 import io
 import json
+import sqlite3
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +20,8 @@ STALE_MIN = 60
 
 CACHE: dict[int, tuple] = {}
 LOCKS: dict[int, threading.Lock] = {}
+SCENE_CACHE: dict[int, tuple] = {}
+SCENE_LOCK = threading.Lock()
 
 
 def reviews_dir() -> Path:
@@ -108,48 +111,91 @@ def scene_status(status: str, run_status: str) -> str:
     return "running" if run_status == "running" else "stopped"
 
 
+def file_signature(path: Path) -> tuple:
+    result = [str(path.resolve())]
+    for target in (path, path.with_name(path.name + "-wal")):
+        try:
+            stat = target.stat()
+            result.append((stat.st_mtime_ns, stat.st_size))
+        except FileNotFoundError:
+            result.append(None)
+    return tuple(result)
+
+
+def read_scene_index(path: Path) -> dict:
+    db = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+    db.row_factory = sqlite3.Row
+    try:
+        db.execute("begin")
+        invocations = [dict(r) for r in db.execute(
+            "select ended_utc, status from runs order by run_id"
+        )]
+        last_event = db.execute("select max(time_utc) from events").fetchone()[0]
+        scenes = [dict(r) for r in db.execute(
+            "select scene_id, site, source, capture_utc, status, updated_utc "
+            "from scenes order by capture_utc, scene_id"
+        )]
+        flags = {r[0] for r in db.execute("select hull_id from qa_flags")}
+        groups: dict = {}
+        for value in db.execute(
+            "select h.scene_id, h.site, h.hull_id, f.run_verdict, f.verdict as final_verdict "
+            "from hulls h join findings f using (scene_id, site, hull_id) order by h.rowid"
+        ):
+            hull = dict(value)
+            groups.setdefault((hull["scene_id"], hull["site"]), []).append(hull)
+    finally:
+        db.close()
+    hulls, taken = [], set()
+    for scene in scenes:
+        for hull in groups.get((scene["scene_id"], scene["site"]), []):
+            key = f"{hull['scene_id']}__{hull['hull_id']}"
+            if key in taken:
+                key += f"__{hull['site']}"
+            taken.add(key)
+            hulls.append(hull | {"id": key, "verdict": hull["run_verdict"]})
+    listed, _, _ = report.select_review_hulls(hulls, SINGLES, keep=flags)
+    review = {}
+    for hull in listed:
+        count = review.setdefault(hull["scene_id"], [0, 0, 0])
+        count[0] += 1
+        count[1] += hull["id"] in flags
+        count[2] += hull["final_verdict"] == "unresolved"
+    return {"runs": invocations, "last_event": last_event, "scenes": scenes, "review": review}
+
+
 def scene_rows() -> list[dict]:
     out = []
-    for row in registry.listing():
-        no, path = row["run_no"], registry.runs_root() / row["folder"]
-        if not (path / "state.db").exists():
-            continue
-        store = Store(path / "state.db", path)
-        try:
-            runs = [dict(r) for r in store.db.execute("select * from runs order by run_id")]
-            last_event = store.db.execute("select max(time_utc) from events").fetchone()[0]
-            scenes = [dict(r) for r in store.db.execute("select scene_id, site, source, capture_utc, status, updated_utc from scenes order by capture_utc")]
-        finally:
-            store.close()
-        run_status = status_of(runs, last_event)
-        review: dict = {}
-        if run_status != "running":
-            doc, _ = cached(no)
-            final = finals(no)
-            flagged = flagged_ids(no)
-            for h in doc["hulls"]:
-                r = review.setdefault(h["scene_id"], [0, 0, 0])
-                r[0] += 1
-                r[1] += h["id"] in flagged
-                r[2] += final.get(h["id"]) == "unresolved"
-        for s in scenes:
-            status = scene_status(s["status"], run_status)
-            listed, reviewed, unresolved = review.get(s["scene_id"], (0, 0, 0))
-            out.append({
-                "run": no, "area": s["site"], "source": s["source"], "scene_id": s["scene_id"], "captured": s["capture_utc"],
-                "created": s["updated_utc"], "status": status,
-                "review": "waiting for run" if status in ("running", "stopped") or run_status == "running" else review_of(status, reviewed, listed, unresolved),
-            })
+    with SCENE_LOCK:
+        registered = registry.listing()
+        existing = {row["run_no"] for row in registered}
+        for no in set(SCENE_CACHE) - existing:
+            del SCENE_CACHE[no]
+        for row in registered:
+            no = row["run_no"]
+            path = registry.runs_root() / row["folder"] / "state.db"
+            if not path.exists():
+                SCENE_CACHE.pop(no, None)
+                continue
+            signature = file_signature(path)
+            hit = SCENE_CACHE.get(no)
+            if hit is None or hit[0] != signature:
+                hit = (signature, read_scene_index(path))
+                SCENE_CACHE[no] = hit
+            snapshot = hit[1]
+            run_status = status_of(snapshot["runs"], snapshot["last_event"])
+            for scene in snapshot["scenes"]:
+                status = scene_status(scene["status"], run_status)
+                listed, reviewed, unresolved = snapshot["review"].get(scene["scene_id"], (0, 0, 0))
+                waiting = status in ("running", "stopped") or run_status == "running"
+                review = "waiting for run" if waiting else review_of(
+                    status, reviewed, listed, unresolved
+                )
+                out.append({
+                    "run": no, "area": scene["site"], "source": scene["source"],
+                    "scene_id": scene["scene_id"], "captured": scene["capture_utc"],
+                    "created": scene["updated_utc"], "status": status, "review": review,
+                })
     return out
-
-
-def warm() -> None:
-    for row in registry.listing():
-        try:
-            if summary(row)["status"] != "running":
-                cached(row["run_no"])
-        except Exception:
-            pass
 
 
 def stamp(store: Store) -> tuple:

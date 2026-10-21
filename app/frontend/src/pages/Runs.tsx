@@ -17,6 +17,21 @@ const COLUMNS: { key: Key; title: string }[] = [
 const STORE = "runs.sort";
 const SHOW_EMPTY = "runs.show_empty";
 const KEYS = COLUMNS.map((c) => c.key);
+const SCENE_CACHE = "runs.scene_index.v1";
+
+type SceneCache = { rows: SceneRow[]; etag: string | null; checked: string };
+
+function rememberedScenes(): SceneCache | null {
+  try {
+    const cache = JSON.parse(localStorage.getItem(SCENE_CACHE) || "null");
+    if (!cache || !Array.isArray(cache.rows) || typeof cache.checked !== "string") return null;
+    if (cache.etag !== null && typeof cache.etag !== "string") return null;
+    return cache.rows.every((row: SceneRow) => Number.isInteger(row.run) &&
+      [row.area, row.source, row.scene_id, row.captured, row.status, row.review].every((v) => typeof v === "string")) ? cache : null;
+  } catch {
+    return null;
+  }
+}
 
 function rememberedShowEmpty(): boolean {
   try {
@@ -38,8 +53,10 @@ function remembered(): { key: Key; dir: 1 | -1 } | null {
 const sortValue = (r: SceneRow, k: Key): string | number => (k === "run" ? r.run : r[k] ?? "");
 
 export default function Runs() {
-  const [rows, setRows] = useState<SceneRow[] | null>(null);
+  const [rows, setRows] = useState<SceneRow[] | null>(() => rememberedScenes()?.rows ?? null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(true);
+  const [checked, setChecked] = useState<string | null>(() => rememberedScenes()?.checked ?? null);
   const [showEmpty, setShowEmpty] = useState(rememberedShowEmpty);
   const [params, setParams] = useSearchParams();
   const go = useNavigate();
@@ -58,7 +75,45 @@ export default function Runs() {
   };
 
   useEffect(() => {
-    api.scenes().then(setRows).catch((e) => setError(e.message));
+    let cache = rememberedScenes();
+    let pending = false;
+    const controller = new AbortController();
+    const refresh = async () => {
+      if (pending || controller.signal.aborted) return;
+      pending = true;
+      setRefreshing(true);
+      try {
+        const result = await api.scenes(cache?.etag, controller.signal);
+        if (controller.signal.aborted) return;
+        const next = result.rows ?? cache?.rows;
+        if (!next) throw new Error("No scene list available; refresh the page.");
+        cache = { rows: next, etag: result.etag, checked: new Date().toISOString() };
+        if (result.rows) setRows(result.rows);
+        setChecked(cache.checked);
+        setError(null);
+        try {
+          localStorage.setItem(SCENE_CACHE, JSON.stringify(cache));
+        } catch {
+          return;
+        }
+      } catch (e) {
+        if (!controller.signal.aborted) setError((e as Error).message);
+      } finally {
+        pending = false;
+        if (!controller.signal.aborted) setRefreshing(false);
+      }
+    };
+    const visibleRefresh = () => { if (document.visibilityState === "visible") void refresh(); };
+    void refresh();
+    const timer = window.setInterval(visibleRefresh, 15000);
+    window.addEventListener("focus", visibleRefresh);
+    document.addEventListener("visibilitychange", visibleRefresh);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+      window.removeEventListener("focus", visibleRefresh);
+      document.removeEventListener("visibilitychange", visibleRefresh);
+    };
   }, []);
 
   const sorted = useMemo(() => {
@@ -82,16 +137,18 @@ export default function Runs() {
   const open = (r: SceneRow) => go(`/runs/${r.run}?scene=${encodeURIComponent(r.scene_id)}`);
   const visible = showEmpty ? sorted : sorted.filter((r) => r.review !== "nothing to review" || r.status === "failed");
 
-  if (error) return <p className="error">Could not load runs: {error}</p>;
+  if (error && !rows) return <p className="error">Could not load runs: {error}</p>;
   if (!rows) return <p className="muted">Loading runs…</p>;
 
   return (
     <section>
       <h1>Runs</h1>
+      {error && <p className="error">Showing the cached list. Could not refresh: {error}</p>}
       <p className="muted">One row per scene. Click a column title to sort, a row to open its QA.</p>
       <div className="table-options">
         <label><input type="checkbox" checked={showEmpty} onChange={(e) => toggleEmpty(e.target.checked)} /> Show scenes with no review cards</label>
         <span className="muted small">Showing {visible.length} of {sorted.length} scenes</span>
+        <span className="muted small">{refreshing ? "Checking for updates..." : checked ? `Updated ${when(checked)}` : ""}</span>
       </div>
       <div className="wrap">
         <table className="runs">

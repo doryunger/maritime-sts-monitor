@@ -145,6 +145,16 @@ maps each run number to its folder `data/runs/<number>`.
 
 ### Runs app
 
+For an explicit local processing session, run `run-scenes.cmd` from this repo (or
+`python -m maritime_tip_cue.local_runner`). The terminal lists the shared queue's numbered jobs; select which
+to process or choose `all`. It offers to resume the latest unfinished session or start a new queue selection.
+Owned interrupted/failed jobs can also be selected explicitly to resume them. Starting new resets only the
+session log; previous runs and QA are retained. Processing downloads/scans the pinned scenes, matches pair AIS,
+creates review outputs and uploads detection Parquets. Success receipts remove completed jobs from the pending
+view while retaining manifests/results for audit. There is no separate local scene search. See
+[local launcher operations](maritime_tip_cue/context/local_runner.md) for logs and recovery. Local processing is
+manual; catalogue discovery does not launch local review generation.
+
 `app/` is a local web app (FastAPI over the run databases, React frontend) that lists the runs and shows each
 one: scenes, verdicts before and after QA, the fixture comparison and the QA cards with their images. QA saves
 go straight into the run's `qa_flags`. Start it with `app/start.cmd`; it serves http://127.0.0.1:8765/.
