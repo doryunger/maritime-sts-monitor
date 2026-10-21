@@ -67,8 +67,11 @@ measured on the original boxes; those measurements have not been repeated for th
 ## Processing
 
 The deployed [catalogue tracker](deploy/catalogue/README.md) checks all sites four times daily and logs its
-discoveries. It writes exact scene/rules manifests to S3. An explicitly invoked EC2 worker consumes those
-jobs and uploads detection artifacts and a completion receipt; instance startup and shutdown remain separate.
+discoveries. The current worker handoff stores exact scene/rules manifests, claims and completion receipts in S3.
+The next planned step is hosted Redis on the Ubuntu AIS/control host: the tracker will refresh the active imagery
+task batch, and EC2 will claim and acknowledge tasks there. In-progress work must survive tracker refreshes and
+service restarts; completed history stays in the tracker's SQLite state. After migration, S3 will hold imagery,
+retained worker artifacts and published Parquets, not queue control. EC2 startup and shutdown remain separate work.
 
 1. **Pass search**: Sentinel-1 GRD and Sentinel-2 L1C scenes covering each hot spot since the last
    run, via STAC.
@@ -167,9 +170,9 @@ go straight into the run's `qa_flags`. Start it with `app/start.cmd`; it serves 
 
 | Machine | Uptime | Runs |
 |---|---|---|
-| **Dedicated Lightsail AIS/control host** | 24/7 | Hourly AIS collection/archive and four-daily catalogue discovery, logs and S3 job queue, deployed |
-| **AWS GPU instance** (existing) | Per batch | Job server started on boot: crop, detection, pair check, AIS enrichment, upload; shuts down when its queue is empty, with a max-runtime watchdog |
-| **S3** | — | Hot-spot list, STS findings tree, crops |
+| **Dedicated Lightsail AIS/control host** | 24/7 | Hourly AIS collection/archive and four-daily catalogue tracker deployed; current S3 job handoff, hosted Redis active-task queue is the next step |
+| **AWS GPU instance** (existing) | Per batch | Explicit worker CLI processes assigned imagery jobs and uploads artifacts; automatic startup/shutdown remains planned |
+| **S3** | — | Hot-spot list, STS findings, captures and worker artifacts; current queue objects remain until Redis migration |
 | **Shadow cloud PC** | Dev only | Editing, git, the stage 0 detector bench |
 
 ## Sources
