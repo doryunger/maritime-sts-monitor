@@ -1,0 +1,2 @@
+user default off
+user sts on >${STS_REDIS_PASSWORD} ~sts:tasks:* +@read +@write +@set +@sortedset +@scripting +@stream +ping

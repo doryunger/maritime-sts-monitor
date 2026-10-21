@@ -66,12 +66,12 @@ measured on the original boxes; those measurements have not been repeated for th
 
 ## Processing
 
-The deployed [catalogue tracker](deploy/catalogue/README.md) checks all sites four times daily and logs its
-discoveries. The current worker handoff stores exact scene/rules manifests, claims and completion receipts in S3.
-The next planned step is hosted Redis on the Ubuntu AIS/control host: the tracker will refresh the active imagery
-task batch, and EC2 will claim and acknowledge tasks there. In-progress work must survive tracker refreshes and
-service restarts; completed history stays in the tracker's SQLite state. After migration, S3 will hold imagery,
-retained worker artifacts and published Parquets, not queue control. EC2 startup and shutdown remain separate work.
+The deployed [catalogue tracker](deploy/catalogue/README.md) checks all sites every six hours and records
+discoveries in SQLite. The separate always-on job manager refreshes the active task batch in private Redis and
+reconciles worker results back into SQLite; the manual local launcher reads
+that same queue. The initial Redis-backed scan retained two completed jobs and published eight available jobs,
+all discovered after the tracker baseline. EC2 worker validation and automatic startup/shutdown remain; see
+`deploy/catalogue/redis/`.
 
 1. **Pass search**: Sentinel-1 GRD and Sentinel-2 L1C scenes covering each hot spot since the last
    run, via STAC.
@@ -158,8 +158,10 @@ For an explicit local processing session, run `run-scenes.cmd` from this repo (o
 to process or choose `all`. It offers to resume the latest unfinished session or start a new queue selection.
 Owned interrupted/failed jobs can also be selected explicitly to resume them. Starting new resets only the
 session log; previous runs and QA are retained. Processing downloads/scans the pinned scenes, matches pair AIS,
-creates review outputs and uploads detection Parquets. Success receipts remove completed jobs from the pending
-view while retaining manifests/results for audit. There is no separate local scene search. See
+creates review outputs and uploads detection Parquets. Success receipts are written to Redis and remove
+completed jobs from its active pending queue; the Ubuntu job manager verifies them and marks the durable SQLite
+job record succeeded. Completed SQLite rows remain as history. There is no separate local
+scene search. See
 [local launcher operations](maritime_tip_cue/context/local_runner.md) for logs and recovery. Local processing is
 manual; catalogue discovery does not launch local review generation.
 
@@ -170,9 +172,9 @@ go straight into the run's `qa_flags`. Start it with `app/start.cmd`; it serves 
 
 | Machine | Uptime | Runs |
 |---|---|---|
-| **Dedicated Lightsail AIS/control host** | 24/7 | Hourly AIS collection/archive and four-daily catalogue tracker deployed; current S3 job handoff, hosted Redis active-task queue is the next step |
+| **Dedicated Lightsail AIS/control host** | 24/7 | Hourly AIS collection/archive, four-daily Redis-backed catalogue tracker, and Redis service; eight jobs currently available in the active queue |
 | **AWS GPU instance** (existing) | Per batch | Explicit worker CLI processes assigned imagery jobs and uploads artifacts; automatic startup/shutdown remains planned |
-| **S3** | — | Hot-spot list, STS findings, captures and worker artifacts; current queue objects remain until Redis migration |
+| **S3** | — | Hot-spot list, STS findings, captures and worker artifacts |
 | **Shadow cloud PC** | Dev only | Editing, git, the stage 0 detector bench |
 
 ## Sources

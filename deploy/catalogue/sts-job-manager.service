@@ -1,0 +1,19 @@
+[Unit]
+Description=STS Redis and SQLite job manager
+Wants=network-online.target sts-redis.service
+After=network-online.target sts-redis.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/maritime-sts-monitor
+EnvironmentFile=/home/ubuntu/maritime-sts-monitor/.env
+ExecStart=/home/ubuntu/maritime-sts-monitor/.venv/bin/python -m maritime_tip_cue.job_manager run --interval 10
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

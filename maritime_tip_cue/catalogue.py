@@ -184,125 +184,84 @@ def record_channel(db, scan_id, site, source, rows, raw_rules, backfill):
     }
 
 
-def object_key(prefix, job_id):
-    return prefix.rstrip("/") + "/" + job_id + ".json"
+def reconcile_redis(db, redis, s3, bucket, artifacts_prefix):
+    from maritime_tip_cue import task_queue
 
-
-def missing_object(error):
-    return getattr(error, "response", {}).get("Error", {}).get("Code") in ("NoSuchKey", "404", "NotFound")
-
-
-def reconcile(db, client, bucket, prefix, artifacts_prefix):
-    errors = []
     completed = 0
-    for job in db.execute("SELECT * FROM jobs WHERE status IN ('dispatched','failed')").fetchall():
+    errors = []
+    for row in db.execute("SELECT * FROM jobs WHERE status!='succeeded'").fetchall():
+        job_id = row["job_id"]
         try:
-            try:
-                receipt = json.loads(
-                    client.get_object(Bucket=bucket, Key=object_key(prefix, job["job_id"]))["Body"].read()
-                )
-            except Exception as error:
-                if missing_object(error):
-                    continue
-                raise
+            value = redis.get(task_queue.keys()["result"] + job_id)
+            if value is None:
+                continue
+            receipt = json.loads(value)
             if (
                 receipt.get("schema_version") != 1
-                or receipt.get("job_id") != job["job_id"]
-                or receipt.get("manifest_sha256") != job["manifest_sha256"]
+                or receipt.get("job_id") != job_id
+                or receipt.get("manifest_sha256") != row["manifest_sha256"]
                 or receipt.get("status") not in ("succeeded", "failed")
+                or not isinstance(receipt.get("artifacts"), list)
             ):
-                raise ValueError("Invalid worker receipt identity or status")
-            if not isinstance(receipt.get("artifacts"), list):
-                raise ValueError("Invalid worker receipt artifacts")
-            manifest = validate_manifest(json.loads(job["manifest_json"]))
-            if receipt["status"] == "succeeded":
+                raise ValueError("Invalid Redis job receipt")
+            if receipt["status"] == "failed":
+                with db:
+                    db.execute(
+                        "UPDATE jobs SET status='failed',error=?,receipt_json=? WHERE job_id=?",
+                        (receipt.get("error") or "Worker reported failure", canonical_bytes(receipt).decode(), job_id),
+                    )
+                continue
+            manifest = validate_manifest(json.loads(row["manifest_json"]))
+            expected = artifacts_prefix.rstrip("/") + "/" + job_id + "/"
+            if (
+                not isinstance(receipt.get("scene_counts"), dict)
+                or receipt["scene_counts"].get("checked") != len(manifest["scenes"])
+                or receipt["scene_counts"].get("failed") != 0
+                or not receipt["artifacts"]
+            ):
+                raise ValueError("Successful Redis task has incomplete scene counts")
+            for artifact in receipt.get("artifacts", []):
                 if (
-                    not isinstance(receipt.get("scene_counts"), dict)
-                    or receipt["scene_counts"].get("failed") != 0
-                    or receipt["scene_counts"].get("checked") != len(manifest["scenes"])
-                ):
-                    raise ValueError("Successful receipt has incomplete scene counts")
-                if not receipt["artifacts"]:
-                    raise ValueError("Successful receipt has no artifacts")
-            expected_prefix = artifacts_prefix.rstrip("/") + "/" + job["job_id"] + "/"
-            for artifact in receipt["artifacts"]:
-                if not isinstance(artifact, dict) or not all(
-                    key in artifact for key in ("key", "sha256", "size", "kind")
-                ):
-                    raise ValueError("Invalid worker artifact receipt")
-                if (
-                    not isinstance(artifact["key"], str)
-                    or not artifact["key"].startswith(expected_prefix)
+                    not isinstance(artifact, dict)
+                    or not all(key in artifact for key in ("key", "size", "sha256", "kind"))
+                    or not isinstance(artifact["key"], str)
+                    or not artifact["key"].startswith(expected)
                     or ".." in artifact["key"].split("/")
-                ):
-                    raise ValueError("Worker artifact is outside its job prefix")
-                if (
-                    not isinstance(artifact["sha256"], str)
-                    or len(artifact["sha256"]) != 64
-                    or any(char not in "0123456789abcdef" for char in artifact["sha256"])
-                ):
-                    raise ValueError("Invalid worker artifact checksum")
-                if (
-                    not isinstance(artifact["size"], int)
+                    or not isinstance(artifact["size"], int)
                     or isinstance(artifact["size"], bool)
                     or artifact["size"] < 0
+                    or not isinstance(artifact["sha256"], str)
+                    or len(artifact["sha256"]) != 64
+                    or any(char not in "0123456789abcdef" for char in artifact["sha256"])
                     or not isinstance(artifact["kind"], str)
                 ):
-                    raise ValueError("Invalid worker artifact size or kind")
-                if receipt["status"] == "succeeded":
-                    head = client.head_object(Bucket=bucket, Key=artifact["key"])
-                    if (
-                        head.get("ContentLength") != artifact["size"]
-                        or head.get("Metadata", {}).get("sha256") != artifact["sha256"]
-                    ):
-                        raise ValueError("Worker artifact object checksum or size mismatch")
-            receipt_json = canonical_bytes(receipt).decode()
-            if job["receipt_json"] == receipt_json:
-                continue
+                    raise ValueError("Worker artifact is outside its job prefix")
+                head = s3.head_object(Bucket=bucket, Key=artifact["key"])
+                if head.get("ContentLength") != artifact["size"] or head.get("Metadata", {}).get("sha256") != artifact["sha256"]:
+                    raise ValueError("Worker artifact checksum or size mismatch")
             with db:
-                db.execute(
-                    "UPDATE jobs SET status=?,completed_utc=?,error=?,receipt_json=? WHERE job_id=?",
-                    (receipt["status"], utc_now(), receipt.get("error"), receipt_json, job["job_id"]),
-                )
+                db.execute("UPDATE jobs SET status='succeeded',completed_utc=?,error=NULL,receipt_json=? WHERE job_id=?", (utc_now(), canonical_bytes(receipt).decode(), job_id))
             completed += 1
         except Exception as error:
-            errors.append({"phase": "reconcile", "job_id": job["job_id"], "error": str(error)})
+            errors.append({"phase": "reconcile", "job_id": job_id, "error": str(error)})
     return completed, errors
 
 
-def dispatch(db, client, bucket, prefix):
-    dispatched, errors = 0, []
-    for job in db.execute("SELECT * FROM jobs WHERE status='pending' ORDER BY created_utc,job_id").fetchall():
-        try:
-            key = object_key(prefix, job["job_id"])
-            manifest = json.loads(job["manifest_json"])
-            try:
-                client.put_object(
-                    Bucket=bucket,
-                    Key=key,
-                    Body=canonical_bytes(manifest),
-                    ContentType="application/json",
-                    Metadata={"sha256": job["manifest_sha256"]},
-                    IfNoneMatch="*",
-                )
-            except Exception as error:
-                code = getattr(error, "response", {}).get("Error", {}).get("Code")
-                if code not in ("PreconditionFailed", "412"):
-                    raise
-                existing = validate_manifest(json.loads(client.get_object(Bucket=bucket, Key=key)["Body"].read()))
-                if existing["job_id"] != job["manifest_sha256"]:
-                    raise ValueError("Existing S3 manifest differs from durable outbox")
-            with db:
-                db.execute(
-                    "UPDATE jobs SET status='dispatched', dispatched_utc=?,error=NULL WHERE job_id=?",
-                    (utc_now(), job["job_id"]),
-                )
-            dispatched += 1
-        except Exception as error:
-            with db:
-                db.execute("UPDATE jobs SET error=? WHERE job_id=?", (str(error), job["job_id"]))
-            errors.append({"phase": "dispatch", "job_id": job["job_id"], "error": str(error)})
-    return dispatched, errors
+def refresh_queue(db):
+    from maritime_tip_cue import task_queue
+
+    jobs = {
+        row["job_id"]: json.loads(row["manifest_json"])
+        for row in db.execute("SELECT job_id,manifest_json FROM jobs WHERE status!='succeeded'")
+    }
+    completed = {row[0] for row in db.execute("SELECT job_id FROM jobs WHERE status='succeeded'")}
+    task_queue.restore(jobs, completed)
+    with db:
+        db.execute(
+            "UPDATE jobs SET status='dispatched',dispatched_utc=coalesce(dispatched_utc,?) WHERE status='pending'",
+            (utc_now(),),
+        )
+    return len(jobs)
 
 
 def counts(db):
@@ -361,14 +320,6 @@ def scan(db, cfg, backfill=False):
                 summary["channels"][-1].update({"started_utc": channel_started, "ended_utc": utc_now()})
     except Exception as error:
         summary["errors"].append({"phase": "scan", "error": str(error)})
-    try:
-        client, bucket = hotspots._client(), env("S3_BUCKET_NAME")
-        summary["completed"], errors = reconcile(db, client, bucket, cfg["results_prefix"], cfg["artifacts_prefix"])
-        summary["errors"].extend(errors)
-        summary["dispatched"], errors = dispatch(db, client, bucket, cfg["jobs_prefix"])
-        summary["errors"].extend(errors)
-    except Exception as error:
-        summary["errors"].append({"phase": "queue", "error": str(error)})
     summary["ended_utc"] = utc_now()
     summary["status"] = "failed" if summary["errors"] else "ok"
     summary["jobs"] = counts(db)
@@ -428,9 +379,14 @@ def status(db):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("scan", "status"))
+    parser.add_argument("command", choices=("scan", "status", "redis-requeue-stale"))
     parser.add_argument("--backfill", action="store_true")
     args = parser.parse_args()
+    if args.command == "redis-requeue-stale":
+        from maritime_tip_cue import task_queue
+
+        print(json.dumps({"requeued": task_queue.requeue_stale()}))
+        return 0
     cfg = settings()["catalogue"]
     path = Path(cfg["database"])
     path = path if path.is_absolute() else ROOT / path

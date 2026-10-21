@@ -1,0 +1,24 @@
+[Unit]
+Description=STS task queue Redis
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=notify
+User=redis
+Group=redis
+EnvironmentFile=/etc/redis/sts-redis.env
+ExecStart=/usr/bin/redis-server /etc/redis/sts-redis.conf --bind 127.0.0.1 ::1 ${REDIS_BIND_ADDRESS}
+ExecStop=/usr/bin/redis-cli shutdown
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=65535
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/redis
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

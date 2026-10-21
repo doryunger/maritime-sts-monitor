@@ -14,6 +14,7 @@ pytest
 ruff
 boto3
 requests
+redis
 matplotlib
 adbc-driver-gizmosql
 pyarrow

@@ -2,23 +2,26 @@
 
 ## Shared jobs and ownership
 
-`run-scenes.cmd` selects existing ready jobs from the shared S3 queue. It never searches a catalogue,
+`run-scenes.cmd` selects existing ready jobs from the shared Redis queue. It never searches a catalogue,
 asks for a lookback period, or invents another set of scenes. Queue counts cover every shared hot spot,
 including hot spots with no jobs. Claimed and failed jobs display whether this machine retains their
 original owner workspace; foreign claims cannot be selected or stolen. Interactive selection includes owned
 failed/interrupted jobs as explicit recovery choices, even if New previously replaced their local session.
 Noninteractive `--all` selects ready jobs only and never silently resumes claims.
 
-Execution calls `worker.run_job` directly, using its conditional S3 claim, original run pointer, pinned
-rules, artifact upload and final completion receipt. The launcher does not hold the worker lock itself:
+Execution claims each selected Redis job with a unique owner, then calls `worker.run_job` with the pinned
+manifest and rules. Artifacts are uploaded to S3 and the result receipt is written to Redis before the launcher
+acknowledges success. The Ubuntu job manager verifies successful receipts and S3 artifacts, then marks the
+job succeeded in SQLite. SQLite keeps completed rows as history; Redis removes them from the
+active pending queue. The launcher does not hold the worker lock itself:
 `run_job` acquires it per job, so nesting that same lock around the session would deadlock. A separate
 session lock protects interactive selection, session replacement and processing against other launchers.
 
 Each entry refreshes shared queue state and validates the immutable manifest against its saved job ID,
 key and site before processing. A valid success receipt skips processing through the worker's normal
-idempotent path. Completed manifests and receipts remain in S3 for audit; ready filtering excludes them
-without deleting queue history. Failed and interrupted claims require explicit resume with the same
-owner workspace. There is no lease expiry or foreign-claim stealing.
+idempotent path. Completed receipts remain in Redis and artifacts remain in S3 for reconciliation and audit.
+Failed work returns to pending; interrupted claims require explicit operator recovery after confirming no
+worker is active. There is no lease expiry or foreign-claim stealing.
 
 ## Local sessions and logs
 
@@ -28,7 +31,7 @@ Resume, New or Quit. New snapshots selectable shared jobs and truncates only the
 selection succeeds. Cancelling or finding no ready jobs retains existing state and log. Existing run
 folders, reviews, worker workspaces and shared queue history remain intact.
 
-The processing terminal is mirrored to `session.log`, including attempt times, manifest keys, receipt
+The processing terminal is mirrored to `session.log`, including attempt times, manifest keys, Redis receipt
 keys, uploaded artifact keys and failure details. Failures remain resumable while other selected jobs
 continue; terminal interruption saves progress and stops. The worker's durable `run.json` preserves the
 run number even when interruption prevents a receipt from being written.

@@ -2,13 +2,14 @@ import argparse
 import json
 import sys
 import traceback
+import uuid
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import UTC, datetime
 from pathlib import Path
 
 import boto3
 
-from maritime_tip_cue import hotspots, worker
+from maritime_tip_cue import hotspots, task_queue, worker
 from maritime_tip_cue.config import ROOT, env
 
 LEGACY_MESSAGE = (
@@ -95,11 +96,7 @@ class Tee:
 
 
 def owns_claim(client, bucket: str, job_id: str) -> bool:
-    owner, _ = worker.json_object(client, bucket, worker.key_for("claims", job_id))
-    path = worker.worker_root() / job_id / "owner.json"
-    if not owner or not path.exists():
-        return False
-    return json.loads(path.read_text(encoding="utf-8")) == owner
+    return task_queue.client().sismember(task_queue.keys()["inflight"], job_id) == 1
 
 
 def queue_snapshot(client, bucket: str) -> list[dict]:
@@ -119,7 +116,7 @@ def print_queue(rows: list[dict], sites: list[dict]) -> None:
         }
         print(f"{name}: " + ", ".join(f"{status}={count}" for status, count in counts.items()))
     for row in rows:
-        if row["status"] in ("claimed", "failed"):
+        if row["status"] == "claimed":
             recovery = (
                 "owned here; select to resume" if row.get("owned") else "unavailable; foreign/missing local owner"
             )
@@ -145,6 +142,10 @@ def execute_session(session: dict, client, bucket: str, root: Path | None = None
                     if entry["status"] == "done":
                         print(f"{entry['site']} {entry['job_id'][:12]}: already completed; skipped", flush=True)
                         continue
+                    owner = None
+                    manifest = None
+                    receipt = None
+                    claimed = False
                     try:
                         rows = worker.list_jobs(client, bucket)
                         current = next((row for row in rows if row["job_id"] == entry["job_id"]), None)
@@ -154,31 +155,36 @@ def execute_session(session: dict, client, bucket: str, root: Path | None = None
                             or current["site"] != entry["site"]
                         ):
                             raise RuntimeError("Selected job no longer matches the shared queue")
-                        manifest, _ = worker.json_object(client, bucket, entry["job_key"])
+                        manifest = json.loads(task_queue.client().get(task_queue.keys()["manifest"] + entry["job_id"]))
                         if manifest is None:
                             raise FileNotFoundError("Queued job manifest is missing")
                         worker.validate(manifest)
                         if manifest["job_id"] != entry["job_id"] or manifest["site"]["name"] != entry["site"]:
                             raise ValueError("Queued manifest differs from the selected job identity")
                         recovering = resume or bool(entry.get("resume"))
-                        if current["status"] not in ("succeeded", "ready"):
-                            if not recovering or not owns_claim(client, bucket, entry["job_id"]):
-                                raise RuntimeError(
-                                    "Job unavailable; resume requires this machine's original owner workspace"
-                                )
+                        owner = f"{worker.worker_root()}:{uuid.uuid4().hex}"
+                        claimed = task_queue.claim(entry["job_id"], owner)
+                        if claimed is None:
+                            raise RuntimeError("Job unavailable; another worker holds its Redis claim")
+                        manifest = claimed
+                        claimed = True
                         entry.update(status="running", error=None, started_utc=now())
                         save_session(session, root)
                         print(
                             f"{now()} attempt {entry['job_id']} manifest={entry['job_key']} resume={recovering}",
                             flush=True,
                         )
-                        receipt = worker.run_job(client, bucket, manifest, resume=recovering)
+                        receipt = worker.run_job(client, bucket, manifest, resume=recovering, queue_owner=owner)
+                        if receipt["status"] == "succeeded":
+                            task_queue.acknowledge(entry["job_id"], owner)
+                        else:
+                            task_queue.fail(entry["job_id"], owner)
                         entry.update(
                             status="done" if receipt["status"] == "succeeded" else "failed",
                             run_no=receipt.get("run_no"),
                             error=receipt.get("error"),
                             finished_utc=now(),
-                            result_key=worker.key_for("results", entry["job_id"]),
+                            result_key=task_queue.keys()["result"] + entry["job_id"],
                         )
                         save_session(session, root)
                         print(
@@ -189,10 +195,20 @@ def execute_session(session: dict, client, bucket: str, root: Path | None = None
                         if entry["error"]:
                             print(f"  {entry['error']}", flush=True)
                     except KeyboardInterrupt:
+                        if claimed:
+                            if receipt is None:
+                                task_queue.fail_with_result(entry["job_id"], owner, manifest, "Interrupted from terminal")
+                            else:
+                                task_queue.fail(entry["job_id"], owner)
                         entry.update(status="interrupted", error="Interrupted from terminal", finished_utc=now())
                         entry["run_no"] = local_run_no(entry["job_id"])
                         raise
                     except Exception as exc:
+                        if claimed:
+                            if receipt is None:
+                                task_queue.fail_with_result(entry["job_id"], owner, manifest, exc)
+                            else:
+                                task_queue.fail(entry["job_id"], owner)
                         entry.update(status="failed", error=f"{type(exc).__name__}: {exc}", finished_utc=now())
                         entry["run_no"] = local_run_no(entry["job_id"])
                         save_session(session, root)

@@ -1,17 +1,19 @@
 # Runs app
 
 Local web app for looking at runs and doing QA, in place of the per-run static report and QA pages.
-`app/start.cmd` (or `.venv/Scripts/python -m app.backend.server` from the repo root) serves it at
-http://127.0.0.1:8765/ (`config.yaml` `app`); the first start builds the frontend with npm. On the dev PC it starts
-hidden at login from `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\sts-runs-app.vbs` (pythonw from the
-repo venv, output to `app/server.log`); after a frontend change run `npm run build` and reload, after a backend
-change end the pythonw process and run the vbs again.
+`app/start.cmd` serves it at http://127.0.0.1:8765/ (`config.yaml` `app`); the first start builds the frontend
+with npm. On the dev PC it starts hidden at login from
+`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\sts-runs-app.vbs`. Both startup paths establish
+the SSH tunnel to private Redis before starting the server. Tunnel settings and the Redis target stay in ignored
+local files. After a frontend change run `npm run build` and reload; after a backend change restart the app.
 
 ## backend
-`queue.py` reads shared S3 job manifests, claims and receipts on request for `/api/jobs`; it never claims or
-changes jobs. Local scene status is read directly from registered SQLite runs without rendering QA reports.
-Matching uses area, sensor and scene ID only, so it is advisory: older local runs can have different boundaries
-or rules and cannot serve as completion receipts. A failed S3 read returns an unavailable queue, never an empty one.
+`queue.py` reads shared Redis jobs on request for `/api/jobs`; it never claims or changes jobs. Local scene
+status is read directly from registered SQLite runs without rendering QA reports. Matching uses area, sensor
+and scene ID only, so it is advisory: older local runs can have different boundaries or rules and cannot serve
+as completion receipts. A failed Redis read returns an unavailable queue, never an empty one. The local PC has
+no private VPC route, so `redis_tunnel.py` forwards a loopback port through the saved SSH connection to the
+control host. The app uses this tunnel without exposing Redis publicly.
 
 QA saves resolve IDs against the complete persisted hull table, including hulls outside the sampled review cards.
 The single-hull sample changes as processing adds detections or flags reserve sample slots; validating against

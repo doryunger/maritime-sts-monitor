@@ -869,3 +869,31 @@ Final read-only validation scripts and results are under `C:\Users\Shadow\AppDat
 `sts_geometry_run8_before_recheck_20261021.db`. The rejected rectangle experiment is
 `sts_rectangle_priors_20261021.py` and its same-stem directory. Run scripts from the repository root with
 `.venv/Scripts/python`. Geometry plots and the production overlay were visually checked.
+
+## EC2 to Redis connectivity test (2026-10-21)
+
+Read-only SSH inspection of ubuntu3 found two active wake-service containers. `refinery-wake-service`
+targets the geo-dataset-generator EC2 worker and has `IDLE_STOP_MINUTES=3`; its idle check runs every
+60 seconds. Its `GET /_wake/status` handler updates `last_activity` before checking instance state and
+starts EC2 when stopped. The separate `dronechallenger-wake-service` targets another EC2 instance and
+has idle stop disabled (`IDLE_STOP_MINUTES=0`).
+
+The refinery controller's first logged wake on 2026-10-21 was at 13:31:48 UTC, ready at 13:32:57, then
+idle-stopped EC2 at 13:36:02 with 185 idle seconds and 254 seconds total awake. AWS recorded `stopping`
+at 13:36:01. Ending the status poll at `ready` left the worker idle during subsequent SSH setup. An earlier
+direct `StartInstances` request at 13:24:55 bypassed the controller and did not produce a Redis test.
+
+AWS remained in `stopping` from 13:36:01 to 13:47:01 UTC, about 11 minutes. The wake controller kept
+polling and started EC2 after AWS reported `stopped`. Its next session woke at 13:47:02 and reached `ready`
+at 13:48:17. From EC2, TCP connection to Redis and authenticated `PING` succeeded at 13:47:54 UTC.
+The temporary status poll was then stopped; the wake log records the expected idle stop at 13:52:02.
+
+A further controller wake at 14:22:55 reached `ready` at 14:24:11. At 14:24:04, EC2 completed an
+authenticated `SET`/`GET`/`DEL` test using a temporary key under the ACL-allowed `sts:tasks:*` prefix.
+The returned value matched, deletion returned one, and a follow-up `GET` confirmed the key was absent; the
+key also had a 120-second expiry. An initial key outside the allowed prefix was rejected with `NOPERM`
+and was not created. AWS still reported EC2 `running` at 14:24:24 after the temporary keepalive stopped.
+
+Credentials, private IPs and host addresses are not recorded here. These checks confirm that EC2 can reach
+Redis, authenticate, and perform permitted reads and writes. They do not validate the deployed application
+queue workflow end to end.

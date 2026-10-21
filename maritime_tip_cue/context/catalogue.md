@@ -26,9 +26,11 @@ Such expanded jobs intentionally repeat processing of earlier slices. Sentinel-2
 Boundary or rule changes produce a different job identity rather than mutating queued instructions.
 
 Successful receipts must cover every requested scene and reference uploaded objects whose sizes and SHA256
-metadata match. Missing objects or malformed receipts leave work incomplete. Failed receipts are checked
-again because an explicit worker resume can replace failure with success. The tracker logs interrupted
-scans on its next invocation; its local lock prevents overlapping controllers.
+metadata match. Missing objects or malformed receipts leave work incomplete. Failed receipts update the job
+to failed while Redis keeps it retryable; a later successful receipt replaces that state. The six-hour
+catalogue scan only discovers work. The always-on job manager dispatches SQLite jobs to Redis, consumes Redis
+Stream result events, and periodically reconciles durable receipts so a restart or missed event cannot lose a
+state update. Its SQLite lock prevents overlap with a catalogue scan.
 
 ## EC2 execution
 
@@ -40,8 +42,11 @@ AIS matching retains the existing pair-only scope; singles still appear in the d
 The worker's local lock protects the shared detector scratch directory. A conditional S3 claim also prevents
 different machines from processing the same job concurrently. Claims have no guessed timeout: failure or
 interruption requires `--resume` from the original durable workspace. Moving or losing that workspace needs
-operator recovery of the claim; a new worker cannot silently steal it. `drain` processes only ready jobs from
-one queue snapshot and exits, without polling, automatic retries or instance lifecycle actions.
+operator recovery of the claim; the recovery command requeues every in-flight task and must only run after
+confirming no worker is active. `drain` snapshots ready IDs once, claims each at most once per invocation,
+and exits without polling, automatic retries or instance lifecycle actions. Queue refresh writes each manifest
+and checks in-flight/completed state atomically with pending insertion, so a tracker refresh cannot requeue a
+task concurrently claimed by a worker.
 
 Each attempt uploads `detections.parquet` for all hull roles, `raw_detections.parquet` for detector output,
 a SQLite backup, the manifest and raw rules. Detection geometry is WKB in WGS84 longitude/latitude, with
@@ -56,7 +61,8 @@ Those reviewed, pair-only products remain the responsibility of the existing pub
 
 The tracker has a minimal dependency set under `deploy/catalogue/`; GPU packages are not loaded on Lightsail.
 Its systemd timer runs at 00:05, 06:05, 12:05 and 18:05 UTC, away from hourly AIS collection at minute 15.
-It persists missed timer activation across reboots. Scan history is in SQLite, JSONL and the service journal.
+It persists missed timer activation across reboots. The separate job-manager systemd service stays active and
+reconciles receipts every 10 seconds. Scan history is in SQLite, JSONL and the service journal.
 
 `STS_CONFIG_PATH` selects a complete deployment config file, relative to the repo root or absolute. The
 default is `config.yaml`. An EC2 installation needs its Linux detector environment, scratch and coastline

@@ -12,6 +12,7 @@ from pathlib import Path
 import boto3
 from botocore.exceptions import ClientError
 
+from maritime_tip_cue import task_queue
 from maritime_tip_cue.config import ROOT, env, settings
 
 
@@ -226,7 +227,7 @@ def upload_artifacts(client, bucket: str, manifest: dict, paths: list[Path], att
     return artifacts
 
 
-def run_job(client, bucket: str, manifest: dict, resume: bool = False) -> dict:
+def run_job(client, bucket: str, manifest: dict, resume: bool = False, queue_owner: str | None = None) -> dict:
     validate(manifest)
     root = worker_root()
     with local_lock(root):
@@ -239,7 +240,8 @@ def run_job(client, bucket: str, manifest: dict, resume: bool = False) -> dict:
             return previous
         workspace = root / job_id
         workspace.mkdir(parents=True, exist_ok=True)
-        claim(client, bucket, manifest, workspace, resume)
+        if queue_owner is None:
+            claim(client, bucket, manifest, workspace, resume)
         save_json(workspace / "manifest.json", manifest)
         rules_path = workspace / "rules.json"
         save_json(rules_path, manifest["rules"])
@@ -284,54 +286,52 @@ def run_job(client, bucket: str, manifest: dict, resume: bool = False) -> dict:
                 finally:
                     store.close()
         receipt["finished_utc"] = now()
-        condition = {"IfMatch": result_etag} if result_etag else {"IfNoneMatch": "*"}
-        client.put_object(
-            Bucket=bucket, Key=result_key, Body=encode(receipt), ContentType="application/json", **condition
-        )
+        if queue_owner is None:
+            condition = {"IfMatch": result_etag} if result_etag else {"IfNoneMatch": "*"}
+            client.put_object(
+                Bucket=bucket, Key=result_key, Body=encode(receipt), ContentType="application/json", **condition
+            )
         save_json(workspace / "receipt.json", receipt)
+        if queue_owner is not None:
+            task_queue.save_result(job_id, receipt)
         return receipt
 
 
 def list_jobs(client, bucket: str, include_scenes: bool = False) -> list[dict]:
-    prefix = settings()["catalogue"]["jobs_prefix"].rstrip("/") + "/"
     rows = []
-    for page in client.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
-        for item in page.get("Contents", []):
-            if not item["Key"].endswith(".json"):
-                continue
-            manifest, _ = json_object(client, bucket, item["Key"])
-            validate(manifest)
-            receipt, _ = json_object(client, bucket, key_for("results", manifest["job_id"]))
-            owner, _ = json_object(client, bucket, key_for("claims", manifest["job_id"]))
-            rows.append(
-                {
-                    "job_key": item["Key"],
-                    "job_id": manifest["job_id"],
-                    "site": manifest["site"]["name"],
-                    "scenes": len(manifest["scenes"]),
-                    "status": receipt["status"] if receipt else "claimed" if owner else "ready",
-                }
-            )
-            if include_scenes:
-                rows[-1].update(created_utc=manifest["created_utc"], scene_details=[
-                    {"scene_id": scene["scene"], "source": scene["source"], "captured": scene["time"]}
-                    for scene in manifest["scenes"]
-                ])
+    for queued in task_queue.list_jobs():
+        manifest = task_queue.client().get(task_queue.keys()["manifest"] + queued["job_id"])
+        manifest = json.loads(manifest)
+        if include_scenes:
+            queued.update(created_utc=manifest["created_utc"], scene_details=[
+                {"scene_id": scene["scene"], "source": scene["source"], "captured": scene["time"]}
+                for scene in manifest["scenes"]
+            ])
+        rows.append(queued)
     return rows
 
 
 def drain_jobs(client, bucket: str) -> list[dict]:
-    ready = [job for job in list_jobs(client, bucket) if job["status"] == "ready"]
     results = []
-    for job in ready:
-        result = {"job_key": job["job_key"], "job_id": job["job_id"], "site": job["site"]}
+    for job_id in task_queue.ready_ids():
+        owner = f"{os.uname().nodename if hasattr(os, 'uname') else 'worker'}:{uuid.uuid4().hex}"
+        manifest = task_queue.claim(job_id=job_id, owner=owner)
+        if manifest is None:
+            continue
+        result = {"job_key": job_id, "job_id": job_id, "site": manifest["site"]["name"]}
+        receipt = None
         try:
-            manifest, _ = json_object(client, bucket, job["job_key"])
-            if manifest is None:
-                raise FileNotFoundError("job manifest not found")
-            receipt = run_job(client, bucket, manifest)
+            receipt = run_job(client, bucket, manifest, queue_owner=owner)
             result.update(status=receipt["status"], run_no=receipt["run_no"], error=receipt.get("error"))
+            if receipt["status"] == "succeeded":
+                task_queue.acknowledge(job_id, owner)
+            else:
+                task_queue.fail(job_id, owner)
         except Exception as error:
+            if receipt is None:
+                task_queue.fail_with_result(job_id, owner, manifest, error)
+            else:
+                task_queue.fail(job_id, owner)
             result.update(status="failed", error=f"{type(error).__name__}: {error}")
         results.append(result)
         print(json.dumps(result), flush=True)
@@ -345,9 +345,8 @@ def main() -> int:
     commands.add_parser("drain")
     run_parser = commands.add_parser("run")
     source = run_parser.add_mutually_exclusive_group(required=True)
-    source.add_argument("--job-key")
     source.add_argument("--manifest", type=Path)
-    run_parser.add_argument("--resume", action="store_true")
+    source.add_argument("--job-id")
     args = parser.parse_args()
     client = boto3.client("s3", region_name=env("AWS_REGION"))
     bucket = env("S3_BUCKET_NAME")
@@ -358,13 +357,33 @@ def main() -> int:
         results = drain_jobs(client, bucket)
         print(json.dumps({"processed": len(results), "failed": sum(row["status"] != "succeeded" for row in results)}))
         return int(any(row["status"] != "succeeded" for row in results))
-    if args.manifest:
-        manifest = json.loads(args.manifest.read_bytes())
-    else:
-        manifest, _ = json_object(client, bucket, args.job_key)
+    queue_owner = None
+    if args.job_id:
+        queue_owner = f"{os.uname().nodename if hasattr(os, 'uname') else 'worker'}:{uuid.uuid4().hex}"
+        manifest = task_queue.claim(args.job_id, queue_owner)
         if manifest is None:
-            raise FileNotFoundError("job manifest not found")
-    receipt = run_job(client, bucket, manifest, args.resume)
+            raise RuntimeError("Redis task is not pending or is already claimed")
+    elif args.manifest:
+        manifest = json.loads(args.manifest.read_bytes())
+    if queue_owner is not None:
+        owner = task_queue.client().get(task_queue.keys()["owner"] + manifest["job_id"])
+        if owner != queue_owner:
+            raise RuntimeError("Redis claim was not acquired")
+    receipt = None
+    try:
+        receipt = run_job(client, bucket, manifest, args.resume, queue_owner)
+        if queue_owner:
+            if receipt["status"] == "succeeded":
+                task_queue.acknowledge(manifest["job_id"], queue_owner)
+            else:
+                task_queue.fail(manifest["job_id"], queue_owner)
+    except Exception as error:
+        if queue_owner:
+            if receipt is None:
+                task_queue.fail_with_result(manifest["job_id"], queue_owner, manifest, error)
+            else:
+                task_queue.fail(manifest["job_id"], queue_owner)
+        raise
     print(json.dumps(receipt, indent=2))
     return 0 if receipt["status"] == "succeeded" else 1
 
