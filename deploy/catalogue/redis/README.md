@@ -47,3 +47,8 @@ that prefix was denied by ACL. Keep Redis private; no public listener or ingress
 PC has no private route to Redis; its local app uses an SSH tunnel through the control host. The EC2 worker
 still needs the Redis-aware code and protected Redis URL deployed before it can consume these jobs. No EC2
 wake or processing was started during tracker migration.
+
+The always-on `sts-job-manager.service` and Redis Streams ACL permission were installed on Ubuntu on
+2026-10-21. Redis restarted successfully with no in-flight jobs, the manager created its consumer group, and
+its first cycle completed without errors: eight jobs remain dispatched in SQLite and two remain succeeded.
+The service only reconciles jobs; it does not start or stop EC2.
