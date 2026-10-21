@@ -34,7 +34,8 @@ hot-spot list (S3, shared) ──> scheduler: new S1 / S2 passes over each hot s
                                  4. AIS enrichment: archive positions near the pass time,
                                     projected and matched -> vessel names, or "no AIS"
              S3 <── sts/<DD-MM-YYYY>/<hot_spot>/<source>.parquet ─┘
-viewer ──reads──> S3
+viewer ──map queries──> MVT files built from S3 Parquet deltas
+viewer ──image requests──> S3 captures
 
 AIS-only STS pairs (from the archive) ──> weaker lead: place and time
                                                                checked on the next pass
@@ -114,9 +115,13 @@ captures/<DD-MM-YYYY>/<hot_spot>/<source>/<finding>[_<vessel names>].tif / .png
   capture.
 - The capture is the raw crop as the source delivered it, untouched: a GeoTIFF of the original pixel
   values (S2 L1C bands, S1 VV/VH) and a plain PNG of the same crop with a fixed stretch, no boxes or
-  labels. When AIS names the vessels their names are in the file name and in the row.
-- Listing `sts/` gives the dates with STS; listing a date gives its hot spots. The viewer, a static
-  site, reads the tree directly, with no separate index.
+  labels. When AIS names the vessels their names are in the file name and in the row. For confirmed pairs,
+  publishing may create a separate PNG copy with only numbered 1 and 2 markers at the vessel positions; the
+  source GeoTIFF and plain PNG remain unchanged. Each image path is stored in the finding row.
+- Listing `sts/` gives the dates with STS; listing a date gives its hot spots. The viewer updates MVT files from
+  newly published Parquet deltas and serves map queries from those tiles; it fetches the image path in the row
+  from S3 when a user requests an image. For a pair, the marker-only PNG is the display image; no detection boxes
+  or other overlays are used.
 
 ### Run state (SQLite)
 

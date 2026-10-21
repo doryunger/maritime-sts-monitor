@@ -19,4 +19,7 @@ unmatched. `vessel_1_is_sanctioned` and `vessel_2_is_sanctioned` are always bool
 
 Captures: the same crop as the QA card (`review.crop_half_m`) as a GeoTIFF of the stored pixel values (S2 L1C bands
 as uint16 digital numbers, S1 VV and VH linear power as float32) and a PNG with the card's fixed stretch and nothing
-drawn. File names carry the finding id and the AIS names.
+drawn. When two pair positions project into the crop, a separate display PNG copies the plain PNG and adds only
+numbered 1 and 2 markers; it draws no detector geometry or other annotation. The Parquet row has separate S3 paths
+for the GeoTIFF, plain PNG and optional marker PNG. The source images remain unchanged. File names carry the finding
+id and the AIS names.

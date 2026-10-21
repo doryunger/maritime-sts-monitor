@@ -12,6 +12,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import rasterio
 from affine import Affine
+from PIL import ImageDraw, ImageFont
 from rasterio.warp import transform as warp_transform
 from shapely.geometry import Point
 
@@ -187,6 +188,24 @@ def write_captures(f: dict, base: str, rules: dict, root: Path) -> dict:
         png = folder / f"{base}.png"
         img.save(png)
         out["png"] = png
+        points = report.vessel_points(f["root"], scene, f["record"], rules)
+        if len(points) == 2 and all(0 <= p["fx"] <= 1 and 0 <= p["fy"] <= 1 for p in points):
+            marked = img.copy()
+            draw = ImageDraw.Draw(marked)
+            font = ImageFont.load_default()
+            radius = max(7, min(img.size) // 32)
+            for point in points:
+                x, y = round(point["fx"] * (img.width - 1)), round(point["fy"] * (img.height - 1))
+                bounds = (x - radius, y - radius, x + radius, y + radius)
+                draw.ellipse(bounds, fill=(0, 0, 0), outline=(255, 255, 255), width=1)
+                label = str(point["n"])
+                text_box = draw.textbbox((0, 0), label, font=font)
+                tx = x - (text_box[2] - text_box[0]) / 2
+                ty = y - (text_box[3] - text_box[1]) / 2 - text_box[1]
+                draw.text((tx, ty), label, fill=(255, 255, 255), font=font)
+            markers_png = folder / f"{base}_markers.png"
+            marked.save(markers_png)
+            out["markers_png"] = markers_png
     return out
 
 
@@ -272,6 +291,7 @@ def build(runs: list[int], rules: dict) -> tuple[list[dict], dict]:
                     "ais_coverage_ships": f["ais_coverage_ships"],
                     "capture_tif": prefix_c + rel["tif"] if "tif" in rel else None,
                     "capture_png": prefix_c + rel["png"] if "png" in rel else None,
+                    "capture_markers_png": prefix_c + rel["markers_png"] if "markers_png" in rel else None,
                 }
             )
         table = pa.Table.from_pylist(rows)
