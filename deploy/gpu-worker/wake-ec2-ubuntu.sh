@@ -1,0 +1,80 @@
+set -uo pipefail
+
+controller_url="${1:-${CONTROLLER_URL:-}}"
+worker_private_ip="${2:-${WORKER_PRIVATE_IP:-}}"
+worker_key="${WORKER_KEY_PATH:-$HOME/.ssh/geogen-key.pem}"
+poll_seconds="${POLL_SECONDS:-20}"
+
+if [[ -z "$controller_url" || -z "$worker_private_ip" ]]; then
+    printf '%s\n' "Usage: bash wake-ec2-ubuntu.sh <controller-url> <worker-private-ip>" >&2
+    exit 2
+fi
+
+if [[ ! -r "$worker_key" ]]; then
+    printf 'EC2 key is not readable: %s\n' "$worker_key" >&2
+    exit 2
+fi
+
+controller_url="${controller_url%/}"
+status_url="$controller_url/_wake/status"
+chmod 600 "$worker_key"
+
+read_status() {
+    curl -fsS --max-time 15 "$status_url"
+}
+
+while true; do
+    status="$(read_status)" || exit 1
+    state="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("ec2_state", ""))' <<< "$status")"
+    stage="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("stage", ""))' <<< "$status")"
+    detail="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("detail", ""))' <<< "$status")"
+    printf '%s EC2=%s stage=%s\n' "$(date '+%H:%M:%S')" "$state" "$stage"
+    if [[ "$stage" == "error" ]]; then
+        printf 'Wake controller error: %s\n' "$detail" >&2
+        exit 1
+    fi
+    if [[ "$stage" == "ready" ]]; then
+        break
+    fi
+    sleep "$poll_seconds"
+done
+
+while ! timeout 3 bash -c 'exec 3<>/dev/tcp/$1/22' _ "$worker_private_ip" >/dev/null 2>&1; do
+    status="$(read_status)" || exit 1
+    state="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("ec2_state", ""))' <<< "$status")"
+    stage="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("stage", ""))' <<< "$status")"
+    detail="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("detail", ""))' <<< "$status")"
+    printf '%s EC2=%s waiting for private SSH\n' "$(date '+%H:%M:%S')" "$state"
+    if [[ "$stage" == "error" ]]; then
+        printf 'Wake controller error: %s\n' "$detail" >&2
+        exit 1
+    fi
+    sleep "$poll_seconds"
+done
+
+ssh -tt -i "$worker_key" -o BatchMode=yes -o StrictHostKeyChecking=accept-new "ubuntu@$worker_private_ip" &
+ssh_pid=$!
+trap 'kill "$ssh_pid" 2>/dev/null || true; wait "$ssh_pid" 2>/dev/null || true' EXIT INT TERM
+
+while kill -0 "$ssh_pid" 2>/dev/null; do
+    ssh_state="$(ps -o stat= -p "$ssh_pid" 2>/dev/null || true)"
+    if [[ "$ssh_state" == Z* || -z "$ssh_state" ]]; then
+        break
+    fi
+    sleep "$poll_seconds"
+    status="$(read_status)" || exit 1
+    state="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("ec2_state", ""))' <<< "$status")"
+    stage="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("stage", ""))' <<< "$status")"
+    detail="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("detail", ""))' <<< "$status")"
+    printf '%s EC2=%s stage=%s\n' "$(date '+%H:%M:%S')" "$state" "$stage"
+    if [[ "$stage" == "error" ]]; then
+        printf 'Wake controller error: %s\n' "$detail" >&2
+        exit 1
+    fi
+done
+
+wait "$ssh_pid"
+ssh_status=$?
+ssh_pid=""
+trap - EXIT INT TERM
+exit "$ssh_status"

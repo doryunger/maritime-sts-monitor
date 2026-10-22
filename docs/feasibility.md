@@ -441,11 +441,10 @@ available. Initial available memory was 1,514 MiB, without swap. The OS is Ubunt
 with Python 3.12.3 and Git. Docker and project checkouts were absent at preflight; their deployed state is
 recorded in the migration verification below.
 
-Windows OpenSSH rejected the downloaded key's broad ACL. A separate copy in the user's `.ssh` directory,
-restricted to the current Windows account, connected successfully. The original Downloads file was not
-modified. Connection settings are in ignored `data/secrets/control_host.json`; endpoints and key material
-are excluded from these notes and Git. This host is selected for the always-on AIS/control workload;
-heavy scene processing remains on the EC2 worker, which stops after processing.
+The Ubuntu host's SSH identity is `sts-instance.pem` in the user's Downloads directory. Connection settings
+are in ignored `data/secrets/control_host.json`; endpoints and key material are excluded from these notes
+and Git. This host is selected for the always-on AIS/control workload; heavy scene processing remains on
+the EC2 worker, which stops after processing.
 
 ## AIS deployment migration verification (2026-10-20)
 

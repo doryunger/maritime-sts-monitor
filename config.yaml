@@ -57,6 +57,11 @@ catalogue:
 
 worker:
   path: data/worker
+  queue:
+    heartbeat_seconds: 60
+    lease_seconds: 900
+    max_retries: 1
+    retry_delay_seconds: 300
 
 app:
   host: 127.0.0.1

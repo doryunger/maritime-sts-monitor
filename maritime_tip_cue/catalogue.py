@@ -75,7 +75,13 @@ def connect(path):
             job_id TEXT PRIMARY KEY, site TEXT NOT NULL, source TEXT NOT NULL,
             created_utc TEXT NOT NULL, manifest_json TEXT NOT NULL,
             manifest_sha256 TEXT NOT NULL, status TEXT NOT NULL,
-            dispatched_utc TEXT, completed_utc TEXT, error TEXT, receipt_json TEXT
+            dispatched_utc TEXT, completed_utc TEXT, error TEXT, receipt_json TEXT,
+            retry_count INTEGER NOT NULL DEFAULT 0, available_utc TEXT, current_attempt_id TEXT
+        );
+        CREATE TABLE IF NOT EXISTS job_attempts (
+            attempt_id TEXT PRIMARY KEY, job_id TEXT NOT NULL, attempt_no INTEGER NOT NULL,
+            owner TEXT NOT NULL, status TEXT NOT NULL, started_utc TEXT NOT NULL,
+            finished_utc TEXT, error TEXT, receipt_json TEXT
         );
         CREATE TABLE IF NOT EXISTS scan_sources (
             scan_id TEXT NOT NULL, site TEXT NOT NULL, source TEXT NOT NULL,
@@ -83,6 +89,14 @@ def connect(path):
             baseline INTEGER NOT NULL, error TEXT, PRIMARY KEY (scan_id, site, source)
         );
     """)
+    job_columns = {row[1] for row in db.execute("PRAGMA table_info(jobs)")}
+    for name, definition in (
+        ("retry_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("available_utc", "TEXT"),
+        ("current_attempt_id", "TEXT"),
+    ):
+        if name not in job_columns:
+            db.execute(f"ALTER TABLE jobs ADD COLUMN {name} {definition}")
     return db
 
 
@@ -184,91 +198,314 @@ def record_channel(db, scan_id, site, source, rows, raw_rules, backfill):
     }
 
 
-def reconcile_redis(db, redis, s3, bucket, artifacts_prefix):
+def record_first_s2_scene(db, scan_id, site, rows, raw_rules):
+    version = digest({"site": site, "rules": raw_rules})
+    initial = db.execute(
+        "SELECT 1 FROM channels WHERE site=? AND source='s2'",
+        (site["name"],),
+    ).fetchone() is None
+    if initial:
+        return record_channel(db, scan_id, site, "s2", rows, raw_rules, False), None
+    selected = None
+    for row in rows:
+        exists = db.execute(
+            "SELECT 1 FROM observations WHERE site=? AND source='s2' AND scene=? AND version=?",
+            (site["name"], row["scene"], version),
+        ).fetchone()
+        if exists is None:
+            manifest = make_manifest(site, [serialize_scene(row)], raw_rules)
+            prior_job = db.execute("SELECT 1 FROM jobs WHERE job_id=?", (manifest["job_id"],)).fetchone()
+            if prior_job is None:
+                selected = row
+                break
+    if selected is None:
+        return record_channel(db, scan_id, site, "s2", rows, raw_rules, False), None
+    result = record_channel(db, scan_id, site, "s2", [selected], raw_rules, False)
+    result["matched"] = len(rows)
+    return result, make_manifest(site, [serialize_scene(selected)], raw_rules)["job_id"]
+
+
+def reconcile_redis(db, redis, s3, bucket, artifacts_prefix, events, max_retries, retry_delay_seconds):
     from maritime_tip_cue import task_queue
 
-    completed = 0
+    finalized = 0
     errors = []
-    for row in db.execute("SELECT * FROM jobs WHERE status!='succeeded'").fetchall():
-        job_id = row["job_id"]
+    for _event_id, event in events:
+        job_id = event.get("job_id")
+        attempt_id = event.get("attempt_id")
+        event_type = event.get("type")
         try:
-            value = redis.get(task_queue.keys()["result"] + job_id)
-            if value is None:
+            row = db.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
+            if row is None:
                 continue
-            receipt = json.loads(value)
-            if (
-                receipt.get("schema_version") != 1
-                or receipt.get("job_id") != job_id
-                or receipt.get("manifest_sha256") != row["manifest_sha256"]
-                or receipt.get("status") not in ("succeeded", "failed")
-                or not isinstance(receipt.get("artifacts"), list)
-            ):
-                raise ValueError("Invalid Redis job receipt")
-            if receipt["status"] == "failed":
+            if event_type == "claimed":
+                attempt = db.execute(
+                    "SELECT status FROM job_attempts WHERE attempt_id=?",
+                    (attempt_id,),
+                ).fetchone()
+                with db:
+                    if attempt is None and row["status"] not in ("succeeded", "failed", "running"):
+                        db.execute(
+                            "INSERT OR IGNORE INTO job_attempts "
+                            "(attempt_id,job_id,attempt_no,owner,status,started_utc) VALUES (?,?,?,?,?,?)",
+                            (
+                                attempt_id,
+                                job_id,
+                                row["retry_count"] + 1,
+                                event.get("owner", "unknown"),
+                                "running",
+                                utc_now(),
+                            ),
+                        )
+                        db.execute(
+                            "UPDATE jobs SET status='running',current_attempt_id=? WHERE job_id=?",
+                            (attempt_id, job_id),
+                        )
+                continue
+            if event_type not in ("result", "lease_expired"):
+                continue
+            if row["current_attempt_id"] != attempt_id:
+                prior_attempt = db.execute(
+                    "SELECT status FROM job_attempts WHERE attempt_id=? AND job_id=?",
+                    (attempt_id, job_id),
+                ).fetchone()
+                if prior_attempt is not None and prior_attempt["status"] in ("failed", "lease_expired", "succeeded"):
+                    if row["status"] in ("retry_wait", "succeeded", "failed"):
+                        final_status = {
+                            "retry_wait": "retry",
+                            "succeeded": "succeeded",
+                            "failed": "failed",
+                        }[row["status"]]
+                        task_queue.finalize(
+                            job_id,
+                            event.get("owner", attempt_id),
+                            final_status,
+                            datetime.fromisoformat(row["available_utc"])
+                            if row["status"] == "retry_wait" and row["available_utc"]
+                            else None,
+                            attempt_id,
+                        )
+                continue
+            attempt_row = db.execute("SELECT * FROM job_attempts WHERE attempt_id=?", (attempt_id,)).fetchone()
+            if attempt_row is None:
+                raise ValueError("Claim event is missing its SQLite attempt record")
+            receipt = None
+            status = "failed"
+            error_text = "Worker heartbeat lease expired"
+            if event_type == "result":
+                value = redis.get(task_queue.keys()["result"] + job_id + ":" + attempt_id)
+                if value is None:
+                    raise ValueError("Result event has no attempt receipt")
+                receipt = json.loads(value)
+                if (
+                    receipt.get("schema_version") != 1
+                    or receipt.get("job_id") != job_id
+                    or receipt.get("attempt_id") != attempt_id
+                    or receipt.get("manifest_sha256") != row["manifest_sha256"]
+                    or receipt.get("status") not in ("succeeded", "failed")
+                    or not isinstance(receipt.get("artifacts"), list)
+                ):
+                    raise ValueError("Invalid Redis attempt receipt")
+                status = receipt["status"]
+                error_text = receipt.get("error") or "Worker reported failure"
+            if status == "succeeded":
+                manifest = validate_manifest(json.loads(row["manifest_json"]))
+                expected = artifacts_prefix.rstrip("/") + "/" + job_id + "/" + attempt_id + "/"
+                if (
+                    not isinstance(receipt.get("scene_counts"), dict)
+                    or receipt["scene_counts"].get("checked") != len(manifest["scenes"])
+                    or receipt["scene_counts"].get("failed") != 0
+                    or not receipt["artifacts"]
+                ):
+                    raise ValueError("Successful Redis task has incomplete scene counts")
+                for artifact in receipt["artifacts"]:
+                    if (
+                        not isinstance(artifact, dict)
+                        or not all(key in artifact for key in ("key", "size", "sha256", "kind"))
+                        or not isinstance(artifact["key"], str)
+                        or not artifact["key"].startswith(expected)
+                        or ".." in artifact["key"].split("/")
+                        or not isinstance(artifact["size"], int)
+                        or isinstance(artifact["size"], bool)
+                        or artifact["size"] < 0
+                        or not isinstance(artifact["sha256"], str)
+                        or len(artifact["sha256"]) != 64
+                        or any(char not in "0123456789abcdef" for char in artifact["sha256"])
+                        or not isinstance(artifact["kind"], str)
+                    ):
+                        raise ValueError("Worker artifact is outside its attempt prefix")
+                    head = s3.head_object(Bucket=bucket, Key=artifact["key"])
+                    if (
+                        head.get("ContentLength") != artifact["size"]
+                        or head.get("Metadata", {}).get("sha256") != artifact["sha256"]
+                    ):
+                        raise ValueError("Worker artifact checksum or size mismatch")
                 with db:
                     db.execute(
-                        "UPDATE jobs SET status='failed',error=?,receipt_json=? WHERE job_id=?",
-                        (receipt.get("error") or "Worker reported failure", canonical_bytes(receipt).decode(), job_id),
+                        "UPDATE job_attempts SET status='succeeded',finished_utc=?,receipt_json=? WHERE attempt_id=?",
+                        (utc_now(), canonical_bytes(receipt).decode(), attempt_id),
                     )
-                continue
-            manifest = validate_manifest(json.loads(row["manifest_json"]))
-            expected = artifacts_prefix.rstrip("/") + "/" + job_id + "/"
-            if (
-                not isinstance(receipt.get("scene_counts"), dict)
-                or receipt["scene_counts"].get("checked") != len(manifest["scenes"])
-                or receipt["scene_counts"].get("failed") != 0
-                or not receipt["artifacts"]
-            ):
-                raise ValueError("Successful Redis task has incomplete scene counts")
-            for artifact in receipt.get("artifacts", []):
-                if (
-                    not isinstance(artifact, dict)
-                    or not all(key in artifact for key in ("key", "size", "sha256", "kind"))
-                    or not isinstance(artifact["key"], str)
-                    or not artifact["key"].startswith(expected)
-                    or ".." in artifact["key"].split("/")
-                    or not isinstance(artifact["size"], int)
-                    or isinstance(artifact["size"], bool)
-                    or artifact["size"] < 0
-                    or not isinstance(artifact["sha256"], str)
-                    or len(artifact["sha256"]) != 64
-                    or any(char not in "0123456789abcdef" for char in artifact["sha256"])
-                    or not isinstance(artifact["kind"], str)
-                ):
-                    raise ValueError("Worker artifact is outside its job prefix")
-                head = s3.head_object(Bucket=bucket, Key=artifact["key"])
-                if head.get("ContentLength") != artifact["size"] or head.get("Metadata", {}).get("sha256") != artifact["sha256"]:
-                    raise ValueError("Worker artifact checksum or size mismatch")
-            with db:
-                db.execute("UPDATE jobs SET status='succeeded',completed_utc=?,error=NULL,receipt_json=? WHERE job_id=?", (utc_now(), canonical_bytes(receipt).decode(), job_id))
-            completed += 1
+                    db.execute(
+                        "UPDATE jobs SET status='succeeded',completed_utc=?,error=NULL,receipt_json=?,"
+                        "current_attempt_id=NULL WHERE job_id=?",
+                        (utc_now(), canonical_bytes(receipt).decode(), job_id),
+                    )
+                task_queue.finalize(
+                    job_id,
+                    event.get("owner", attempt_row["owner"]),
+                    "succeeded",
+                    attempt_id=attempt_id,
+                )
+            else:
+                retry_count = row["retry_count"] + 1
+                retry = retry_count <= max_retries
+                available = datetime.now(UTC) + timedelta(seconds=retry_delay_seconds) if retry else None
+                terminal_status = "retry_wait" if retry else "failed"
+                receipt_text = canonical_bytes(receipt).decode() if receipt else None
+                with db:
+                    db.execute(
+                        "UPDATE job_attempts SET status=?,finished_utc=?,error=?,receipt_json=? WHERE attempt_id=?",
+                        (
+                            "failed" if event_type == "result" else "lease_expired",
+                            utc_now(),
+                            error_text,
+                            receipt_text,
+                            attempt_id,
+                        ),
+                    )
+                    db.execute(
+                        "UPDATE jobs SET status=?,retry_count=?,available_utc=?,error=?,receipt_json=?,"
+                        "current_attempt_id=NULL WHERE job_id=?",
+                        (
+                            terminal_status,
+                            retry_count,
+                            available.isoformat() if available else None,
+                            error_text,
+                            receipt_text,
+                            job_id,
+                        ),
+                    )
+                finalizer = attempt_row["owner"] if event_type == "result" else attempt_id
+                task_queue.finalize(
+                    job_id,
+                    finalizer,
+                    "retry" if retry else "failed",
+                    available,
+                    attempt_id,
+                )
+            finalized += 1
         except Exception as error:
-            errors.append({"phase": "reconcile", "job_id": job_id, "error": str(error)})
-    return completed, errors
+            errors.append({"phase": "reconcile", "job_id": job_id, "attempt_id": attempt_id, "error": str(error)})
+            raise
+    return finalized, errors
 
 
 def refresh_queue(db):
     from maritime_tip_cue import task_queue
 
+    now = utc_now()
     jobs = {
         row["job_id"]: json.loads(row["manifest_json"])
-        for row in db.execute("SELECT job_id,manifest_json FROM jobs WHERE status!='succeeded'")
+        for row in db.execute(
+            "SELECT job_id,manifest_json FROM jobs WHERE status IN ('pending','dispatched') "
+            "OR (status='retry_wait' AND available_utc<=?)",
+            (now,),
+        )
     }
     completed = {row[0] for row in db.execute("SELECT job_id FROM jobs WHERE status='succeeded'")}
     task_queue.restore(jobs, completed)
     with db:
         db.execute(
-            "UPDATE jobs SET status='dispatched',dispatched_utc=coalesce(dispatched_utc,?) WHERE status='pending'",
-            (utc_now(),),
+            "UPDATE jobs SET status='dispatched',dispatched_utc=coalesce(dispatched_utc,?) "
+            "WHERE status='pending' OR (status='retry_wait' AND available_utc<=?)",
+            (now, now),
         )
     return len(jobs)
+
+
+def refresh_one_job(db, job_id):
+    from maritime_tip_cue import task_queue
+
+    row = db.execute(
+        "SELECT job_id,manifest_json,status,available_utc FROM jobs WHERE job_id=?",
+        (job_id,),
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"Unknown job ID: {job_id}")
+    available = row["status"] in ("pending", "dispatched") or (
+        row["status"] == "retry_wait"
+        and row["available_utc"] is not None
+        and row["available_utc"] <= utc_now()
+    )
+    if not available:
+        raise ValueError(f"Job {job_id} is not ready for dispatch: {row['status']}")
+    manifest = json.loads(row["manifest_json"])
+    if len(manifest["scenes"]) != 1:
+        raise ValueError(f"Job {job_id} contains {len(manifest['scenes'])} scenes; expected exactly one")
+    task_queue.restore({job_id: manifest}, set())
+    with db:
+        db.execute(
+            "UPDATE jobs SET status='dispatched',dispatched_utc=coalesce(dispatched_utc,?) "
+            "WHERE job_id=? AND (status IN ('pending','dispatched') OR "
+            "(status='retry_wait' AND available_utc<=?))",
+            (utc_now(), job_id, utc_now()),
+        )
+    return {"job_id": job_id, "site": manifest["site"]["name"], "scenes": len(manifest["scenes"])}
+
+
+def pending_jobs(db, single_scene=False, limit=20):
+    now = utc_now()
+    rows = db.execute(
+        "SELECT job_id,site,source,status,manifest_json FROM jobs "
+        "WHERE status IN ('pending','dispatched') OR "
+        "(status='retry_wait' AND available_utc<=?) ORDER BY created_utc,job_id",
+        (now,),
+    )
+    result = []
+    for row in rows:
+        manifest = json.loads(row["manifest_json"])
+        if single_scene and len(manifest["scenes"]) != 1:
+            continue
+        result.append(
+            {
+                "job_id": row["job_id"],
+                "site": row["site"],
+                "source": row["source"],
+                "status": row["status"],
+                "scenes": [scene["scene"] for scene in manifest["scenes"]],
+            }
+        )
+        if len(result) >= limit:
+            break
+    return result
+
+
+def job_status(db, job_id):
+    row = db.execute(
+        "SELECT job_id,site,source,status,error,retry_count,available_utc,manifest_json "
+        "FROM jobs WHERE job_id=?",
+        (job_id,),
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"Unknown job ID: {job_id}")
+    manifest = json.loads(row["manifest_json"])
+    return {
+        "job_id": row["job_id"],
+        "site": row["site"],
+        "source": row["source"],
+        "status": row["status"],
+        "error": row["error"],
+        "retry_count": row["retry_count"],
+        "available_utc": row["available_utc"],
+        "scenes": [scene["scene"] for scene in manifest["scenes"]],
+    }
 
 
 def counts(db):
     return {row["status"]: row["n"] for row in db.execute("SELECT status,COUNT(*) n FROM jobs GROUP BY status")}
 
 
-def scan(db, cfg, backfill=False):
+def scan(db, cfg, backfill=False, first_scene=False):
     scan_id, started = uuid.uuid4().hex, utc_now()
     for previous in db.execute("SELECT scan_id,started_utc FROM scans WHERE status='running'").fetchall():
         interrupted = {
@@ -285,7 +522,14 @@ def scan(db, cfg, backfill=False):
                 (started, canonical_bytes(interrupted).decode(), previous["scan_id"]),
             )
         write_log(cfg, interrupted)
-    summary = {"scan_id": scan_id, "started_utc": started, "channels": [], "errors": [], "backfill": backfill}
+    summary = {
+        "scan_id": scan_id,
+        "started_utc": started,
+        "channels": [],
+        "errors": [],
+        "backfill": backfill,
+        "first_scene": first_scene,
+    }
     with db:
         db.execute("INSERT INTO scans (scan_id,started_utc,status) VALUES (?,?,'running')", (scan_id, started))
     try:
@@ -298,16 +542,37 @@ def scan(db, cfg, backfill=False):
         sites = hotspots.load()
         if not sites:
             raise ValueError("Shared hot-spot list is empty")
+        if first_scene:
+            prior_scans = db.execute(
+                "SELECT summary_json FROM scans WHERE summary_json IS NOT NULL ORDER BY started_utc DESC"
+            ).fetchall()
+            for prior in prior_scans:
+                prior_summary = json.loads(prior["summary_json"])
+                prior_channels = prior_summary.get("channels", [])
+                if prior_summary.get("first_scene") and prior_channels:
+                    previous_site = prior_channels[0]["site"]
+                    site_names = [site["name"] for site in sites]
+                    if previous_site in site_names:
+                        offset = (site_names.index(previous_site) + 1) % len(sites)
+                        sites = sites[offset:] + sites[:offset]
+                    break
+            summary["site_order"] = [site["name"] for site in sites]
         end = datetime.now(UTC)
         start = end - timedelta(days=rules["catalogue"]["lookback_days"])
         summary["window"] = {"start": start.isoformat(), "end": end.isoformat()}
         summary["rules_sha256"] = digest(raw_rules)
+        selected_job_id = None
         for site in sites:
-            for source in passes.SOURCES:
+            sources = ("s2",) if first_scene else passes.SOURCES
+            for source in sources:
                 channel_started = utc_now()
                 try:
                     rows = passes.find(start, end, [site], rules=rules, sources=[source])
-                    summary["channels"].append(record_channel(db, scan_id, site, source, rows, raw_rules, backfill))
+                    if first_scene:
+                        detail, selected_job_id = record_first_s2_scene(db, scan_id, site, rows, raw_rules)
+                    else:
+                        detail = record_channel(db, scan_id, site, source, rows, raw_rules, backfill)
+                    summary["channels"].append(detail)
                 except Exception as error:
                     detail = {"site": site["name"], "source": source, "status": "failed", "error": str(error)}
                     summary["channels"].append(detail)
@@ -318,6 +583,15 @@ def scan(db, cfg, backfill=False):
                             (scan_id, site["name"], source, "failed", 0, 0, 0, str(error)),
                         )
                 summary["channels"][-1].update({"started_utc": channel_started, "ended_utc": utc_now()})
+                if selected_job_id:
+                    summary["selected_job_id"] = selected_job_id
+                    break
+                if first_scene and summary["errors"]:
+                    break
+            if selected_job_id:
+                break
+            if first_scene and summary["errors"]:
+                break
     except Exception as error:
         summary["errors"].append({"phase": "scan", "error": str(error)})
     summary["ended_utc"] = utc_now()
@@ -379,9 +653,22 @@ def status(db):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("scan", "status", "redis-requeue-stale"))
+    parser.add_argument("command", choices=("scan", "scan-one", "status", "jobs", "job-status", "redis-requeue-stale"))
     parser.add_argument("--backfill", action="store_true")
+    parser.add_argument("--single-scene", action="store_true")
+    parser.add_argument("--limit", type=int, default=20)
+    parser.add_argument("--job-id")
     args = parser.parse_args()
+    if args.limit < 1:
+        parser.error("--limit must be positive")
+    if args.single_scene and args.command != "jobs":
+        parser.error("--single-scene is only valid with jobs")
+    if args.job_id and args.command != "job-status":
+        parser.error("--job-id is only valid with job-status")
+    if args.command == "job-status" and not args.job_id:
+        parser.error("job-status requires --job-id")
+    if args.command == "scan-one" and args.backfill:
+        parser.error("scan-one does not support backfill")
     if args.command == "redis-requeue-stale":
         from maritime_tip_cue import task_queue
 
@@ -391,7 +678,16 @@ def main():
     path = Path(cfg["database"])
     path = path if path.is_absolute() else ROOT / path
     with controller_lock(path), closing(connect(path)) as db:
-        result = scan(db, cfg, args.backfill) if args.command == "scan" else status(db)
+        if args.command in ("scan", "scan-one"):
+            result = scan(db, cfg, args.backfill, args.command == "scan-one")
+        elif args.command == "status":
+            result = status(db)
+        elif args.command == "jobs":
+            result = pending_jobs(db, args.single_scene, args.limit)
+        elif args.command == "job-status":
+            result = job_status(db, args.job_id)
+        else:
+            result = status(db)
     print(json.dumps(result, sort_keys=True))
     return 1 if result.get("status") == "failed" else 0
 

@@ -9,11 +9,11 @@ original owner workspace; foreign claims cannot be selected or stolen. Interacti
 failed/interrupted jobs as explicit recovery choices, even if New previously replaced their local session.
 Noninteractive `--all` selects ready jobs only and never silently resumes claims.
 
-Execution claims each selected Redis job with a unique owner, then calls `worker.run_job` with the pinned
-manifest and rules. Artifacts are uploaded to S3 and the result receipt is written to Redis before the launcher
-acknowledges success. The Ubuntu job manager verifies successful receipts and S3 artifacts, then marks the
-job succeeded in SQLite. SQLite keeps completed rows as history; Redis removes them from the
-active pending queue. The launcher does not hold the worker lock itself:
+Execution claims each selected Redis job with a unique owner and attempt identity, then calls `worker.run_job`
+with the pinned manifest and rules. Artifacts are uploaded to an attempt-specific S3 prefix and the result
+receipt is written to Redis. The Ubuntu job manager verifies successful receipts and S3 artifacts, then marks
+the job succeeded in SQLite and removes it from the active pending queue. The worker renews its claim while
+processing; the manager owns completion and bounded retry transitions. The launcher does not hold the worker lock itself:
 `run_job` acquires it per job, so nesting that same lock around the session would deadlock. A separate
 session lock protects interactive selection, session replacement and processing against other launchers.
 

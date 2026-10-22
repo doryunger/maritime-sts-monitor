@@ -4,6 +4,7 @@ import json
 import os
 import sqlite3
 import sys
+import threading
 import uuid
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -227,14 +228,14 @@ def upload_artifacts(client, bucket: str, manifest: dict, paths: list[Path], att
     return artifacts
 
 
-def run_job(client, bucket: str, manifest: dict, resume: bool = False, queue_owner: str | None = None) -> dict:
+def _run_job(client, bucket: str, manifest: dict, resume: bool = False, queue_owner: str | None = None) -> dict:
     validate(manifest)
     root = worker_root()
     with local_lock(root):
         job_id = manifest["job_id"]
         result_key = key_for("results", job_id)
         previous, result_etag = json_object(client, bucket, result_key)
-        if previous and previous["status"] == "succeeded":
+        if previous and previous["status"] == "succeeded" and queue_owner is None:
             if previous.get("job_id") != job_id or previous.get("manifest_sha256") != job_id:
                 raise RuntimeError("existing receipt does not match manifest")
             return previous
@@ -248,6 +249,7 @@ def run_job(client, bucket: str, manifest: dict, resume: bool = False, queue_own
         receipt = {
             "schema_version": 1,
             "job_id": job_id,
+            "attempt_id": manifest.get("_queue_attempt_id"),
             "manifest_sha256": job_id,
             "status": "failed",
             "run_no": None,
@@ -269,7 +271,7 @@ def run_job(client, bucket: str, manifest: dict, resume: bool = False, queue_own
                 save_json(pointer, {"run_no": run_no})
             receipt["run_no"] = run_no
             receipt["scene_counts"] = jobs.execute(manifest, run_no, out, rules_path)
-            attempt = uuid.uuid4().hex
+            attempt = manifest.get("_queue_attempt_id") or uuid.uuid4().hex
             paths = export_parquets(run_no, out, workspace / attempt, job_id)
             paths += [workspace / "manifest.json", rules_path]
             receipt["artifacts"] = upload_artifacts(client, bucket, manifest, paths, attempt)
@@ -293,8 +295,37 @@ def run_job(client, bucket: str, manifest: dict, resume: bool = False, queue_own
             )
         save_json(workspace / "receipt.json", receipt)
         if queue_owner is not None:
-            task_queue.save_result(job_id, receipt)
+            task_queue.save_result(job_id, queue_owner, receipt)
         return receipt
+
+
+def run_job(client, bucket: str, manifest: dict, resume: bool = False, queue_owner: str | None = None) -> dict:
+    if queue_owner is None:
+        return _run_job(client, bucket, manifest, resume, queue_owner)
+    attempt_id = manifest.get("_queue_attempt_id")
+    if not attempt_id:
+        raise ValueError("Queued worker manifest has no attempt identity")
+    from maritime_tip_cue.config import settings
+
+    interval = max(1, int(settings()["worker"]["queue"]["heartbeat_seconds"]))
+    stopped = threading.Event()
+
+    def maintain_lease():
+        while not stopped.wait(interval):
+            try:
+                if not task_queue.heartbeat(manifest["job_id"], queue_owner, attempt_id):
+                    return
+            except Exception:
+                continue
+
+    heartbeat_thread = threading.Thread(target=maintain_lease, daemon=True)
+    heartbeat_thread.start()
+    try:
+        receipt = _run_job(client, bucket, manifest, resume, queue_owner)
+        return receipt
+    finally:
+        stopped.set()
+        heartbeat_thread.join(timeout=interval + 1)
 
 
 def list_jobs(client, bucket: str, include_scenes: bool = False) -> list[dict]:
@@ -323,15 +354,9 @@ def drain_jobs(client, bucket: str) -> list[dict]:
         try:
             receipt = run_job(client, bucket, manifest, queue_owner=owner)
             result.update(status=receipt["status"], run_no=receipt["run_no"], error=receipt.get("error"))
-            if receipt["status"] == "succeeded":
-                task_queue.acknowledge(job_id, owner)
-            else:
-                task_queue.fail(job_id, owner)
         except Exception as error:
             if receipt is None:
                 task_queue.fail_with_result(job_id, owner, manifest, error)
-            else:
-                task_queue.fail(job_id, owner)
             result.update(status="failed", error=f"{type(error).__name__}: {error}")
         results.append(result)
         print(json.dumps(result), flush=True)
@@ -347,6 +372,7 @@ def main() -> int:
     source = run_parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--manifest", type=Path)
     source.add_argument("--job-id")
+    run_parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
     client = boto3.client("s3", region_name=env("AWS_REGION"))
     bucket = env("S3_BUCKET_NAME")
@@ -372,17 +398,10 @@ def main() -> int:
     receipt = None
     try:
         receipt = run_job(client, bucket, manifest, args.resume, queue_owner)
-        if queue_owner:
-            if receipt["status"] == "succeeded":
-                task_queue.acknowledge(manifest["job_id"], queue_owner)
-            else:
-                task_queue.fail(manifest["job_id"], queue_owner)
     except Exception as error:
         if queue_owner:
             if receipt is None:
                 task_queue.fail_with_result(manifest["job_id"], queue_owner, manifest, error)
-            else:
-                task_queue.fail(manifest["job_id"], queue_owner)
         raise
     print(json.dumps(receipt, indent=2))
     return 0 if receipt["status"] == "succeeded" else 1

@@ -175,16 +175,17 @@ def execute_session(session: dict, client, bucket: str, root: Path | None = None
                             flush=True,
                         )
                         receipt = worker.run_job(client, bucket, manifest, resume=recovering, queue_owner=owner)
-                        if receipt["status"] == "succeeded":
-                            task_queue.acknowledge(entry["job_id"], owner)
-                        else:
-                            task_queue.fail(entry["job_id"], owner)
                         entry.update(
                             status="done" if receipt["status"] == "succeeded" else "failed",
                             run_no=receipt.get("run_no"),
                             error=receipt.get("error"),
                             finished_utc=now(),
-                            result_key=task_queue.keys()["result"] + entry["job_id"],
+                            result_key=(
+                                task_queue.keys()["result"]
+                                + entry["job_id"]
+                                + ":"
+                                + manifest["_queue_attempt_id"]
+                            ),
                         )
                         save_session(session, root)
                         print(
@@ -197,9 +198,9 @@ def execute_session(session: dict, client, bucket: str, root: Path | None = None
                     except KeyboardInterrupt:
                         if claimed:
                             if receipt is None:
-                                task_queue.fail_with_result(entry["job_id"], owner, manifest, "Interrupted from terminal")
-                            else:
-                                task_queue.fail(entry["job_id"], owner)
+                                task_queue.fail_with_result(
+                                    entry["job_id"], owner, manifest, "Interrupted from terminal"
+                                )
                         entry.update(status="interrupted", error="Interrupted from terminal", finished_utc=now())
                         entry["run_no"] = local_run_no(entry["job_id"])
                         raise
@@ -207,8 +208,6 @@ def execute_session(session: dict, client, bucket: str, root: Path | None = None
                         if claimed:
                             if receipt is None:
                                 task_queue.fail_with_result(entry["job_id"], owner, manifest, exc)
-                            else:
-                                task_queue.fail(entry["job_id"], owner)
                         entry.update(status="failed", error=f"{type(exc).__name__}: {exc}", finished_utc=now())
                         entry["run_no"] = local_run_no(entry["job_id"])
                         save_session(session, root)

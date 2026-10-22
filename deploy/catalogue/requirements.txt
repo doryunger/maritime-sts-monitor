@@ -2,4 +2,5 @@ boto3
 PyYAML
 requests
 shapely
+numpy
 redis

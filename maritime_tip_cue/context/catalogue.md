@@ -26,27 +26,37 @@ Such expanded jobs intentionally repeat processing of earlier slices. Sentinel-2
 Boundary or rule changes produce a different job identity rather than mutating queued instructions.
 
 Successful receipts must cover every requested scene and reference uploaded objects whose sizes and SHA256
-metadata match. Missing objects or malformed receipts leave work incomplete. Failed receipts update the job
-to failed while Redis keeps it retryable; a later successful receipt replaces that state. The six-hour
-catalogue scan only discovers work. The always-on job manager dispatches SQLite jobs to Redis, consumes Redis
-Stream result events, and periodically reconciles durable receipts so a restart or missed event cannot lose a
-state update. Its SQLite lock prevents overlap with a catalogue scan.
+metadata match. Missing objects or malformed receipts leave work incomplete. The six-hour catalogue scan only
+discovers work. The always-on job manager dispatches SQLite jobs to Redis and consumes Redis Stream claim,
+result and lease-expiry events. SQLite stores each attempt, retry count and next eligible time. A worker renews
+its claim lease; a result is accepted only from the current attempt. Expired leases become one delayed retry,
+and a second unsuccessful attempt is terminal until explicitly requeued. Redis recovery and the SQLite ledger
+are reconciled on each manager cycle, so a restart between either store's update can be repaired. Its SQLite
+lock prevents overlap with a catalogue scan.
+
+`catalogue jobs --single-scene` lists ready outbox jobs whose manifest contains exactly one scene. The
+`job_manager once --job-id` path republishes only that selected manifest to Redis; it does not run a scan or
+drain other pending jobs. The regular manager service remains responsible for normal full queue recovery.
+`job_manager scan-one` rotates its starting site from the previous one-scene scan, establishes any missing S2
+baselines without queueing historical scenes, records one previously unseen S2 scene as a one-scene manifest,
+then stops scanning and dispatches only that manifest to Redis. Other new S2 scenes remain unrecorded for a
+later scan-one call.
 
 ## EC2 execution
 
-The EC2 command consumes manifests without searching the catalogue again. It stores raw pinned rules beside
-the job and calls the same watch pipeline with explicit scenes. The legacy watch command can return zero
-after per-scene failures, so acknowledgement depends on checked scene records rather than its exit code.
+The worker consumes manifests without searching the catalogue again. It stores raw pinned rules beside the
+job and calls the same watch pipeline with explicit scenes. The legacy watch command can return zero after
+per-scene failures, so a successful result depends on checked scene records rather than its exit code.
 AIS matching retains the existing pair-only scope; singles still appear in the detection export.
 
-The worker's local lock protects the shared detector scratch directory. A conditional S3 claim also prevents
-different machines from processing the same job concurrently. Claims have no guessed timeout: failure or
-interruption requires `--resume` from the original durable workspace. Moving or losing that workspace needs
-operator recovery of the claim; the recovery command requeues every in-flight task and must only run after
-confirming no worker is active. `drain` snapshots ready IDs once, claims each at most once per invocation,
-and exits without polling, automatic retries or instance lifecycle actions. Queue refresh writes each manifest
-and checks in-flight/completed state atomically with pending insertion, so a tracker refresh cannot requeue a
-task concurrently claimed by a worker.
+The worker's local lock protects the shared detector scratch directory. Redis atomically claims a pending job,
+assigns a unique attempt identity and starts a lease. A heartbeat renews the lease while processing. Result
+publication is fenced by both owner and attempt identity, and artifacts use that attempt identity in their S3
+prefix, so an expired worker cannot replace a later attempt's result. The manager owns completion and retry
+transitions; workers never put their own jobs back in the queue. A lease timeout or reported failure consumes
+the single configured retry after a delay. A second unsuccessful attempt is recorded as terminal failed and is
+not automatically claimable. Rebuilding Redis state from SQLite preserves running claims, terminal jobs and
+retry delays without introducing duplicate claims.
 
 Each attempt uploads `detections.parquet` for all hull roles, `raw_detections.parquet` for detector output,
 a SQLite backup, the manifest and raw rules. Detection geometry is WKB in WGS84 longitude/latitude, with
@@ -59,10 +69,12 @@ Those reviewed, pair-only products remain the responsibility of the existing pub
 
 ## Deployment and credentials
 
-The tracker has a minimal dependency set under `deploy/catalogue/`; GPU packages are not loaded on Lightsail.
-Its systemd timer runs at 00:05, 06:05, 12:05 and 18:05 UTC, away from hourly AIS collection at minute 15.
-It persists missed timer activation across reboots. The separate job-manager systemd service stays active and
-reconciles receipts every 10 seconds. Scan history is in SQLite, JSONL and the service journal.
+The tracker runs in its Docker image under systemd; GPU packages are not loaded on Lightsail. The
+systemd timer invokes a one-shot scan at 00:05, 06:05, 12:05 and 18:05 UTC, away from hourly AIS collection at
+minute 15. The timer persists missed activation across reboots. The manager service restarts after failure and
+host reboot. Scan history is in SQLite, JSONL and the service journal. Manager and worker have separate Docker
+images and dependency lists while sharing this repository's `maritime_tip_cue` package. Their images build
+from a clone; `.env`, `config.local.yaml`, and persistent `data/` stay host-local.
 
 `STS_CONFIG_PATH` selects a complete deployment config file, relative to the repo root or absolute. The
 default is `config.yaml`. An EC2 installation needs its Linux detector environment, scratch and coastline

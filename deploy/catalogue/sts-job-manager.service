@@ -5,10 +5,9 @@ After=network-online.target sts-redis.service
 
 [Service]
 Type=simple
-User=ubuntu
-WorkingDirectory=/home/ubuntu/maritime-sts-monitor
 EnvironmentFile=/home/ubuntu/maritime-sts-monitor/.env
-ExecStart=/home/ubuntu/maritime-sts-monitor/.venv/bin/python -m maritime_tip_cue.job_manager run --interval 10
+ExecStart=/usr/bin/docker run --rm --name sts-job-manager --network host --user 1000:1000 --env-file /home/ubuntu/maritime-sts-monitor/.env -e STS_CONFIG_PATH=/app/config.yaml -v /home/ubuntu/maritime-sts-monitor/data:/app/data maritime-sts-manager -m maritime_tip_cue.job_manager run --interval 10
+ExecStop=/usr/bin/docker stop --time 30 sts-job-manager
 Restart=always
 RestartSec=5
 NoNewPrivileges=true

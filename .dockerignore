@@ -1,0 +1,16 @@
+.env
+.env.*
+config.local.yaml
+config.*.local.yaml
+.git
+.venv
+__pycache__
+.pytest_cache
+.ruff_cache
+data
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
