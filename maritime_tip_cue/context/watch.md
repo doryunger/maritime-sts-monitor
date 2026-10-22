@@ -9,11 +9,15 @@ a 22 km box took about as long as the full tile (measuring many ships dominates)
 8 min. Cropped and full runs agreed on 97-99 % of hulls; every difference lay 8-25 km inside the window (the
 model tiles the scene differently), so the crop is not an edge cut. The Windows worker settings in
 `config.yaml` `ai2.env` switch the data-loader workers off, which the Windows build of the pipelines needs.
-The runner logs CUDA visibility at startup and reports initialized tensor-memory peaks every minute, at exit,
-and when detector logs are relayed after completion or timeout. The attempt ledger preserves these diagnostic
-lines even though per-scene scratch is removed on failure. The forkserver re-imports the runner in child
-processes, so the run-spec path comes from inherited environment and only the original `MainProcess` rewrites
-`sys.argv` or starts the pipeline; otherwise child processes can recursively treat a pipeline name as a file path.
+The runner reports CUDA visibility, PyTorch memory peaks, and NVIDIA utilization and memory every two seconds;
+these distinguish framework initialization from sustained GPU work. Shadow's 11 Oct 2026 S2 run logged
+`GPU available: True, used: True`, 10-38% utilization, about 900 MiB GPU memory, and 175 seconds total. The
+container uses the same worker settings but a pinned PyTorch 2.7.0 runtime, compared with Shadow's 2.9.1.
+Detector project management reads checkpoints from the mounted `/opt/ai2-models` tree, but writes run metadata
+under the attempt's writable work directory; `RSLP_PREFIX` is scoped to that detector subprocess. The attempt
+ledger preserves diagnostics after scratch cleanup. The forkserver re-imports the runner in child processes,
+so the run-spec path comes from inherited environment and only the original `MainProcess` rewrites `sys.argv`
+or starts the pipeline; otherwise child processes can recursively treat a pipeline name as a file path.
 
 ## detector
 Sentinel-1 needs the frame and one earlier frame of the same orbit direction 30-90 days before; among the

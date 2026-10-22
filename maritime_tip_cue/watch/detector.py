@@ -91,12 +91,12 @@ def s1_inputs(item: dict, rules: dict, work: Path, log) -> dict:
     return paths
 
 
-def relay_cuda_diagnostics(path: Path, log) -> None:
+def relay_runtime_diagnostics(path: Path, log) -> None:
     if not path.is_file():
         return
     with path.open(encoding="utf-8", errors="replace") as handle:
         for line in handle:
-            if "CUDA_DIAGNOSTIC" in line:
+            if "CUDA_DIAGNOSTIC" in line or "GPU_DIAGNOSTIC" in line or "AI2_RUN " in line or "TRAINER_DEVICE" in line:
                 log(f"detector: {line.strip()}")
 
 
@@ -111,6 +111,7 @@ def detect(source: str, scene: dict, rules: dict, work: Path, region: tuple, log
     env = os.environ | {k: str(v) for k, v in settings()["ai2"]["env"].items()} | {
         "PYTHONPATH": str(ai2_root() / "rslearn_projects"),
         "AI2_RUN_SPEC_PATH": str(work / "run_spec.json"),
+        "RSLP_PREFIX": str(work / "model_management"),
     }
     task = {"geojson_path": str(out_geojson), "crop_path": str(crops) + os.sep}
     if source == "s1":
@@ -138,9 +139,9 @@ def detect(source: str, scene: dict, rules: dict, work: Path, region: tuple, log
                 timeout=cfg[f"{source}_timeout_min"] * 60,
             )
     except subprocess.TimeoutExpired:
-        relay_cuda_diagnostics(detector_log, log)
+        relay_runtime_diagnostics(detector_log, log)
         raise
-    relay_cuda_diagnostics(detector_log, log)
+    relay_runtime_diagnostics(detector_log, log)
     if proc.returncode != 0 or not out_geojson.exists():
         tail = (work / "detector.log").read_text(encoding="utf-8", errors="replace").splitlines()[-15:]
         raise RuntimeError(f"{cfg[f'{source}_pipeline']} exit {proc.returncode}: " + " | ".join(tail))

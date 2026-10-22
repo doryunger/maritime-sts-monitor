@@ -3,15 +3,38 @@ import json
 import math
 import multiprocessing
 import os
+import subprocess
 import sys
 import threading
 from datetime import datetime, timezone
+from pathlib import Path
 
 import torch
 import yaml
 
 CUDA_STOP = threading.Event()
 RUNNER_OWNER = multiprocessing.current_process().name == "MainProcess"
+LAST_GPU_SAMPLE = 0.0
+
+
+def gpu_snapshot(stage: str) -> None:
+    global LAST_GPU_SAMPLE
+    now = datetime.now(timezone.utc).timestamp()
+    if now - LAST_GPU_SAMPLE < 2:
+        return
+    LAST_GPU_SAMPLE = now
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=utilization.gpu,memory.used", "--format=csv,noheader,nounits"],
+            capture_output=True,
+            check=True,
+            text=True,
+            timeout=5,
+        )
+        values = [row.strip().replace(" ", "") for row in result.stdout.splitlines() if row.strip()]
+        print(f"{datetime.now(timezone.utc).isoformat()} GPU_DIAGNOSTIC stage={stage} utilization_memory_mib={values}", flush=True)
+    except (OSError, subprocess.SubprocessError) as error:
+        print(f"{datetime.now(timezone.utc).isoformat()} GPU_DIAGNOSTIC stage={stage} error={type(error).__name__}", flush=True)
 
 
 def cuda_snapshot(stage: str) -> None:
@@ -30,7 +53,6 @@ def cuda_snapshot(stage: str) -> None:
         peak_reserved = sum(torch.cuda.max_memory_reserved(index) for index in range(device_count))
         print(
             f"{timestamp} CUDA_DIAGNOSTIC stage={stage} visible=true initialized=true devices={devices} "
-            f"tensor_use={str(peak_allocated > 0).lower()} "
             f"allocated_bytes={allocated} peak_allocated_bytes={peak_allocated} "
             f"reserved_bytes={reserved} peak_reserved_bytes={peak_reserved}",
             flush=True,
@@ -45,8 +67,11 @@ def cuda_snapshot(stage: str) -> None:
 
 def monitor_cuda() -> None:
     cuda_snapshot("start")
-    while not CUDA_STOP.wait(60):
-        cuda_snapshot("interval")
+    gpu_snapshot("start")
+    while not CUDA_STOP.wait(2):
+        gpu_snapshot("interval")
+        if int(datetime.now(timezone.utc).timestamp()) % 60 < 2:
+            cuda_snapshot("interval")
 
 
 if RUNNER_OWNER:
@@ -118,6 +143,9 @@ if __name__ == "__main__" and RUNNER_OWNER:
     monitor = threading.Thread(target=monitor_cuda, daemon=True)
     monitor.start()
     try:
+        print(f"{datetime.now(timezone.utc).isoformat()} AI2_RUN cwd={os.getcwd()} python={sys.executable} run_spec={spec_path}", flush=True)
+        print(f"{datetime.now(timezone.utc).isoformat()} AI2_RUN writable_work={Path(spec_path).parent} scratch={spec['args'][spec['args'].index('--scratch_path') + 1]}", flush=True)
+        print(f"{datetime.now(timezone.utc).isoformat()} TRAINER_DEVICE requested=auto cuda_available={torch.cuda.is_available()} device_count={torch.cuda.device_count()}", flush=True)
         main()
     finally:
         CUDA_STOP.set()
