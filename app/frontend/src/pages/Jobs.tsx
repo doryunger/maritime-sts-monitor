@@ -14,7 +14,7 @@ const COLUMNS: { key: Key; title: string }[] = [
 ];
 const KEYS = COLUMNS.map((c) => c.key);
 const STORE = "jobs.sort";
-const CLOSED = ["succeeded", "superseded"];
+const CLOSED = ["superseded"];
 const ORDER = ["claimed", "ready", "retry_wait", "failed", "succeeded", "superseded"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -31,6 +31,15 @@ const ago = (t?: string | null) => {
   if (minutes < 60) return `${minutes} min ago`;
   const hours = Math.floor(minutes / 60);
   return hours < 48 ? `${hours} h ago` : `${Math.floor(hours / 24)} d ago`;
+};
+
+const MARK: Record<string, string> = { checked: "✓", failed: "✗", detecting: "…", detected: "…", waiting: "…", queued: "–", superseded: "–" };
+
+const sceneName = (id: string, source: string) => {
+  const parts = id.split("_");
+  if (source === "s2") return `S2 ${parts.find((p) => /^T\d{2}[A-Z]{3}$/.test(p)) ?? parts[2]}`;
+  const start = parts[4] ?? "";
+  return `S1 ${start.slice(9, 11)}:${start.slice(11, 13)}:${start.slice(13, 15)}`;
 };
 
 const earliest = (job: QueueJob) => job.scene_details.map((s) => s.captured).sort()[0] ?? "";
@@ -99,9 +108,10 @@ export default function Jobs() {
   return <section>
     <h1>Jobs</h1>
     <p className="muted">The job ledger on the control host. Nothing on this machine is used to decide what is done. Times are UTC.</p>
+    <p className="muted small">Scenes: ✓ completed, … in progress, – waiting, ✗ failed. Progress counts completed scenes per job.</p>
     <div className="table-options">
       <button onClick={() => void refresh()} disabled={loading}>{loading ? "Refreshing..." : "Refresh"}</button>
-      <label><input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} /> Show succeeded and superseded jobs</label>
+      <label><input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} /> Show superseded jobs</label>
       {data && <span className="muted small">Checked <Time t={data.checked_utc} /></span>}
     </div>
     {error && <p className="error">Could not refresh: {error}. The previous view, if present, is unchanged.</p>}
@@ -115,15 +125,18 @@ export default function Jobs() {
               {c.title}<span className="arrow">{sort.key === c.key ? (sort.dir === 1 ? "▲" : "▼") : ""}</span>
             </button>
           </th>)}
-          <th>Attempts</th><th>Job</th>
+          <th>Progress</th><th>Attempts</th><th>Job</th>
         </tr></thead>
         <tbody>{jobs.map((job) => <tr key={job.job_id}>
           <td>{label(job.site)}</td>
           <td>{job.source.toUpperCase()}</td>
           <td><span className="status">{job.status}</span>{job.superseded_by && <div className="muted small" title={job.superseded_by}>by {job.superseded_by.slice(0, 8)}</div>}</td>
-          <td>{job.scene_details.map((s) => <div key={s.scene_id} className="mono small" title={s.scene_id}>{s.scene_id.slice(0, 36)}…</div>)}</td>
+          <td>{job.scene_details.map((s) => <div key={s.scene_id} className="small" title={`${s.scene_id} (${s.state}${s.stage ? `, ${s.stage}` : ""})`}>
+            <span className="mark">{MARK[s.state] ?? "·"}</span> {sceneName(s.scene_id, s.source)}
+          </div>)}</td>
           <td><Time t={earliest(job)} /></td>
           <td><Time t={job.last_update_utc} /></td>
+          <td className="small">{job.scene_details.filter((s) => s.state === "checked").length}/{job.scene_details.length} completed</td>
           <td>{job.attempts.length ? job.attempts.map((a) => <div key={a.attempt_no} className="small" title={a.error ?? ""}>
             {a.attempt_no}: {a.verdict}{a.worker ? ` on ${a.worker}` : ""}{a.before_requeue ? " (before requeue)" : ""}
             {a.error && <div className="muted">{a.error.slice(0, 80)}</div>}

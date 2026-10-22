@@ -272,6 +272,22 @@ def upload_review(client, bucket: str, manifest: dict, out: Path, snapshot: Path
     return {"prefix": prefix, "index": prefix + "index.json", "files": len(files)}
 
 
+def publish_progress(job_id: str) -> None:
+    if not ACTIVE:
+        return
+    database = sqlite3.connect(f"file:{(ACTIVE['out'] / 'state.db').as_posix()}?mode=ro", uri=True)
+    database.row_factory = sqlite3.Row
+    try:
+        rows = database.execute("select scene_id, status, stage, updated_utc, error from scenes").fetchall()
+    finally:
+        database.close()
+    task_queue.save_progress(
+        job_id,
+        {r["scene_id"]: {"status": r["status"], "stage": r["stage"], "updated_utc": r["updated_utc"], "error": r["error"]}
+         for r in rows},
+    )
+
+
 def attach_review(receipt: dict, client, bucket: str, manifest: dict, out: Path, snapshot: Path, run_no, attempt: str):
     try:
         receipt["review"] = upload_review(client, bucket, manifest, out, snapshot, run_no, attempt)
@@ -430,6 +446,10 @@ def run_job(client, bucket: str, manifest: dict, resume: bool = False, queue_own
     def maintain_lease():
         last_renewed = time.monotonic()
         while not stopped.wait(interval):
+            try:
+                publish_progress(manifest["job_id"])
+            except Exception:
+                pass
             if deadline is not None and time.monotonic() > deadline:
                 abort("maximum runtime exceeded")
             try:
@@ -448,6 +468,10 @@ def run_job(client, bucket: str, manifest: dict, resume: bool = False, queue_own
     finally:
         stopped.set()
         heartbeat_thread.join(timeout=interval + 1)
+        try:
+            publish_progress(manifest["job_id"])
+        except Exception:
+            pass
 
 
 def list_jobs(client, bucket: str, include_scenes: bool = False) -> list[dict]:

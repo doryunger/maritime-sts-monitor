@@ -35,6 +35,7 @@ def keys():
         "failed": f"{root}:failed",
         "events": f"{root}:events",
         "batch": f"{root}:batch",
+        "progress": f"{root}:progress:",
     }
 
 
@@ -460,6 +461,22 @@ def counts():
         "completed": redis.scard(k["completed"]),
         "failed": redis.scard(k["failed"]),
     }
+
+
+def save_progress(job_id, scenes):
+    redis = client()
+    key = keys()["progress"] + job_id
+    with redis.pipeline(transaction=True) as pipe:
+        pipe.delete(key)
+        if scenes:
+            pipe.hset(key, mapping={scene_id: json.dumps(value, sort_keys=True) for scene_id, value in scenes.items()})
+        pipe.expire(key, 7 * 86400)
+        pipe.execute()
+
+
+def read_progress(job_id):
+    values = client().hgetall(keys()["progress"] + job_id)
+    return {scene_id: json.loads(value) for scene_id, value in values.items()}
 
 
 def drop(job_ids):

@@ -517,7 +517,7 @@ def audit(db, redis=None):
     return result
 
 
-def ledger(db):
+def ledger(db, progress=None):
     jobs = []
     for row in db.execute(
         "SELECT job_id,site,source,status,created_utc,dispatched_utc,completed_utc,retry_count,available_utc,"
@@ -557,6 +557,7 @@ def ledger(db):
                 "superseded_by": row["superseded_by"],
                 "error": row["error"],
                 "last_update_utc": max(m for m in moments if m),
+                "progress": (progress or {}).get(row["job_id"], {}),
                 "scenes": [
                     {"scene_id": scene["scene"], "source": scene["source"], "captured": scene["time"]}
                     for scene in manifest["scenes"]
@@ -878,8 +879,19 @@ def main():
     if args.command == "ledger":
         readonly = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
         readonly.row_factory = sqlite3.Row
+        progress = {}
+        try:
+            from maritime_tip_cue import task_queue
+
+            redis = task_queue.client()
+            for key in redis.scan_iter(task_queue.keys()["progress"] + "*"):
+                progress[key.rsplit(":", 1)[1]] = {
+                    scene_id: json.loads(value) for scene_id, value in redis.hgetall(key).items()
+                }
+        except Exception:
+            progress = {}
         with closing(readonly) as db:
-            print(json.dumps(ledger(db), sort_keys=True))
+            print(json.dumps(ledger(db, progress), sort_keys=True))
         return 0
     with controller_lock(path), closing(connect(path)) as db:
         if args.command in ("scan", "scan-one"):

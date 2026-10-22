@@ -116,3 +116,10 @@ def test_missing_manifest_fails_claim_and_clears_inflight(redis):
     with pytest.raises(KeyError):
         task_queue.claim("j", "w1")
     assert not redis.sismember(task_queue.keys()["inflight"], "j")
+
+
+def test_progress_is_published_per_scene_and_replaced_on_each_write(redis):
+    task_queue.save_progress("j", {"a": {"status": "running", "stage": "detect"}, "b": {"status": "failed"}})
+    task_queue.save_progress("j", {"a": {"status": "checked", "stage": None}})
+    assert task_queue.read_progress("j") == {"a": {"status": "checked", "stage": None}}
+    assert redis.ttl(task_queue.keys()["progress"] + "j") > 0

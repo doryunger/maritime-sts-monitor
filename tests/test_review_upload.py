@@ -41,3 +41,23 @@ def test_review_upload_failure_is_recorded_not_fatal(tmp_path, monkeypatch):
     receipt = {"status": "succeeded"}
     worker.attach_review(receipt, None, "b", {}, tmp_path, tmp_path, 1, "A")
     assert receipt["review"] is None and "AccessDenied" in receipt["review_error"]
+
+
+def test_progress_is_read_from_the_run_database(tmp_path, monkeypatch):
+    from maritime_tip_cue.watch.state import Store
+
+    store = Store(tmp_path / "state.db", tmp_path)
+    store.db.execute(
+        "insert into scenes (scene_id, site, source, status, stage, updated_utc) values ('s1','x','s2','running','detect','t')"
+    )
+    store.db.commit()
+    store.close()
+    saved = {}
+    monkeypatch.setattr(worker.task_queue, "save_progress", lambda job_id, scenes: saved.update(job=job_id, scenes=scenes))
+    worker.ACTIVE.clear()
+    worker.publish_progress("J")
+    assert saved == {}
+    worker.ACTIVE.update(out=tmp_path)
+    worker.publish_progress("J")
+    worker.ACTIVE.clear()
+    assert saved["job"] == "J" and saved["scenes"]["s1"]["status"] == "running" and saved["scenes"]["s1"]["stage"] == "detect"
