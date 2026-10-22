@@ -46,8 +46,16 @@ def manager_command(env_path, *args):
         "maritime_tip_cue.catalogue",
         *args,
     ]
-    result = subprocess.run(command, cwd=ROOT, check=True, capture_output=True, text=True)
-    return json.loads(result.stdout)
+    last_error = None
+    for attempt in range(30):
+        result = subprocess.run(command, cwd=ROOT, check=False, capture_output=True, text=True)
+        if result.returncode == 0:
+            return json.loads(result.stdout)
+        last_error = result.stderr.strip()
+        if "Resource temporarily unavailable" not in last_error:
+            raise RuntimeError(last_error)
+        time.sleep(1)
+    raise RuntimeError(f"Manager database stayed locked: {last_error}")
 
 
 def run_worker(status_url, private_ip, key_path, remote_dir, image, job_id, timeout_seconds):
