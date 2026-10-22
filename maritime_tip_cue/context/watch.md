@@ -14,7 +14,7 @@ these distinguish framework initialization from sustained GPU work. Shadow's 11 
 `GPU available: True, used: True`, 10-38% utilization, about 900 MiB GPU memory, and 175 seconds total. The
 container uses the same worker settings but a pinned PyTorch 2.7.0 runtime, compared with Shadow's 2.9.1.
 Detector project management reads checkpoints from the mounted `/opt/ai2-models` tree and writes run metadata
-under the attempt's writable work directory through its `--management_dir` option. The attempt ledger preserves
+under the attempt's writable work directory through the runner's `--management_dir` override. The attempt ledger preserves
 diagnostics after scratch cleanup. The forkserver re-imports the runner in child processes,
 so the run-spec path comes from inherited environment and only the original `MainProcess` rewrites `sys.argv`
 or starts the pipeline; otherwise child processes can recursively treat a pipeline name as a file path.

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import torch
 import yaml
+from upath import UPath
 
 CUDA_STOP = threading.Event()
 RUNNER_OWNER = multiprocessing.current_process().name == "MainProcess"
@@ -102,6 +103,12 @@ def model_patches() -> dict:
     return {"patch_size": size, "overlap_ratio": ratio, "overlap_pixels": round(size * ratio)}
 
 
+def route_model_management_dir(model_cfg_fname: str, ds_path: UPath, groups=None, extra_args=None) -> None:
+    args = list(extra_args or [])
+    args += ["--management_dir", os.environ["AI2_MANAGEMENT_DIR"]]
+    ORIGINAL_RUN_MODEL_PREDICT(model_cfg_fname, ds_path, groups=groups or [], extra_args=args)
+
+
 def write_windows() -> None:
     document = model_patches() | {"windows": RECORDED}
     open(spec["windows_path"], "w", encoding="utf-8").write(json.dumps(document))
@@ -117,6 +124,11 @@ class RecordingWindow(MODULE.Window):
 
 
 MODULE.Window = RecordingWindow
+from rslp.utils import rslearn as rslearn_utils
+
+ORIGINAL_RUN_MODEL_PREDICT = rslearn_utils.run_model_predict
+rslearn_utils.run_model_predict = route_model_management_dir
+MODULE.run_model_predict = route_model_management_dir
 
 
 def narrowed(*args, **kwargs):
