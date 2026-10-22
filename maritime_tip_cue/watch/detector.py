@@ -111,7 +111,6 @@ def detect(source: str, scene: dict, rules: dict, work: Path, region: tuple, log
     env = os.environ | {k: str(v) for k, v in settings()["ai2"]["env"].items()} | {
         "PYTHONPATH": str(ai2_root() / "rslearn_projects"),
         "AI2_RUN_SPEC_PATH": str(work / "run_spec.json"),
-        "RSLP_PREFIX": str(work / "model_management"),
     }
     task = {"geojson_path": str(out_geojson), "crop_path": str(crops) + os.sep}
     if source == "s1":
@@ -120,6 +119,7 @@ def detect(source: str, scene: dict, rules: dict, work: Path, region: tuple, log
     else:
         task |= {"scene_id": scene["scene"]}
         args = ["--tasks", json.dumps([task])]
+    args += ["--management_dir", str(work / "model_management")]
     windows_path = work / "windows.json"
     spec = work / "run_spec.json"
     spec.write_text(

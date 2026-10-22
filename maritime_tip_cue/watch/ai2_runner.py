@@ -145,6 +145,7 @@ if __name__ == "__main__" and RUNNER_OWNER:
     try:
         print(f"{datetime.now(timezone.utc).isoformat()} AI2_RUN cwd={os.getcwd()} python={sys.executable} run_spec={spec_path}", flush=True)
         print(f"{datetime.now(timezone.utc).isoformat()} AI2_RUN writable_work={Path(spec_path).parent} scratch={spec['args'][spec['args'].index('--scratch_path') + 1]}", flush=True)
+        print(f"{datetime.now(timezone.utc).isoformat()} AI2_RUN model_root={os.environ.get('RSLP_PREFIX')} management_root={os.environ.get('AI2_MANAGEMENT_DIR')}", flush=True)
         print(f"{datetime.now(timezone.utc).isoformat()} TRAINER_DEVICE requested=auto cuda_available={torch.cuda.is_available()} device_count={torch.cuda.device_count()}", flush=True)
         main()
     finally:
