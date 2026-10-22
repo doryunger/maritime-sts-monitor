@@ -44,10 +44,11 @@ later scan-one call.
 
 ## EC2 execution
 
-The one-scene runner must use the managed wake controller rather than calling EC2 start directly. It polls
-`/_wake/status` until ready, waits for private SSH, then keeps polling every 20 seconds while the worker SSH
-command runs. The controller's three-minute idle timer is refreshed by these requests; an SSH connection alone
-does not refresh it. `CONTROLLER_URL` stays in the ignored Lightsail `.env`.
+The one-scene runner starts the configured EC2 instance through the AWS API, waits for `running`, then probes
+private TCP 22 before opening SSH. Early SSH attempts can close while the host is still booting. Once ready,
+one foreground SSH command runs the exact job with transport keepalives until the worker exits; the runner
+then waits for the durable result. AWS credentials and worker connection settings stay in the ignored
+Lightsail `.env`.
 
 The worker consumes manifests without searching the catalogue again. It stores raw pinned rules beside the
 job and calls the same watch pipeline with explicit scenes. The legacy watch command can return zero after

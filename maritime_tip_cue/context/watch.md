@@ -108,9 +108,9 @@ number once its last invocation has ended (an unfinished one is left alone, sinc
 
 ## EC2 lifecycle process
 
-The one-scene runner's wake-controller and SSH sequence is documented in
+The one-scene runner's EC2 readiness and persistent SSH sequence is documented in
 [`context/catalogue.md`](catalogue.md#ec2-execution). It waits for the job manager to record the durable result
-after the controller-protected worker command exits.
+after the worker command exits.
 
 `watch.run.main()` returns zero even when per-scene failures set the invocation status to `failed`.
 A future worker must inspect scene and invocation records before acknowledging jobs or declaring the batch
