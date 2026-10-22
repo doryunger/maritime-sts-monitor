@@ -68,6 +68,14 @@ sudo python3 deploy/catalogue/run-one-scene.py
 The script waits for the manager to record the result and prints the final job status. It leaves instance
 shutdown to the existing lifecycle policy.
 
+To hand off one already discovered single-scene job, pass its job ID instead of scanning for a new scene:
+
+```bash
+sudo python3 deploy/catalogue/run-one-scene.py --job-id <job_id>
+```
+
+The job manager rejects unknown, multi-scene, claimed, completed or not-yet-retryable jobs before EC2 starts.
+
 ## Queue operation
 
 The manager records every attempt in SQLite. Workers heartbeat every configured interval while holding a

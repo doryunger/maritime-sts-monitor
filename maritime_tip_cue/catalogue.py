@@ -689,7 +689,7 @@ def main():
         else:
             result = status(db)
     print(json.dumps(result, sort_keys=True))
-    return 1 if result.get("status") == "failed" else 0
+    return 1 if isinstance(result, dict) and result.get("status") == "failed" else 0
 
 
 if __name__ == "__main__":

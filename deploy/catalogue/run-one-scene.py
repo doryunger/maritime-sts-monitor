@@ -1,3 +1,4 @@
+import argparse
 import ipaddress
 import json
 import os
@@ -161,6 +162,9 @@ def wait_for_result(env_path, job_id, timeout_seconds):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--job-id")
+    args = parser.parse_args()
     if os.geteuid() != 0:
         raise RuntimeError("Run this script with sudo because the Ubuntu account has no Docker socket access")
     env_path = ROOT / ".env"
@@ -192,41 +196,55 @@ def main():
         raise RuntimeError(f"EC2 key permissions must be 600: {key_path}")
     if not shutil.which("docker"):
         raise RuntimeError("Docker was not found on PATH")
-    scan_process = subprocess.run(
-        [
-            "docker",
-            "run",
-            "--rm",
-            "--network",
-            "host",
-            "--user",
-            "1000:1000",
-            "--env-file",
-            str(env_path),
-            "-e",
-            "STS_CONFIG_PATH=/app/config.yaml",
-            "-v",
-            f"{ROOT / 'data'}:/app/data",
-            MANAGER_IMAGE,
+    manager_args = [
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        "host",
+        "--user",
+        "1000:1000",
+        "--env-file",
+        str(env_path),
+        "-e",
+        "STS_CONFIG_PATH=/app/config.yaml",
+        "-v",
+        f"{ROOT / 'data'}:/app/data",
+        MANAGER_IMAGE,
+    ]
+    if args.job_id:
+        command = manager_args + [
+            "-m",
+            "maritime_tip_cue.job_manager",
+            "once",
+            "--job-id",
+            args.job_id,
+        ]
+    else:
+        command = manager_args + [
             "-m",
             "maritime_tip_cue.job_manager",
             "scan-one",
-        ],
+        ]
+    dispatch_process = subprocess.run(
+        command,
         cwd=ROOT,
         check=False,
         capture_output=True,
         text=True,
     )
-    if scan_process.returncode:
-        if scan_process.stdout:
-            print(scan_process.stdout.rstrip(), file=sys.stderr)
-        if scan_process.stderr:
-            print(scan_process.stderr.rstrip(), file=sys.stderr)
-        return scan_process.returncode
-    scan_result = json.loads(scan_process.stdout)
-    dispatched = scan_result.get("dispatched")
+    if dispatch_process.returncode:
+        if dispatch_process.stdout:
+            print(dispatch_process.stdout.rstrip(), file=sys.stderr)
+        if dispatch_process.stderr:
+            print(dispatch_process.stderr.rstrip(), file=sys.stderr)
+        return dispatch_process.returncode
+    dispatch_result = json.loads(dispatch_process.stdout)
+    dispatched = dispatch_result.get("dispatched")
     if dispatched is None:
-        scan = scan_result["scan"]
+        if args.job_id:
+            raise RuntimeError(f"Job {args.job_id} was not dispatched")
+        scan = dispatch_result["scan"]
         print(
             json.dumps(
                 {
