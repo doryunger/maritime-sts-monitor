@@ -4,9 +4,14 @@ controller_url="${1:-${CONTROLLER_URL:-}}"
 worker_private_ip="${2:-${WORKER_PRIVATE_IP:-}}"
 worker_key="${WORKER_KEY_PATH:-$HOME/.ssh/geogen-key.pem}"
 poll_seconds="${POLL_SECONDS:-20}"
+shift 2
+if [[ "${1:-}" == "--" ]]; then
+    shift
+fi
+remote_command="$*"
 
 if [[ -z "$controller_url" || -z "$worker_private_ip" ]]; then
-    printf '%s\n' "Usage: bash wake-ec2-ubuntu.sh <controller-url> <worker-private-ip>" >&2
+    printf '%s\n' "Usage: bash wake-ec2-ubuntu.sh <status-url> <worker-private-ip> [-- <remote-command>]" >&2
     exit 2
 fi
 
@@ -52,7 +57,11 @@ while ! timeout 3 bash -c 'exec 3<>/dev/tcp/$1/22' _ "$worker_private_ip" >/dev/
     sleep "$poll_seconds"
 done
 
-ssh -tt -i "$worker_key" -o BatchMode=yes -o StrictHostKeyChecking=accept-new "ubuntu@$worker_private_ip" &
+ssh_command=(ssh -tt -i "$worker_key" -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=120 "ubuntu@$worker_private_ip")
+if [[ -n "$remote_command" ]]; then
+    ssh_command+=("$remote_command")
+fi
+"${ssh_command[@]}" &
 ssh_pid=$!
 trap 'kill "$ssh_pid" 2>/dev/null || true; wait "$ssh_pid" 2>/dev/null || true' EXIT INT TERM
 
