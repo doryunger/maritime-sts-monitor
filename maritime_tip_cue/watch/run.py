@@ -1,5 +1,6 @@
 import argparse
 import hashlib
+import os
 import shutil
 import subprocess
 import sys
@@ -135,6 +136,8 @@ def line(scene: dict, info: dict, two: dict) -> str:
 
 
 def git_head() -> str:
+    if os.environ.get("STS_GIT_COMMIT"):
+        return os.environ["STS_GIT_COMMIT"]
     try:
         return subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
     except Exception:

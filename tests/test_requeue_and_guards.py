@@ -98,3 +98,15 @@ def test_drain_refuses_to_run_without_a_runtime_limit(redis, monkeypatch):
     monkeypatch.setattr(worker, "settings", lambda: {"worker": {"queue": dict(QUEUE)}})
     with pytest.raises(RuntimeError, match="max_seconds_per_scene"):
         worker.drain_jobs(object(), "bucket")
+
+
+def test_publish_failure_fails_the_attempt_instead_of_hiding_missing_findings(monkeypatch, tmp_path):
+    from maritime_tip_cue import publish
+
+    def boom(*args):
+        raise PermissionError("AccessDenied")
+
+    monkeypatch.setattr(publish, "publish_run", boom)
+    monkeypatch.setattr("maritime_tip_cue.sts.rules.load", lambda path: {})
+    with pytest.raises(RuntimeError, match="publish failed: PermissionError: AccessDenied"):
+        worker.publish_pairs(None, "b", tmp_path, 1, "J", tmp_path / "rules.json")

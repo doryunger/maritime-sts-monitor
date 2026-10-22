@@ -1,0 +1,58 @@
+import argparse
+import json
+import sys
+
+import boto3
+
+from maritime_tip_cue import publish, worker
+from maritime_tip_cue.config import env
+from maritime_tip_cue.sts import rules as rules_mod
+from maritime_tip_cue.watch import registry
+
+
+def plan(run_no: int) -> dict:
+    out = registry.folder_of(run_no)
+    store = publish.Store(out / "state.db", out)
+    try:
+        job_id = publish.run_job_id(store)
+        commit = store.db.execute("select commit_hash from runs order by run_id desc limit 1").fetchone()[0]
+    finally:
+        store.close()
+    if job_id is None:
+        raise SystemExit(f"run {run_no} was not created by a queue job")
+    workspace = worker.worker_root() / job_id
+    receipt = json.loads((workspace / "receipt.json").read_bytes())
+    if receipt["status"] != "succeeded" or not receipt.get("attempt_id"):
+        raise SystemExit(f"run {run_no}: its local receipt is not a succeeded queue attempt")
+    manifest = json.loads((workspace / "manifest.json").read_bytes())
+    return {"run": run_no, "out": out, "job_id": job_id, "attempt": receipt["attempt_id"], "commit": commit, "manifest": manifest, "workspace": workspace}
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="maritime-sts-monitor backfill")
+    parser.add_argument("runs", nargs="+", type=int)
+    parser.add_argument("--upload", action="store_true")
+    args = parser.parse_args()
+    sys.stdout.reconfigure(encoding="utf-8")
+    publish.check_runs(args.runs)
+    plans = [plan(no) for no in args.runs]
+    for item in plans:
+        print(f"run {item['run']}: job {item['job_id'][:8]} attempt {item['attempt'][:8]}", flush=True)
+    if not args.upload:
+        print("dry run; pass --upload to send review data and pairs to S3")
+        return 0
+    client = boto3.client("s3", region_name=env("AWS_REGION"))
+    bucket = env("S3_BUCKET_NAME")
+    rules = rules_mod.load()
+    for item in plans:
+        folder = item["workspace"] / item["attempt"]
+        snapshot = worker.export_record(item["out"], folder)[0]
+        review = worker.upload_review(client, bucket, item["manifest"], item["out"], snapshot, item["run"], item["attempt"])
+        provenance = worker.provenance_of(item["manifest"], item["attempt"], review) | {"code_commit": item["commit"] or None}
+        published = publish.publish_run(client, bucket, item["out"], item["run"], item["job_id"], rules, provenance)
+        print(json.dumps({"run": item["run"], "review": review, "published": published}, sort_keys=True), flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

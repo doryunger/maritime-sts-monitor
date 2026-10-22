@@ -7,19 +7,16 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
-import rasterio
-from affine import Affine
 from PIL import ImageDraw, ImageFont
-from rasterio.warp import transform as warp_transform
 from shapely.geometry import Point
 
 from maritime_tip_cue import task_queue
 from maritime_tip_cue.config import DATA_DIR, env, settings
+from maritime_tip_cue.publish_merge import merge_group
 from maritime_tip_cue.sts import rules as rules_mod
-from maritime_tip_cue.watch import registry, report, review
+from maritime_tip_cue.watch import registry, report
 from maritime_tip_cue.watch.geo import haversine_m
 from maritime_tip_cue.watch.state import Store, now
 
@@ -102,11 +99,20 @@ def check_runs(runs: list[int], allow_legacy: bool = False) -> None:
         raise SystemExit(f"Refusing to publish, nothing written: {detail}")
 
 
+def run_job_id(store: Store) -> str | None:
+    row = store.db.execute("select args from runs order by run_id desc limit 1").fetchone()
+    return json.loads(row["args"] or "{}").get("job_id") if row else None
+
+
 def collect(no: int) -> list[dict]:
-    path = registry.folder_of(no)
+    return collect_at(registry.folder_of(no), no)
+
+
+def collect_at(path: Path, no: int, job_id: str | None = None) -> list[dict]:
     store = Store(path / "state.db", path)
     try:
         site = site_settings(store)
+        job_id = job_id or run_job_id(store)
         floor = rules_mod.load()["ais_match"]["min_coverage_ships"]
         coverage = {(r["scene_id"], r["site"]): r["ships"] for r in store.db.execute("select scene_id, site, ships from ais_coverage")}
         rows = store.db.execute(
@@ -128,7 +134,7 @@ def collect(no: int) -> list[dict]:
             ships = coverage.get((r["scene_id"], r["site"]))
             out.append(
                 {
-                    "run": no, "root": path, "scene_id": r["scene_id"], "site": r["site"], "hull_id": r["hull_id"], "source": r["source"],
+                    "run": no, "job_id": job_id, "root": path, "scene_id": r["scene_id"], "site": r["site"], "hull_id": r["hull_id"], "source": r["source"],
                     "capture_utc": r["capture_utc"], "lat": r["lat"], "lon": r["lon"], "run_verdict": r["run_verdict"],
                     "qa": QA_LABEL.get(r["qa"], "unreviewed"), "qa_note": r["qa_note"], "record": rec, "folder": r["folder"],
                     "parties": parties, "ais_coverage_ships": ships, "ais_covered": ships is not None and ships >= floor,
@@ -166,52 +172,10 @@ def dedupe(findings: list[dict], rule: dict) -> list[dict]:
     return kept
 
 
-def crop(f: dict, rules: dict) -> tuple[dict, Affine, str, np.ndarray] | None:
-    folder = f["root"] / f["folder"]
-    rec = f["record"]
-    if f["source"] == "s2":
-        window = rec.get("_window")
-        if window is None:
-            return None
-        z = np.load(folder / "s2_windows" / window)
-        names = sorted(k for k in z.files if k.startswith("band_"))
-        tr = Affine(*[float(v) for v in z["transform"][:6]])
-        h, w = z[names[0]].shape
-        chk = rec.get("check") or {}
-        lat, lon = chk.get("hull_a_lat") or f["lat"], chk.get("hull_a_lon") or f["lon"]
-        cx, cy = warp_transform("EPSG:4326", str(z["crs"]), [lon], [lat])
-        half = int(rules["review"]["crop_half_m"] / abs(tr.a))
-        col0, row0 = (cx[0] - tr.c) / tr.a, (cy[0] - tr.f) / tr.e
-        bands = [n[5:] for n in names]
-        stack = lambda r0, r1, c0, c1: np.stack([z[n][r0:r1, c0:c1] for n in names])
-    else:
-        obj = rec["object"]
-        z = np.load(folder / "chips" / obj["file"])
-        tr = Affine(*[float(v) for v in z["transform"][:6]])
-        h, w = z["vh"].shape
-        half = min(int(rules["review"]["crop_half_m"] / abs(tr.a)), h // 2, w // 2)
-        col0, row0 = (obj["x"] - tr.c) / tr.a, (obj["y"] - tr.f) / tr.e
-        bands = ["VV", "VH"]
-        stack = lambda r0, r1, c0, c1: np.stack([z["vv"][r0:r1, c0:c1], z["vh"][r0:r1, c0:c1]])
-    r0, c0, r1, c1 = review.crop_box(col0, row0, half, h, w)
-    return {"bands": bands, "crs": str(z["crs"])}, tr * Affine.translation(c0, r0), str(z["crs"]), stack(r0, r1, c0, c1)
-
-
 def write_captures(f: dict, base: str, rules: dict, root: Path) -> dict:
     out = {}
-    got = crop(f, rules)
     folder = root / "captures" / ddmmyyyy(f["capture_utc"]) / f["site"] / f["source"]
     folder.mkdir(parents=True, exist_ok=True)
-    if got is not None:
-        meta, transform, crs, data = got
-        if f["source"] == "s2" and np.all(np.mod(data, 1) == 0) and data.min() >= 0 and data.max() <= 65535:
-            data = data.astype(np.uint16)
-        tif = folder / f"{base}.tif"
-        with rasterio.open(tif, "w", driver="GTiff", height=data.shape[1], width=data.shape[2], count=data.shape[0], dtype=data.dtype, crs=crs, transform=transform, compress="deflate") as ds:
-            ds.write(data)
-            ds.descriptions = tuple(meta["bands"])
-            ds.update_tags(source=f["source"], scene_id=f["scene_id"], capture_utc=f["capture_utc"])
-        out["tif"] = tif
     scene = {"source": f["source"], "folder": f["folder"], "data": f["scene_data"]}
     img = report.render(f["root"], scene, f["record"], rules, False)
     if img is not None:
@@ -269,19 +233,27 @@ def measures(f: dict) -> dict:
 def build(runs: list[int], rules: dict) -> tuple[list[dict], dict]:
     findings = []
     for no in runs:
-        for f in collect(no):
-            store = Store(f["root"] / "state.db", f["root"])
-            try:
-                sc = store.scene(f["scene_id"], f["site"])
-            finally:
-                store.close()
-            f["scene_data"] = sc["data"]
-            f["record"]["hull_id"] = f["hull_id"]
-            if f["source"] == "s2":
-                f["record"]["_window"] = report.window_of({"data": sc["data"]}, f["record"])
-            findings.append(f)
+        findings += complete(collect(no))
+    return assemble(findings, rules)
+
+
+def complete(found: list[dict]) -> list[dict]:
+    for f in found:
+        store = Store(f["root"] / "state.db", f["root"])
+        try:
+            sc = store.scene(f["scene_id"], f["site"])
+        finally:
+            store.close()
+        f["scene_data"] = sc["data"]
+        f["record"]["hull_id"] = f["hull_id"]
+        if f["source"] == "s2":
+            f["record"]["_window"] = report.window_of({"data": sc["data"]}, f["record"])
+    return found
+
+
+def assemble(findings: list[dict], rules: dict, root: Path | None = None, provenance: dict | None = None) -> tuple[list[dict], dict]:
     kept = dedupe(findings, rules["publish"])
-    root = out_root()
+    root = root or out_root()
     groups: dict[tuple, list] = defaultdict(list)
     for f in kept:
         stamp = capture_time(f).strftime("%Y%m%dT%H%M%S")
@@ -310,6 +282,8 @@ def build(runs: list[int], rules: dict) -> tuple[list[dict], dict]:
                     "scene_id": f["scene_id"],
                     "hull_id": f["hull_id"],
                     "run": f["run"],
+                    "job_id": f.get("job_id"),
+                    **(provenance or {}),
                     "verdict": "pair",
                     "run_verdict": f["run_verdict"],
                     "qa_status": f["qa"],
@@ -319,7 +293,6 @@ def build(runs: list[int], rules: dict) -> tuple[list[dict], dict]:
                     **party_cols(f, 2, "b", pos[1]),
                     "ais_covered": f["ais_covered"],
                     "ais_coverage_ships": f["ais_coverage_ships"],
-                    "capture_tif": prefix_c + rel["tif"] if "tif" in rel else None,
                     "capture_png": prefix_c + rel["png"] if "png" in rel else None,
                     "capture_markers_png": prefix_c + rel["markers_png"] if "markers_png" in rel else None,
                 }
@@ -334,28 +307,45 @@ def build(runs: list[int], rules: dict) -> tuple[list[dict], dict]:
     return kept, tables
 
 
-def record_and_upload(tables: dict, upload: bool) -> None:
+def upload_tables(client, bucket: str, tables: dict, rules: dict, root: Path, job_id: str | None = None) -> dict:
+    prefix_f, prefix_c = settings()["s3"]["findings_prefix"], settings()["s3"]["captures_prefix"]
+    outcomes = {}
+    for (date, site, source), (path, items) in tables.items():
+        key = prefix_f + path.relative_to(root / "sts").as_posix()
+        by_id = {f["finding_id"]: f for f in items}
+
+        def push(kept_rows, by_id=by_id):
+            for row in kept_rows:
+                for p in by_id[row["finding_id"]]["files"].values():
+                    ckey = prefix_c + p.relative_to(root / "captures").as_posix()
+                    client.upload_file(str(p), bucket, ckey, ExtraArgs={"ContentType": "image/png"})
+
+        outcomes[(date, site, source)] = merge_group(
+            client, bucket, prefix_f, date, key, pq.read_table(path).to_pylist(), job_id, rules["publish"], push
+        )
+    return outcomes
+
+
+def record_and_upload(tables: dict, upload: bool, rules: dict) -> None:
     import boto3
 
     bucket = env("S3_BUCKET_NAME")
     client = boto3.client("s3", region_name=env("AWS_REGION")) if upload else None
     root = out_root()
     prefix_f, prefix_c = settings()["s3"]["findings_prefix"], settings()["s3"]["captures_prefix"]
+    outcomes = upload_tables(client, bucket, tables, rules, root) if upload else {}
     stamp = now()
     per_run: dict[int, list] = defaultdict(list)
     for (date, site, source), (path, items) in tables.items():
         key = prefix_f + path.relative_to(root / "sts").as_posix()
         sha = hashlib.sha256(path.read_bytes()).hexdigest()
-        if upload:
-            client.upload_file(str(path), bucket, key)
+        kept = set(outcomes[(date, site, source)]["kept"]) if upload else {f["finding_id"] for f in items}
+        items = [f for f in items if f["finding_id"] in kept]
         for f in items:
             for fmt, p in f["files"].items():
                 ckey = prefix_c + p.relative_to(root / "captures").as_posix()
-                if upload:
-                    client.upload_file(str(p), bucket, ckey, ExtraArgs={"ContentType": "image/tiff" if fmt == "tif" else "image/png"})
                 per_run[f["run"]].append(("capture", f["finding_id"], fmt, str(p), f"s3://{bucket}/{ckey}"))
-        runs = sorted({f["run"] for f in items})
-        for no in runs:
+        for no in sorted({f["run"] for f in items}):
             mine = [f for f in items if f["run"] == no]
             per_run[no].append(("output", str(path), f"s3://{bucket}/{key}", date, site, source, len(items), len(items), ",".join(sorted({f["scene_id"] for f in mine})), sha))
     for no, entries in per_run.items():
@@ -377,6 +367,25 @@ def record_and_upload(tables: dict, upload: bool) -> None:
             store.close()
 
 
+def publish_run(client, bucket: str, out: Path, run_no: int, job_id: str, rules: dict, provenance: dict | None = None) -> dict:
+    import shutil
+    import tempfile
+
+    found = complete(collect_at(out, run_no, job_id))
+    root = Path(tempfile.mkdtemp(prefix="publish-"))
+    try:
+        kept, tables = assemble(found, rules, root, provenance)
+        outcomes = upload_tables(client, bucket, tables, rules, root, job_id) if tables else {}
+        return {
+            "pairs": len(kept),
+            "published": sum(len(o["kept"]) for o in outcomes.values()),
+            "duplicates_skipped": sum(len(o["skipped"]) for o in outcomes.values()),
+            "files": sorted(o["key"] for o in outcomes.values()),
+        }
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="maritime-sts-monitor publish")
     parser.add_argument("runs", nargs="+", type=int)
@@ -387,7 +396,7 @@ def main() -> int:
     check_runs(args.runs, args.legacy)
     rules = rules_mod.load()
     kept, tables = build(args.runs, rules)
-    record_and_upload(tables, args.upload)
+    record_and_upload(tables, args.upload, rules)
     for (date, site, source), (path, items) in sorted(tables.items(), key=lambda kv: (datetime.strptime(kv[0][0], "%d-%m-%Y"), kv[0][1], kv[0][2])):
         named = sum(1 for f in items if f["parties"])
         dup = sum(1 for f in items if f["also"])

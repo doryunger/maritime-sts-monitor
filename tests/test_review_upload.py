@@ -61,3 +61,17 @@ def test_progress_is_read_from_the_run_database(tmp_path, monkeypatch):
     worker.publish_progress("J")
     worker.ACTIVE.clear()
     assert saved["job"] == "J" and saved["scenes"]["s1"]["status"] == "running" and saved["scenes"]["s1"]["stage"] == "detect"
+
+
+def test_provenance_ties_a_finding_to_its_attempt_review_rules_and_code(monkeypatch):
+    monkeypatch.setenv("STS_GIT_COMMIT", "abc123")
+    monkeypatch.setenv("STS_DETECTOR_REVISION", "det456")
+    result = worker.provenance_of({"rules_sha256": "r" * 64}, "A1", {"prefix": "catalogue/reviews/J/A1/"})
+    assert result == {
+        "attempt_id": "A1",
+        "review_prefix": "catalogue/reviews/J/A1/",
+        "rules_sha256": "r" * 64,
+        "code_commit": "abc123",
+        "detector_revision": "det456",
+    }
+    assert worker.provenance_of({"rules_sha256": "r"}, "A1", None)["review_prefix"] is None

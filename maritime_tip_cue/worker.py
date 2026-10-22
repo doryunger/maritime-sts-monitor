@@ -257,6 +257,9 @@ def upload_review(client, bucket: str, manifest: dict, out: Path, snapshot: Path
         if not path.is_file() or path.name in REVIEW_SKIP_NAMES or REVIEW_SKIP_DIRS & set(relative.parts[:-1]):
             continue
         sources.append((path, relative.as_posix()))
+    events = snapshot.with_name("events.jsonl")
+    if events.is_file():
+        sources.append((events, "events.jsonl"))
     for path, relative in sources:
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         client.upload_file(str(path), bucket, prefix + relative, ExtraArgs={"Metadata": {"sha256": digest}})
@@ -286,6 +289,28 @@ def publish_progress(job_id: str) -> None:
         {r["scene_id"]: {"status": r["status"], "stage": r["stage"], "updated_utc": r["updated_utc"], "error": r["error"]}
          for r in rows},
     )
+
+
+def provenance_of(manifest: dict, attempt: str, review: dict | None) -> dict:
+    from maritime_tip_cue.watch import run as runmod
+
+    return {
+        "attempt_id": attempt,
+        "review_prefix": review["prefix"] if review else None,
+        "rules_sha256": manifest["rules_sha256"],
+        "code_commit": runmod.git_head() or None,
+        "detector_revision": os.environ.get("STS_DETECTOR_REVISION") or None,
+    }
+
+
+def publish_pairs(client, bucket: str, out: Path, run_no: int, job_id: str, rules_path: Path, provenance: dict | None = None) -> dict:
+    from maritime_tip_cue import publish
+    from maritime_tip_cue.sts import rules as rules_mod
+
+    try:
+        return publish.publish_run(client, bucket, out, run_no, job_id, rules_mod.load(rules_path), provenance)
+    except Exception as error:
+        raise RuntimeError(f"publish failed: {type(error).__name__}: {error}") from error
 
 
 def attach_review(receipt: dict, client, bucket: str, manifest: dict, out: Path, snapshot: Path, run_no, attempt: str):
@@ -350,6 +375,9 @@ def _run_job(client, bucket: str, manifest: dict, resume: bool = False, queue_ow
             paths += [workspace / "manifest.json", rules_path]
             receipt["artifacts"] = upload_artifacts(client, bucket, manifest, paths, attempt)
             attach_review(receipt, client, bucket, manifest, out, workspace / attempt / "state.db", run_no, attempt)
+            receipt["published"] = publish_pairs(
+                client, bucket, out, run_no, job_id, rules_path, provenance_of(manifest, attempt, receipt["review"])
+            )
             receipt["status"] = "succeeded"
         except Exception as error:
             receipt["error"] = f"{type(error).__name__}: {error}"

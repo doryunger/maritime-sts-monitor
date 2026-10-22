@@ -23,7 +23,7 @@ ignored Lightsail `.env`. The runner starts SSH only after the handler reports r
 connections. The EC2 instance profile provides worker S3 access.
 
 Clone the repository and build from its root with
-`docker build -f deploy/gpu-worker/Dockerfile -t maritime-sts-gpu-worker .`. The image pins PyTorch 2.7,
+`docker build -f deploy/gpu-worker/Dockerfile --build-arg GIT_COMMIT=$(git rev-parse HEAD) -t maritime-sts-gpu-worker .` (the commit is recorded with every run and published finding). The image pins PyTorch 2.7,
 CUDA 12.8, cuDNN 9, rslearn 0.1.17 and the exact Ai2 detector source revision used by the local pipeline.
 It installs detector inference dependencies and downloads the matching S1/S2 detector and attribute checkpoints
 from Ai2's published model paths into `/opt/ai2-models` in a separate Docker build stage. Only the checkpoint
@@ -78,6 +78,26 @@ the bucket configured in `.env` and attach this policy to the EC2 role:
       "Effect": "Allow",
       "Action": "s3:PutObject",
       "Resource": "arn:aws:s3:::<S3_BUCKET_NAME>/catalogue/reviews/*"
+    },
+    {
+      "Sid": "PublishPairsAndImages",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject"],
+      "Resource": [
+        "arn:aws:s3:::<S3_BUCKET_NAME>/sts/*",
+        "arn:aws:s3:::<S3_BUCKET_NAME>/captures/*"
+      ]
+    },
+    {
+      "Sid": "ListPublishedPairs",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::<S3_BUCKET_NAME>",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": "sts/*"
+        }
+      }
     },
     {
       "Sid": "ReadSentinel1Scenes",
