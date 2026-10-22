@@ -108,7 +108,10 @@ def detect(source: str, scene: dict, rules: dict, work: Path, region: tuple, log
     crops = work / "crops"
     crops.mkdir(exist_ok=True)
     out_geojson = work / "out.geojson"
-    env = os.environ | {k: str(v) for k, v in settings()["ai2"]["env"].items()} | {"PYTHONPATH": str(ai2_root() / "rslearn_projects")}
+    env = os.environ | {k: str(v) for k, v in settings()["ai2"]["env"].items()} | {
+        "PYTHONPATH": str(ai2_root() / "rslearn_projects"),
+        "AI2_RUN_SPEC_PATH": str(work / "run_spec.json"),
+    }
     task = {"geojson_path": str(out_geojson), "crop_path": str(crops) + os.sep}
     if source == "s1":
         task |= s1_inputs(scene["item"], rules, work, log)

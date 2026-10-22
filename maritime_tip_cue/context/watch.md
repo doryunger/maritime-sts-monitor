@@ -11,7 +11,9 @@ model tiles the scene differently), so the crop is not an edge cut. The Windows 
 `config.yaml` `ai2.env` switch the data-loader workers off, which the Windows build of the pipelines needs.
 The runner logs CUDA visibility at startup and reports initialized tensor-memory peaks every minute, at exit,
 and when detector logs are relayed after completion or timeout. The attempt ledger preserves these diagnostic
-lines even though per-scene scratch is removed on failure.
+lines even though per-scene scratch is removed on failure. The forkserver re-imports the runner in child
+processes, so the run-spec path comes from inherited environment and only the original `MainProcess` rewrites
+`sys.argv` or starts the pipeline; otherwise child processes can recursively treat a pipeline name as a file path.
 
 ## detector
 Sentinel-1 needs the frame and one earlier frame of the same orbit direction 30-90 days before; among the

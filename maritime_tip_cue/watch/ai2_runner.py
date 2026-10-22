@@ -1,6 +1,8 @@
 import importlib
 import json
 import math
+import multiprocessing
+import os
 import sys
 import threading
 from datetime import datetime, timezone
@@ -9,6 +11,7 @@ import torch
 import yaml
 
 CUDA_STOP = threading.Event()
+RUNNER_OWNER = multiprocessing.current_process().name == "MainProcess"
 
 
 def cuda_snapshot(stage: str) -> None:
@@ -46,10 +49,13 @@ def monitor_cuda() -> None:
         cuda_snapshot("interval")
 
 
-cuda_snapshot("process-start")
+if RUNNER_OWNER:
+    cuda_snapshot("process-start")
 
-spec = json.load(open(sys.argv[1], encoding="utf-8"))
-sys.argv = ["rslp.main", spec["project"], "predict"] + spec["args"]
+spec_path = os.environ.get("AI2_RUN_SPEC_PATH") or sys.argv[1]
+spec = json.load(open(spec_path, encoding="utf-8"))
+if RUNNER_OWNER:
+    sys.argv = ["rslp.main", spec["project"], "predict"] + spec["args"]
 
 import shapely
 from rslearn.const import WGS84_PROJECTION
@@ -106,7 +112,7 @@ if spec.get("regions"):
     ORIGINAL = getattr(MODULE, SETUP)
     setattr(MODULE, SETUP, narrowed)
 
-if __name__ == "__main__":
+if __name__ == "__main__" and RUNNER_OWNER:
     init_mp()
     init_jsonargparse()
     monitor = threading.Thread(target=monitor_cuda, daemon=True)
