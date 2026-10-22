@@ -852,10 +852,6 @@
       "unit": "min",
       "basis": "stage0: ~3 min per scene"
     },
-    "keep_scratch": {
-      "value": false,
-      "basis": "decision 2026-10-17 (user): delete the detector's download scratch after a successful run; only the small band windows and outputs are kept"
-    },
     "min_free_gb_s1": {
       "value": 12,
       "unit": "GB",

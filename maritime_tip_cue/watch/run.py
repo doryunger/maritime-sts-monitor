@@ -38,13 +38,25 @@ def work_dir(folder: Path, scene: dict) -> Path:
     return Path(root) / hashlib.sha1(scene["scene"].encode()).hexdigest()[:10]
 
 
+def cleanup_scene_work(folder: Path, scene: dict) -> None:
+    work = work_dir(folder, scene)
+    if work.exists():
+        shutil.rmtree(work)
+    if work.exists():
+        raise RuntimeError(f"temporary scene workspace remains after cleanup: {work}")
+    log(f"{scene['scene']}: temporary workspace removed; free disk {free_gb(work.parent):.1f} GB")
+
+
 def stage_one(store: Store, scene: dict, site: dict, shore: Shore, rules: dict, folder: Path, structures: Structures | None = None) -> dict:
     source = scene["source"]
     need = rules["detectors"][f"min_free_gb_{source}"]
     if free_gb(folder) < need:
         raise RuntimeError(f"free disk {free_gb(folder):.1f} GB is below {need} GB")
     work = work_dir(folder, scene)
-    shutil.rmtree(work, ignore_errors=True)
+    if work.exists():
+        shutil.rmtree(work)
+    if work.exists():
+        raise RuntimeError(f"stale temporary scene workspace remains: {work}")
     work.mkdir(parents=True)
     try:
         secs, windows, features = detector.detect(source, scene, rules, work, tuple(site["bbox"]), log)
@@ -65,15 +77,8 @@ def stage_one(store: Store, scene: dict, site: dict, shore: Shore, rules: dict, 
             saved = s1.save_chips(folder / "chips", big, placed, wins, rules)
             data = {"dets": placed, "objects": saved, "windows": windows}
             info = {"dets": counts, "objects": len(objs), "candidates": len(big)}
-        if not rules["detectors"]["keep_scratch"]:
-            shutil.rmtree(scratch, ignore_errors=True)
-            for tif in work.glob("*.tif"):
-                tif.unlink()
         store.save_detected(scene, features, info, round(secs), data)
         return info | {"detector_s": round(secs)}
-    finally:
-        if not rules["detectors"]["keep_scratch"]:
-            shutil.rmtree(work, ignore_errors=True)
 
 
 def stage_two_s2(store: Store, scene: dict, folder: Path, rules: dict, data: dict) -> dict:
@@ -188,7 +193,8 @@ def run(
             log(f"{scene['scene']}: FAILED {type(e).__name__}: {str(e)[:600]}", "error")
             store.fail(scene, f"{type(e).__name__}: {str(e)[:600]}")
             traceback.print_exc()
-            shutil.rmtree(work_dir(folder, scene), ignore_errors=True)
+        finally:
+            cleanup_scene_work(folder, scene)
     SINK["scene"] = None
     by_pass: dict[str, list] = {}
     for scene in found:

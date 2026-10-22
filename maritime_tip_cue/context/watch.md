@@ -53,9 +53,11 @@ A scene is finished when its `scenes` row has status `detected` (detector done, 
 `checked`; a rerun skips detection and keeps the stored detections, so changing a hot spot's shore distance later
 does not re-filter old scenes. A failed check leaves status `detected` with the error text; a failed detection sets
 `failed` and is retried (attempts counted). Radar verdicts are recomputed only for passes with an unchecked scene
-or with `--reanalyse`. Scratch of a scene
-(several GB) is deleted as soon as the windows or chips are written. Tiles of one Sentinel-2 datatake overlap, so
-a hull in the overlap can appear in two scenes; no cross-scene merge is done yet.
+or with `--reanalyse`. After each scene's detection and S2 check, its hashed temporary workspace is removed and
+the removal is verified before the loop can start the next scene. This also runs after failures; if removal fails,
+the job stops instead of accumulating more scene data. Sentinel-2 band windows, Sentinel-1 chips, state and
+artifacts remain under the run folder for review and resume. Tiles of one Sentinel-2 datatake overlap, so a hull
+in the overlap can appear in two scenes; no cross-scene merge is done yet.
 
 ## state
 `state.db` (default `<out>/state.db`, `--db` overrides) holds the run state; the schema is in `state.py`. Pair-check inputs
@@ -112,7 +114,8 @@ On the Windows dev PC long paths are off (no admin to enable them), and the dete
 scene id twice under `work/scratch/tiles/sentinel1/`; with a run folder name like `johor_east_scs_week` the path
 passed 260 characters and Sentinel-1 ingest failed with WinError 3. `config.yaml` `ai2.scratch_root` puts the
 per-scene work folder under a short root keyed by a hash of the scene id; left empty (Linux) it stays in the
-scene folder.
+scene folder. The per-scene cleanup barrier removes that full workspace before advancing and reports free space
+from the workspace filesystem.
 
 
 ## registry
