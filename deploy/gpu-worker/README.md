@@ -3,12 +3,13 @@
 Current EC2 image, queue smoke-test and root-volume resize notes are in [the EC2 deployment record](../../docs/gpu-worker-ec2.md).
 
 This role runs `maritime_tip_cue.worker` and the shared processing pipeline. It does not run the six-hour
-catalogue scan or the always-on job manager. The Ubuntu one-scene orchestration starts EC2 and keeps its SSH
-worker session open for the job, then starts `worker run --job-id <job_id>` on EC2. That command claims the
-matching task atomically from Redis and loads its pinned manifest from Redis; the SSH command passes only the
-job ID. The worker renews its claim lease and publishes an attempt-fenced result. The manager on the tracker
-host owns completion and retry transitions. EC2 does not currently run an idle Redis listener: Ubuntu starts
-the one-job worker process after the instance is ready.
+catalogue scan or the always-on job manager. The Ubuntu one-scene orchestration polls the managed wake
+controller until EC2 is ready, then continues polling while its SSH worker session runs. It starts
+`worker run --job-id <job_id>` on EC2. That command claims the matching task atomically from Redis and loads
+its pinned manifest from Redis; the SSH command passes only the job ID. The worker renews its claim lease and
+publishes an attempt-fenced result. The manager on the tracker host owns completion and retry transitions.
+EC2 does not currently run an idle Redis listener: Ubuntu starts the one-job worker process after the instance
+is ready.
 
 ## One-scene orchestration from the STS monitor Ubuntu host
 
@@ -17,8 +18,9 @@ Run the complete scan, single-job Redis handoff, EC2 start and SSH worker proces
 `~/.ssh/geogen-key.pem` and keeps the SSH session open until the selected job finishes. The Ubuntu host key is
 `sts-instance.pem` at `%USERPROFILE%\Downloads\sts-instance.pem`; the EC2 worker key is `geogen-key.pem`.
 
-The SSH connection is the keep-awake process during inference. The orchestration does not call the refinery
-service or another wake-controller URL.
+Set `CONTROLLER_URL` in the ignored Lightsail `.env` to the managed wake controller's base URL. Do not start
+the instance directly through the EC2 API; the controller's status requests keep its idle timer refreshed
+while the SSH worker command runs.
 
 Clone the repository and build from its root with
 `docker build -f deploy/gpu-worker/Dockerfile -t maritime-sts-gpu-worker .`. The image pins PyTorch 2.7,

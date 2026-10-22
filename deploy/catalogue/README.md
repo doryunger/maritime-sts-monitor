@@ -41,9 +41,9 @@ on failure or host reboot. The manager does not start or stop EC2.
 ## One-scene end-to-end run
 
 This command scans configured hot spots for new Sentinel-2 scenes, stops after the first eligible scene,
-stores one single-scene job in SQLite, dispatches that job to Redis, starts EC2 if needed, and runs that exact
-job over SSH. The SSH process stays open for the full worker run, keeping the instance active during processing.
-If no new scene is found, it leaves EC2 untouched. It does not call a wake-controller URL.
+stores one single-scene job in SQLite, dispatches that job to Redis, and runs that exact job over SSH. It polls
+the managed wake controller until EC2 is ready, then keeps polling while the worker SSH process is active so
+the controller's idle timer stays refreshed. If no new scene is found, it leaves EC2 untouched.
 
 Set these deployment values in the Ubuntu host's ignored `.env`:
 
@@ -52,12 +52,12 @@ WORKER_PRIVATE_IP=<WORKER_PRIVATE_IP>
 WORKER_KEY_PATH=/home/ubuntu/.ssh/geogen-key.pem
 WORKER_REMOTE_DIR=/home/ubuntu/maritime-sts-monitor
 WORKER_IMAGE=maritime-sts-gpu-worker:test
+CONTROLLER_URL=<WAKE_CONTROLLER_BASE_URL>
 ```
 
-The environment must also provide `AWS_REGION`, credentials with EC2 describe/start permissions, and the
-existing manager settings. The EC2 host must have the worker checkout, image, assets and instance role prepared.
-The worker role must include the results-prefix `s3:ListBucket` permission documented in the worker deployment
-guide.
+The environment must also provide the existing manager settings. The EC2 host must have the worker checkout,
+image, assets and instance role prepared. The worker role must include the results-prefix `s3:ListBucket`
+permission documented in the worker deployment guide.
 After syncing this checkout and rebuilding the manager image, run on Ubuntu:
 
 ```bash

@@ -108,10 +108,9 @@ number once its last invocation has ended (an unfinished one is left alone, sinc
 
 ## EC2 lifecycle process
 
-The Ubuntu one-scene runner starts the selected EC2 worker through the AWS API, waits for its private SSH port,
-then keeps a foreground SSH process attached to the exact one-scene worker command until it exits. The active
-SSH process is the keep-awake signal during inference. The runner then waits for the job manager to record the
-durable result. It does not call a wake-controller URL, the refinery service, or automatically stop EC2.
+The one-scene runner's wake-controller and SSH sequence is documented in
+[`context/catalogue.md`](catalogue.md#ec2-execution). It waits for the job manager to record the durable result
+after the controller-protected worker command exits.
 
 `watch.run.main()` returns zero even when per-scene failures set the invocation status to `failed`.
 A future worker must inspect scene and invocation records before acknowledging jobs or declaring the batch
