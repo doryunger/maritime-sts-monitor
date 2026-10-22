@@ -2,8 +2,51 @@ import importlib
 import json
 import math
 import sys
+import threading
+from datetime import datetime, timezone
 
+import torch
 import yaml
+
+CUDA_STOP = threading.Event()
+
+
+def cuda_snapshot(stage: str) -> None:
+    timestamp = datetime.now(timezone.utc).isoformat()
+    available = torch.cuda.is_available()
+    if not available:
+        print(f"{timestamp} CUDA_DIAGNOSTIC stage={stage} visible=false device_count=0", flush=True)
+        return
+    device_count = torch.cuda.device_count()
+    devices = [torch.cuda.get_device_name(index) for index in range(device_count)]
+    initialized = torch.cuda.is_initialized()
+    if initialized:
+        allocated = sum(torch.cuda.memory_allocated(index) for index in range(device_count))
+        peak_allocated = sum(torch.cuda.max_memory_allocated(index) for index in range(device_count))
+        reserved = sum(torch.cuda.memory_reserved(index) for index in range(device_count))
+        peak_reserved = sum(torch.cuda.max_memory_reserved(index) for index in range(device_count))
+        print(
+            f"{timestamp} CUDA_DIAGNOSTIC stage={stage} visible=true initialized=true devices={devices} "
+            f"tensor_use={str(peak_allocated > 0).lower()} "
+            f"allocated_bytes={allocated} peak_allocated_bytes={peak_allocated} "
+            f"reserved_bytes={reserved} peak_reserved_bytes={peak_reserved}",
+            flush=True,
+        )
+        return
+    print(
+        f"{timestamp} CUDA_DIAGNOSTIC stage={stage} visible=true initialized=false devices={devices} "
+        "tensor_use=false allocated_bytes=0 peak_allocated_bytes=0 reserved_bytes=0 peak_reserved_bytes=0",
+        flush=True,
+    )
+
+
+def monitor_cuda() -> None:
+    cuda_snapshot("start")
+    while not CUDA_STOP.wait(60):
+        cuda_snapshot("interval")
+
+
+cuda_snapshot("process-start")
 
 spec = json.load(open(sys.argv[1], encoding="utf-8"))
 sys.argv = ["rslp.main", spec["project"], "predict"] + spec["args"]
@@ -66,4 +109,11 @@ if spec.get("regions"):
 if __name__ == "__main__":
     init_mp()
     init_jsonargparse()
-    main()
+    monitor = threading.Thread(target=monitor_cuda, daemon=True)
+    monitor.start()
+    try:
+        main()
+    finally:
+        CUDA_STOP.set()
+        monitor.join()
+        cuda_snapshot("final")

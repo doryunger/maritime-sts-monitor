@@ -91,6 +91,15 @@ def s1_inputs(item: dict, rules: dict, work: Path, log) -> dict:
     return paths
 
 
+def relay_cuda_diagnostics(path: Path, log) -> None:
+    if not path.is_file():
+        return
+    with path.open(encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            if "CUDA_DIAGNOSTIC" in line:
+                log(f"detector: {line.strip()}")
+
+
 def detect(source: str, scene: dict, rules: dict, work: Path, region: tuple, log) -> tuple[float, dict, list[dict]]:
     cfg = rules["detectors"]
     work = work.resolve()
@@ -114,15 +123,21 @@ def detect(source: str, scene: dict, rules: dict, work: Path, region: tuple, log
         encoding="utf-8",
     )
     start = time.monotonic()
-    with (work / "detector.log").open("w", encoding="utf-8") as f:
-        proc = subprocess.run(
-            [str(python()), str(RUNNER), str(spec)],
-            cwd=ai2_root() / "rslearn_projects",
-            env=env,
-            stdout=f,
-            stderr=subprocess.STDOUT,
-            timeout=cfg[f"{source}_timeout_min"] * 60,
-        )
+    detector_log = work / "detector.log"
+    try:
+        with detector_log.open("w", encoding="utf-8") as f:
+            proc = subprocess.run(
+                [str(python()), str(RUNNER), str(spec)],
+                cwd=ai2_root() / "rslearn_projects",
+                env=env,
+                stdout=f,
+                stderr=subprocess.STDOUT,
+                timeout=cfg[f"{source}_timeout_min"] * 60,
+            )
+    except subprocess.TimeoutExpired:
+        relay_cuda_diagnostics(detector_log, log)
+        raise
+    relay_cuda_diagnostics(detector_log, log)
     if proc.returncode != 0 or not out_geojson.exists():
         tail = (work / "detector.log").read_text(encoding="utf-8", errors="replace").splitlines()[-15:]
         raise RuntimeError(f"{cfg[f'{source}_pipeline']} exit {proc.returncode}: " + " | ".join(tail))

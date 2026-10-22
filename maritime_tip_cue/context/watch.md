@@ -9,6 +9,9 @@ a 22 km box took about as long as the full tile (measuring many ships dominates)
 8 min. Cropped and full runs agreed on 97-99 % of hulls; every difference lay 8-25 km inside the window (the
 model tiles the scene differently), so the crop is not an edge cut. The Windows worker settings in
 `config.yaml` `ai2.env` switch the data-loader workers off, which the Windows build of the pipelines needs.
+The runner logs CUDA visibility at startup and reports initialized tensor-memory peaks every minute, at exit,
+and when detector logs are relayed after completion or timeout. The attempt ledger preserves these diagnostic
+lines even though per-scene scratch is removed on failure.
 
 ## detector
 Sentinel-1 needs the frame and one earlier frame of the same orbit direction 30-90 days before; among the
