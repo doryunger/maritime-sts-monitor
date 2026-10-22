@@ -119,7 +119,6 @@ def detect(source: str, scene: dict, rules: dict, work: Path, region: tuple, log
     else:
         task |= {"scene_id": scene["scene"]}
         args = ["--tasks", json.dumps([task])]
-    args += ["--model_management_dir", str(work / "model_management")]
     windows_path = work / "windows.json"
     spec = work / "run_spec.json"
     spec.write_text(
