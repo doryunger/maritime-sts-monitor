@@ -84,7 +84,7 @@ def run_worker(status_url, private_ip, key_path, remote_dir, image, job_id, time
         f"docker run --rm --gpus all --shm-size=15g "
         "--network host --env-file .env "
         '-v "$PWD/config.local.yaml:/app/config.local.yaml:ro" '
-        '-v "$PWD/data:/app/data" -v /opt/ai2-models:/opt/ai2-models:ro '
+        '-v "$PWD/data:/app/data" '
         f"{shlex.quote(image)} run --job-id {shlex.quote(job_id)}"
     )
     wake_env = os.environ.copy()
