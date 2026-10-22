@@ -44,12 +44,13 @@ later scan-one call.
 
 ## EC2 execution
 
-The one-scene runner starts the configured EC2 instance through the AWS API, waits for `running`, then probes
-private TCP 22 before opening SSH. Early SSH attempts can close while the host is still booting. Once ready,
-one foreground SSH command runs the exact job with transport keepalives until the worker exits; the runner
-then waits for the durable result. AWS credentials and worker connection settings stay in the ignored
-Lightsail `.env`. Passing `--job-id` targets an eligible existing single-scene job through the manager's
-targeted `once` command; without it, the runner scans for one new S2 scene.
+The one-scene runner dispatches one job, then delegates startup and SSH readiness to the wake status handler.
+That handler updates its idle activity timestamp on each GET, so the runner keeps polling every 20 seconds while
+the worker command runs. The runner checks the worker's S3 receipt-list permission before the worker claims the
+Redis task; this prevents a known IAM denial from consuming a job attempt. The SSH command runs the exact job
+and the runner waits for the manager's durable result. Worker connection settings stay in the ignored Lightsail
+`.env`. Passing `--job-id` targets an eligible existing single-scene job through the manager's targeted `once`
+command; without it, the runner scans for one new S2 scene.
 
 The worker consumes manifests without searching the catalogue again. It stores raw pinned rules beside the
 job and calls the same watch pipeline with explicit scenes. The legacy watch command can return zero after

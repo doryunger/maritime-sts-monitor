@@ -3,23 +3,24 @@
 Current EC2 image, queue smoke-test and root-volume resize notes are in [the EC2 deployment record](../../docs/gpu-worker-ec2.md).
 
 This role runs `maritime_tip_cue.worker` and the shared processing pipeline. It does not run the six-hour
-catalogue scan or the always-on job manager. The Ubuntu one-scene orchestration starts EC2 through its AWS
-credentials, waits for the instance to run and its private SSH port to accept connections, then holds a
-persistent SSH worker command open with keepalives. It starts `worker run --job-id <job_id>` on EC2. That
-command claims the matching task atomically from Redis and loads its pinned manifest from Redis; the SSH
-command passes only the job ID. The worker renews its claim lease and publishes an attempt-fenced result. The
-manager on the tracker host owns completion and retry transitions. EC2 does not currently run an idle Redis
-listener: Ubuntu starts the one-job worker process after the instance is ready.
+catalogue scan or the always-on job manager. The Ubuntu one-scene orchestration polls the configured
+`/_wake/status` handler until EC2 is ready, then runs one worker command over SSH while continuing to poll the
+handler. Each status request refreshes the wake service's idle timer. The command starts
+`worker run --job-id <job_id>` on EC2, which claims that task atomically from Redis and loads its pinned manifest;
+SSH passes only the job ID. The worker renews its claim lease and publishes an attempt-fenced result. The
+manager on the tracker host owns completion and retry transitions. EC2 does not run an idle Redis listener;
+the one-job process starts after the wake handler reports ready.
 
 ## One-scene orchestration from the STS monitor Ubuntu host
 
-Run the complete scan, single-job Redis handoff, EC2 start and SSH worker process from the Ubuntu host with
+Run the complete scan, single-job Redis handoff, wake request and SSH worker process from the Ubuntu host with
 [`run-one-scene.py`](../catalogue/README.md#one-scene-end-to-end-run). It uses the EC2 key at
 `~/.ssh/geogen-key.pem` and keeps the SSH session open until the selected job finishes. The Ubuntu host key is
 `sts-instance.pem` at `%USERPROFILE%\Downloads\sts-instance.pem`; the EC2 worker key is `geogen-key.pem`.
 
-Set `AWS_REGION` and EC2 describe/start credentials in the ignored Lightsail `.env`. The one-scene runner owns
-the readiness wait and starts SSH only after the private port accepts connections.
+Set `WORKER_WAKE_STATUS_URL` to the exact wake status route, and keep the worker address and key path in the
+ignored Lightsail `.env`. The runner starts SSH only after the handler reports ready and private port 22 accepts
+connections. The EC2 instance profile provides worker S3 access.
 
 Clone the repository and build from its root with
 `docker build -f deploy/gpu-worker/Dockerfile -t maritime-sts-gpu-worker .`. The image pins PyTorch 2.7,
@@ -39,9 +40,9 @@ from `deploy/gpu-worker/.env.example` beside the clone. The config sets the imag
 `/app/data` paths. The environment file supplies `STS_REDIS_URL`, `S3_BUCKET_NAME`, GizmoSQL settings and the
 AWS region. Attach an EC2 instance profile that grants required read access to result receipts and scene sources,
 and write access to the attempt artifact prefix. The container uses the EC2 metadata credential provider; verify
-that it can obtain credentials before claiming a job. The role is now attached to the tested instance and
-credentials work. Its current policy still needs the results-prefix `s3:ListBucket` statement below. Keep Redis
-private and restricted to the worker.
+that it can obtain credentials before claiming a job. The role is attached to the tested instance, and the
+worker's live `ListBucket` preflight for `catalogue/results/` passed after the bucket-specific policy was
+attached. Keep Redis private and restricted to the worker.
 
 The instance profile needs only the worker's S3 paths and the Sentinel-1 source. Replace `<S3_BUCKET_NAME>` with
 the bucket configured in `.env` and attach this policy to the EC2 role:

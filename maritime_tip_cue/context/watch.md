@@ -15,6 +15,12 @@ Sentinel-1 needs the frame and one earlier frame of the same orbit direction 30-
 candidates the one covering most of the scene wins, ties go to the age closest to 60 days. Both are downloaded
 as VV and VH GeoTIFFs (about 4 GB per frame) and deleted with the scratch after each scene.
 
+The worker container installs detector packages into its active Python environment and includes the pinned
+`rslearn_projects` tree at `ai2.root`. A host detector virtualenv may not exist in the container, so the runner
+uses the worker process interpreter when the configured venv executable is absent. The detector changes its
+working directory to `ai2.root/rslearn_projects`; paths for the spec and scene work must be absolute to keep all
+scratch and outputs under the persistent `/app/data` mount.
+
 ## s2 windows
 The pair check reads the detector's own pixels, not a second download: 13 bands of the detector window are read
 for a 2 km box around each cluster of hulls (hulls of one scene within 500 m share a box, which keeps every

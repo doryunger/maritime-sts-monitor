@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -21,7 +22,10 @@ def ai2_root() -> Path:
 def python() -> Path:
     venv = ai2_root() / ".venv"
     win = venv / "Scripts" / "python.exe"
-    return win if win.exists() else venv / "bin" / "python"
+    unix = venv / "bin" / "python"
+    if win.exists():
+        return win
+    return unix if unix.exists() else Path(sys.executable)
 
 
 def sign(href: str) -> str:
@@ -89,6 +93,7 @@ def s1_inputs(item: dict, rules: dict, work: Path, log) -> dict:
 
 def detect(source: str, scene: dict, rules: dict, work: Path, region: tuple, log) -> tuple[float, dict, list[dict]]:
     cfg = rules["detectors"]
+    work = work.resolve()
     scratch = work / "scratch"
     scratch.mkdir(parents=True, exist_ok=True)
     crops = work / "crops"

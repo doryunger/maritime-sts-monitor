@@ -3,7 +3,8 @@
 The dedicated Lightsail host runs `maritime_tip_cue.catalogue`, `maritime_tip_cue.job_manager` and Redis. The
 GPU worker host runs `maritime_tip_cue.worker`. Each role has its own dependency list, but both require this
 repository's shared `maritime_tip_cue` package source; they are not standalone sparse checkouts yet. The
-scheduled catalogue and manager services do not start or stop EC2; the manual one-scene runner below starts it.
+scheduled catalogue and manager services do not start or stop EC2; the manual one-scene runner below uses the
+configured wake status handler and keeps it active while the worker command runs.
 
 ```mermaid
 flowchart LR
@@ -41,22 +42,25 @@ on failure or host reboot. The manager does not start or stop EC2.
 ## One-scene end-to-end run
 
 This command scans configured hot spots for new Sentinel-2 scenes, stops after the first eligible scene,
-stores one single-scene job in SQLite, dispatches that job to Redis, starts EC2 through the configured AWS
-credentials, waits until the instance is running and its private SSH port accepts connections, then runs that
-exact job over a persistent SSH session with keepalives. If no new scene is found, it leaves EC2 untouched.
+stores one single-scene job in SQLite, dispatches it to Redis, polls the configured wake status handler until
+EC2 and private SSH are ready, then runs that exact job over SSH while polling the handler to refresh its idle
+timer. If no new scene is found, it leaves EC2 untouched.
 
 Set these deployment values in the Ubuntu host's ignored `.env`:
 
 ```text
 WORKER_PRIVATE_IP=<WORKER_PRIVATE_IP>
 WORKER_KEY_PATH=/home/ubuntu/.ssh/geogen-key.pem
-WORKER_REMOTE_DIR=/home/ubuntu/maritime-sts-monitor
+WORKER_REMOTE_DIR=/home/ubuntu/maritime-sts-monitor-worker-test
 WORKER_IMAGE=maritime-sts-gpu-worker:test
+WORKER_WAKE_STATUS_URL=<WAKE_STATUS_URL>
 ```
 
-The environment must also provide `AWS_REGION`, credentials with EC2 describe/start permissions, and the existing
-manager settings. The EC2 host must have the worker checkout, image, assets and instance role prepared. The
-worker role must include the results-prefix `s3:ListBucket` permission documented in the worker deployment guide.
+The status URL must target the wake service's `/_wake/status` route. Each request refreshes its idle timer; the
+runner polls it while the worker command is active. The Lightsail environment must also provide the existing
+manager settings. The EC2 host must have the worker image, assets and instance role prepared. The worker role
+must include the results-prefix `s3:ListBucket` permission documented in the worker deployment guide. The
+runner checks this permission before the worker claims its Redis task.
 After syncing this checkout and rebuilding the manager image, run on Ubuntu:
 
 ```bash
@@ -66,7 +70,7 @@ sudo python3 deploy/catalogue/run-one-scene.py
 ```
 
 The script waits for the manager to record the result and prints the final job status. It leaves instance
-shutdown to the existing lifecycle policy.
+shutdown to the wake service's idle policy.
 
 To hand off one already discovered single-scene job, pass its job ID instead of scanning for a new scene:
 
@@ -74,7 +78,8 @@ To hand off one already discovered single-scene job, pass its job ID instead of 
 sudo python3 deploy/catalogue/run-one-scene.py --job-id <job_id>
 ```
 
-The job manager rejects unknown, multi-scene, claimed, completed or not-yet-retryable jobs before EC2 starts.
+The job manager rejects unknown, multi-scene, claimed, completed or not-yet-retryable jobs before the wake
+status handler is polled.
 
 ## Queue operation
 
