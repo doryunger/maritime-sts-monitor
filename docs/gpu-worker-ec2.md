@@ -13,9 +13,29 @@ Checked 2026-10-22. This records the worker image, instance setup and current on
 - The EC2 instance profile supplies credentials, and a live worker-container `ListBucket` preflight for the configured `catalogue/results/` prefix passed after the bucket-specific policy was attached.
 - The selected one-scene job reached the worker twice but produced no S3 artifacts. Attempt 1 failed because the configured detector venv Python path is absent from the container. Attempt 2 used a temporary container-local interpreter link, then failed because the detector runner received a relative `run_spec.json` path after changing directories. The manager recorded the job as terminal after its single retry. Both path fixes are now in the local checkout and need a rebuilt worker image before another one-scene run.
 - SSH from the Windows PC to the worker's public address timed out. The STS monitor Lightsail host reaches the EC2 private address on TCP 22; its `geogen-key.pem` authenticates successfully when SSH is run from Lightsail. The key is installed at `~/.ssh/geogen-key.pem` with mode 600.
-- Operational rule: SSH to the EC2 worker only from the STS monitor Ubuntu host through the wake status handler, using its private IPv4 address and the EC2 key pair `geogen-key` installed at `~/.ssh/geogen-key.pem` (mode 600). The local PC identity in `data/secrets/control_host.json` is only for reaching Ubuntu; it is not the EC2 key. See [the wake and SSH procedure](../deploy/gpu-worker/README.md).
 - The first failures occurred with about 12 GiB free on the original filesystem. Storage did not cause them. The user expanded the existing root EBS volume from 80 to 100 GB. The existing root partition and ext4 filesystem were grown online; `df` then reported 96 GiB total and 32 GiB free. Existing data and boot partitions were retained.
 - The existing demo web and app containers stayed healthy throughout the worker build and checks.
+
+## SSH access procedure
+
+Connect to the Lightsail control host with the identity and host recorded in the ignored
+`data/secrets/control_host.json`. In this Codex environment, run OpenSSH through an elevated
+`exec_command` (`sandbox_permissions=require_escalated`); a restricted-shell network error is not evidence that
+the Lightsail key was rejected. For an interactive session, allocate a TTY and keep the returned process
+session open:
+
+```powershell
+$control = Get-Content .\data\secrets\control_host.json -Raw | ConvertFrom-Json
+$key = [Environment]::ExpandEnvironmentVariables($control.identity_file)
+ssh -tt -i $key -o BatchMode=yes -o ServerAliveInterval=20 -o ServerAliveCountMax=120 "$($control.user)@$($control.host)"
+```
+
+SSH authentication has not started if verbose OpenSSH output stops at key exchange or banner exchange. For
+example, `Connection established` followed by `kex_exchange_identification: write: Connection timed out` is a
+transport failure before key authentication; do not rotate the key or switch to an EC2 address on that basis.
+Once on Lightsail, connect to EC2 only through `deploy/gpu-worker/wake-ec2-ubuntu.sh` with the exact
+`/_wake/status` URL, the worker's private IPv4 address and `~/.ssh/geogen-key.pem` (mode 600). The script polls
+the handler to start and keep EC2 active while the SSH worker command runs. See [the wake and SSH procedure](../deploy/gpu-worker/README.md).
 
 ## Build and disk findings
 
