@@ -8,10 +8,10 @@ Checked 2026-10-22. This records the worker image, instance setup and current on
 - The image build imports both Sentinel detector pipelines and the vessel attribute model successfully.
 - The container sees a Tesla T4 through NVIDIA Container Toolkit; PyTorch reports CUDA 12.8 and `torch.cuda.is_available()` is true.
 - The worker container connected to Redis and listed ready tasks. Listing did not claim or mutate any task.
-- The four published detector checkpoints now live in persistent `/opt/ai2-models`. The worker image does not contain these multi-gigabyte files; mount this directory read-only at the same path.
+- The four published detector checkpoints are included in the worker image under `/opt/ai2-models`, fetched in a separate Docker build stage. The existing host `/opt/ai2-models` cache remains available but is no longer mounted into the worker container.
 - The AIS archive certificate, land GeoJSON files and structures GeoJSON are present in the isolated worker test directory under `data/`.
 - The EC2 instance profile supplies credentials, and a live worker-container `ListBucket` preflight for the configured `catalogue/results/` prefix passed after the bucket-specific policy was attached.
-- The worker container passed a CUDA tensor canary on the Tesla T4. Shadow's successful S2 log showed Lightning using CUDA, 10-38% GPU utilization, about 900 MiB GPU memory, and 175 seconds total. Worker inference now logs NVIDIA utilization/memory every two seconds alongside PyTorch memory diagnostics. The runner adds rslearn's `--management_dir` option to point run metadata at the writable per-attempt directory while `RSLP_PREFIX` remains on the read-only model cache for checkpoint loading. Its pinned PyTorch 2.7.0 differs from Shadow's PyTorch 2.9.1 and remains a runtime variable to assess after a successful worker run.
+- The worker container passed a CUDA tensor canary on the Tesla T4. Shadow's successful S2 log showed Lightning using CUDA, 10-38% GPU utilization, about 900 MiB GPU memory, and 175 seconds total. Worker inference now logs NVIDIA utilization/memory every two seconds alongside PyTorch memory diagnostics. Initial container attempts exposed forkserver and model-management path failures; the image now includes the four checkpoints so rslearn can load and write under the same writable `/opt/ai2-models` path. Its pinned PyTorch 2.7.0 differs from Shadow's PyTorch 2.9.1 and remains a runtime variable to assess after a successful worker run.
 - SSH from the Windows PC to the worker's public address timed out. The STS monitor Lightsail host reaches the EC2 private address on TCP 22; its `geogen-key.pem` authenticates successfully when SSH is run from Lightsail. The key is installed at `~/.ssh/geogen-key.pem` with mode 600.
 - The first failures occurred with about 12 GiB free on the original filesystem. Storage did not cause them. The user expanded the existing root EBS volume from 80 to 100 GB. The existing root partition and ext4 filesystem were grown online; `df` then reported 96 GiB total and 32 GiB free. Existing data and boot partitions were retained.
 - The existing demo web and app containers stayed healthy throughout the worker build and checks.
@@ -72,7 +72,6 @@ From the isolated clone on EC2, prepare runtime settings and assets as described
 docker run --rm --network host --env-file .env \
   -v "$PWD/config.local.yaml:/app/config.local.yaml:ro" \
   -v "$PWD/data:/app/data" \
-  -v /opt/ai2-models:/opt/ai2-models:ro \
   maritime-sts-gpu-worker:test list
 ```
 
@@ -82,6 +81,5 @@ Run an explicitly selected ready job only after confirming enough free space for
 docker run --rm --gpus all --shm-size=15g --network host --env-file .env \
   -v "$PWD/config.local.yaml:/app/config.local.yaml:ro" \
   -v "$PWD/data:/app/data" \
-  -v /opt/ai2-models:/opt/ai2-models:ro \
   maritime-sts-gpu-worker:test run --job-id <job_id>
 ```

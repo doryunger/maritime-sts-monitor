@@ -25,12 +25,11 @@ connections. The EC2 instance profile provides worker S3 access.
 Clone the repository and build from its root with
 `docker build -f deploy/gpu-worker/Dockerfile -t maritime-sts-gpu-worker .`. The image pins PyTorch 2.7,
 CUDA 12.8, cuDNN 9, rslearn 0.1.17 and the exact Ai2 detector source revision used by the local pipeline.
-It installs detector inference dependencies and reads the matching S1/S2 detector and attribute checkpoints
-from the host model cache at `/opt/ai2-models`. Populate that cache once on the EC2 host from Ai2's published
-model paths and mount it read-only into the worker container. The detector configs point to these locations
-through `RSLP_PREFIX`; loading these trained checkpoints supersedes their training-only restore settings.
-Keeping the multi-gigabyte checkpoints outside the image makes build and deployment transfers practical. The
-host still needs NVIDIA Container Toolkit support.
+It installs detector inference dependencies and downloads the matching S1/S2 detector and attribute checkpoints
+from Ai2's published model paths into `/opt/ai2-models` in a separate Docker build stage. Only the checkpoint
+files are copied into the final image. This lets rslearn read checkpoints and write its project metadata under
+the same writable image path, matching Shadow's local setup. The image is several gigabytes larger and each
+fresh build downloads the checkpoints. The host still needs NVIDIA Container Toolkit support.
 The source package is shared by both roles today: the worker imports the manifest validator,
 Redis queue protocol, configuration and pipeline modules from the same package. The role boundary is
 operational and dependency based; this directory is not a standalone sparse checkout.
@@ -103,13 +102,13 @@ Place the AIS archive certificate in `data/secrets/ais_archive_cert.pem`, the Na
 Earth land GeoJSON files in `data/land/`, and the fixed-structure GeoJSON in `data/structures/`. These runtime
 inputs persist outside the image.
 
-Run a single job by ID with `docker run --rm --gpus all --shm-size=15g --network host --env-file .env -v "$PWD/config.local.yaml:/app/config.local.yaml:ro" -v "$PWD/data:/app/data" -v /opt/ai2-models:/opt/ai2-models:ro maritime-sts-gpu-worker run --job-id <job_id>`. This claims only that task and lets the manager finalize its result. The ready-queue drain command claims every ready job, so use it only for an intentional batch. The one-scene launcher is documented in the catalogue deployment guide. Keep the host `data/` directory
+Run a single job by ID with `docker run --rm --gpus all --shm-size=15g --network host --env-file .env -v "$PWD/config.local.yaml:/app/config.local.yaml:ro" -v "$PWD/data:/app/data" maritime-sts-gpu-worker run --job-id <job_id>`. This claims only that task and lets the manager finalize its result. The ready-queue drain command claims every ready job, so use it only for an intentional batch. The one-scene launcher is documented in the catalogue deployment guide. Keep the host `data/` directory
 persistent so detector state and resumable work survive process or host restarts.
 
 Use this command to inspect tasks:
 
 ```sh
-docker run --rm --network host --env-file .env -v "$PWD/config.local.yaml:/app/config.local.yaml:ro" -v "$PWD/data:/app/data" -v /opt/ai2-models:/opt/ai2-models:ro maritime-sts-gpu-worker list
+docker run --rm --network host --env-file .env -v "$PWD/config.local.yaml:/app/config.local.yaml:ro" -v "$PWD/data:/app/data" maritime-sts-gpu-worker list
 ```
 
 The manager records each attempt and allows one delayed retry. A second failure is terminal and requires an

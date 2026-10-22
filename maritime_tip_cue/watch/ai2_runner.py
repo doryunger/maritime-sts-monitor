@@ -105,8 +105,9 @@ def model_patches() -> dict:
 
 
 def route_model_management_dir(model_cfg_fname: str, ds_path: UPath, groups=None, extra_args=None) -> None:
+    model_management = Path(spec["windows_path"]).parent / "model_management"
     args = list(extra_args or [])
-    args += ["--management_dir", str(Path(spec["windows_path"]).parent / "model_management")]
+    args += ["--management_dir", str(model_management)]
     ORIGINAL_RUN_MODEL_PREDICT(model_cfg_fname, ds_path, groups=groups or [], extra_args=args)
 
 

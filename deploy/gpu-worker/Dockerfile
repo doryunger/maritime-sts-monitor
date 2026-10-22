@@ -1,3 +1,9 @@
+FROM pytorch/pytorch:2.7.0-cuda12.8-cudnn9-runtime@sha256:7db0e1bf4b1ac274ea09cf6358ab516f8a5c7d3d0e02311bed445f7e236a5d80 AS model_weights
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY deploy/gpu-worker/fetch-models.sh /tmp/fetch-models.sh
+RUN bash /tmp/fetch-models.sh /opt/ai2-models
+
 FROM pytorch/pytorch:2.7.0-cuda12.8-cudnn9-runtime@sha256:7db0e1bf4b1ac274ea09cf6358ab516f8a5c7d3d0e02311bed445f7e236a5d80
 
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -20,5 +26,6 @@ COPY config.yaml /app/config.yaml
 COPY rules /app/rules
 RUN mkdir -p /app/data
 ENV STS_CONFIG_PATH=/app/config.local.yaml
-RUN mkdir -p /opt/ai2-models/projects/20260626_num_historical/data_20250521_model_20250530_satlaspretrain_unfreeze4_13_1hist /opt/ai2-models/projects/2026_09_17_vessel_attribute_l1/sentinel1_l1 /opt/ai2-models/projects/sentinel2_vessels/data_20250213_02_all_bands /opt/ai2-models/projects/2026_09_17_vessel_attribute_l1_01/sentinel2_l1 && python -c "import torch; import rslp.sentinel1_vessels.predict_pipeline; import rslp.sentinel2_vessels.predict_pipeline; import rslp.vessel_attribute.train; assert torch.__version__.startswith('2.7.0')"
+COPY --from=model_weights /opt/ai2-models /opt/ai2-models
+RUN python -c "import torch; import rslp.sentinel1_vessels.predict_pipeline; import rslp.sentinel2_vessels.predict_pipeline; import rslp.vessel_attribute.train; assert torch.__version__.startswith('2.7.0')"
 ENTRYPOINT ["python", "-m", "maritime_tip_cue.worker"]
