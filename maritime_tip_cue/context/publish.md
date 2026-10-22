@@ -5,6 +5,10 @@
 `pair` only) to `data/publish/` and, with `--upload`, to S3; without it nothing leaves the PC. Each contributing run
 records its parquet files in `outputs` and its capture files in `captures`.
 
+Only ledgered runs are published: every run must be `done`, carry the `job_id` of a queue job, and that job must be in
+Redis `completed` (mirrored from the SQLite ledger). One ineligible run stops the whole publish before anything is
+written. Runs made before the ledger (1-9) need `--legacy`, which makes publishing them a deliberate choice.
+
 Duplicates: one vessel at one time is one finding, wherever it was seen. Two findings of the same source are merged
 when their captures are within `publish.dedupe_time_s` and their centres within `publish.dedupe_length_share` of the
 longer hull; this catches S2 tiles that overlap and hot spots that overlap (fujairah_outer and off_sohar at

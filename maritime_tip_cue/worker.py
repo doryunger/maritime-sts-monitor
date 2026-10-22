@@ -5,6 +5,7 @@ import os
 import sqlite3
 import sys
 import threading
+import time
 import uuid
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -206,13 +207,28 @@ def export_parquets(run_no: int, out: Path, destination: Path, job_id: str) -> l
         )
         raw_path = destination / "raw_detections.parquet"
         pq.write_table(pa.Table.from_pylist(raw, schema=raw_schema), raw_path)
+        return [path, raw_path]
+    finally:
+        store.close()
+
+
+def export_record(out: Path, destination: Path) -> list[Path]:
+    from maritime_tip_cue.watch.state import Store
+
+    destination.mkdir(parents=True, exist_ok=True)
+    store = Store(out / "state.db", out)
+    try:
         snapshot = destination / "state.db"
         target = sqlite3.connect(snapshot)
         try:
             store.db.backup(target)
         finally:
             target.close()
-        return [path, raw_path, snapshot]
+        events = destination / "events.jsonl"
+        with events.open("w", encoding="utf-8") as handle:
+            for row in store.db.execute("select * from events order by rowid"):
+                handle.write(json.dumps(dict(row), ensure_ascii=False, default=str) + "\n")
+        return [snapshot, events]
     finally:
         store.close()
 
@@ -228,6 +244,45 @@ def upload_artifacts(client, bucket: str, manifest: dict, paths: list[Path], att
     return artifacts
 
 
+REVIEW_SKIP_DIRS = {"cache", "work"}
+REVIEW_SKIP_NAMES = {"state.db", "state.db-wal", "state.db-shm"}
+
+
+def upload_review(client, bucket: str, manifest: dict, out: Path, snapshot: Path, run_no: int, attempt: str) -> dict:
+    prefix = settings()["catalogue"]["reviews_prefix"].rstrip("/") + f"/{manifest['job_id']}/{attempt}/"
+    files = []
+    sources = [(snapshot, "state.db")]
+    for path in sorted(out.rglob("*")):
+        relative = path.relative_to(out)
+        if not path.is_file() or path.name in REVIEW_SKIP_NAMES or REVIEW_SKIP_DIRS & set(relative.parts[:-1]):
+            continue
+        sources.append((path, relative.as_posix()))
+    for path, relative in sources:
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        client.upload_file(str(path), bucket, prefix + relative, ExtraArgs={"Metadata": {"sha256": digest}})
+        files.append({"path": relative, "size": path.stat().st_size, "sha256": digest})
+    index = {
+        "schema_version": 1,
+        "job_id": manifest["job_id"],
+        "attempt_id": attempt,
+        "run_no": run_no,
+        "files": files,
+    }
+    client.put_object(Bucket=bucket, Key=prefix + "index.json", Body=encode(index), ContentType="application/json")
+    return {"prefix": prefix, "index": prefix + "index.json", "files": len(files)}
+
+
+def attach_review(receipt: dict, client, bucket: str, manifest: dict, out: Path, snapshot: Path, run_no, attempt: str):
+    try:
+        receipt["review"] = upload_review(client, bucket, manifest, out, snapshot, run_no, attempt)
+    except Exception as error:
+        receipt["review"] = None
+        receipt["review_error"] = f"{type(error).__name__}: {error}"
+
+
+ACTIVE: dict = {}
+
+
 def _run_job(client, bucket: str, manifest: dict, resume: bool = False, queue_owner: str | None = None) -> dict:
     validate(manifest)
     root = worker_root()
@@ -239,6 +294,7 @@ def _run_job(client, bucket: str, manifest: dict, resume: bool = False, queue_ow
             if previous.get("job_id") != job_id or previous.get("manifest_sha256") != job_id:
                 raise RuntimeError("existing receipt does not match manifest")
             return previous
+        ACTIVE.clear()
         workspace = root / job_id
         workspace.mkdir(parents=True, exist_ok=True)
         if queue_owner is None:
@@ -270,11 +326,14 @@ def _run_job(client, bucket: str, manifest: dict, resume: bool = False, queue_ow
                 run_no, out = registry.new_run()
                 save_json(pointer, {"run_no": run_no})
             receipt["run_no"] = run_no
-            receipt["scene_counts"] = jobs.execute(manifest, run_no, out, rules_path)
             attempt = manifest.get("_queue_attempt_id") or uuid.uuid4().hex
+            ACTIVE.update(out=out, run_no=run_no, workspace=workspace, attempt=attempt, rules_path=rules_path)
+            receipt["scene_counts"] = jobs.execute(manifest, run_no, out, rules_path)
             paths = export_parquets(run_no, out, workspace / attempt, job_id)
+            paths += export_record(out, workspace / attempt)
             paths += [workspace / "manifest.json", rules_path]
             receipt["artifacts"] = upload_artifacts(client, bucket, manifest, paths, attempt)
+            attach_review(receipt, client, bucket, manifest, out, workspace / attempt / "state.db", run_no, attempt)
             receipt["status"] = "succeeded"
         except Exception as error:
             receipt["error"] = f"{type(error).__name__}: {error}"
@@ -287,6 +346,12 @@ def _run_job(client, bucket: str, manifest: dict, resume: bool = False, queue_ow
                     receipt["scene_counts"] = {"checked": checked, "failed": len(manifest["scenes"]) - checked}
                 finally:
                     store.close()
+                try:
+                    paths = export_record(out, workspace / attempt) + [workspace / "manifest.json", rules_path]
+                    receipt["artifacts"] = upload_artifacts(client, bucket, manifest, paths, attempt)
+                    attach_review(receipt, client, bucket, manifest, out, workspace / attempt / "state.db", run_no, attempt)
+                except Exception as record_error:
+                    receipt["error"] += f"; run record not uploaded: {type(record_error).__name__}: {record_error}"
         receipt["finished_utc"] = now()
         if queue_owner is None:
             condition = {"IfMatch": result_etag} if result_etag else {"IfNoneMatch": "*"}
@@ -299,6 +364,45 @@ def _run_job(client, bucket: str, manifest: dict, resume: bool = False, queue_ow
         return receipt
 
 
+def record_stop(client, bucket: str, manifest: dict, queue_owner: str, attempt_id: str, reason: str) -> None:
+    receipt = {
+        "schema_version": 1,
+        "job_id": manifest["job_id"],
+        "attempt_id": attempt_id,
+        "manifest_sha256": manifest["job_id"],
+        "status": "stopped",
+        "run_no": ACTIVE.get("run_no"),
+        "started_utc": None,
+        "finished_utc": now(),
+        "artifacts": [],
+        "scene_counts": {"checked": 0, "failed": len(manifest["scenes"])},
+        "error": reason,
+    }
+    try:
+        if ACTIVE:
+            from maritime_tip_cue.watch.state import Store
+
+            store = Store(ACTIVE["out"] / "state.db", ACTIVE["out"])
+            try:
+                checked = sum(row["status"] == "checked" for row in store.scenes())
+            finally:
+                store.close()
+            receipt["scene_counts"] = {"checked": checked, "failed": len(manifest["scenes"]) - checked}
+            paths = export_record(ACTIVE["out"], ACTIVE["workspace"] / attempt_id)
+            paths += [ACTIVE["workspace"] / "manifest.json", ACTIVE["rules_path"]]
+            receipt["artifacts"] = upload_artifacts(client, bucket, manifest, paths, attempt_id)
+            attach_review(
+                receipt, client, bucket, manifest, ACTIVE["out"], ACTIVE["workspace"] / attempt_id / "state.db",
+                ACTIVE["run_no"], attempt_id,
+            )
+    except Exception as error:
+        receipt["error"] += f"; run record not uploaded: {type(error).__name__}: {error}"
+    try:
+        task_queue.save_result(manifest["job_id"], queue_owner, receipt)
+    except Exception:
+        pass
+
+
 def run_job(client, bucket: str, manifest: dict, resume: bool = False, queue_owner: str | None = None) -> dict:
     if queue_owner is None:
         return _run_job(client, bucket, manifest, resume, queue_owner)
@@ -307,16 +411,34 @@ def run_job(client, bucket: str, manifest: dict, resume: bool = False, queue_own
         raise ValueError("Queued worker manifest has no attempt identity")
     from maritime_tip_cue.config import settings
 
-    interval = max(1, int(settings()["worker"]["queue"]["heartbeat_seconds"]))
+    cfg = settings()["worker"]["queue"]
+    interval = max(1, int(cfg["heartbeat_seconds"]))
+    lease = int(cfg["lease_seconds"])
+    per_scene = cfg.get("max_seconds_per_scene")
+    deadline = time.monotonic() + int(per_scene) * len(manifest["scenes"]) if per_scene else None
     stopped = threading.Event()
 
+    def abort(reason):
+        print(json.dumps({"job_id": manifest["job_id"], "aborted": reason}), file=sys.stderr, flush=True)
+        recorder = threading.Thread(
+            target=record_stop, args=(client, bucket, manifest, queue_owner, attempt_id, reason), daemon=True
+        )
+        recorder.start()
+        recorder.join(timeout=120)
+        os._exit(75)
+
     def maintain_lease():
+        last_renewed = time.monotonic()
         while not stopped.wait(interval):
+            if deadline is not None and time.monotonic() > deadline:
+                abort("maximum runtime exceeded")
             try:
                 if not task_queue.heartbeat(manifest["job_id"], queue_owner, attempt_id):
-                    return
+                    abort("lease lost")
+                last_renewed = time.monotonic()
             except Exception:
-                continue
+                if time.monotonic() - last_renewed > lease:
+                    abort("heartbeat unreachable past lease")
 
     heartbeat_thread = threading.Thread(target=maintain_lease, daemon=True)
     heartbeat_thread.start()
@@ -343,6 +465,8 @@ def list_jobs(client, bucket: str, include_scenes: bool = False) -> list[dict]:
 
 
 def drain_jobs(client, bucket: str) -> list[dict]:
+    if not settings()["worker"]["queue"].get("max_seconds_per_scene"):
+        raise RuntimeError("drain requires worker.queue.max_seconds_per_scene in the worker config")
     results = []
     for job_id in task_queue.ready_ids():
         owner = f"{os.uname().nodename if hasattr(os, 'uname') else 'worker'}:{uuid.uuid4().hex}"
@@ -373,6 +497,7 @@ def main() -> int:
     source.add_argument("--manifest", type=Path)
     source.add_argument("--job-id")
     run_parser.add_argument("--resume", action="store_true")
+    run_parser.add_argument("--unledgered", action="store_true")
     args = parser.parse_args()
     client = boto3.client("s3", region_name=env("AWS_REGION"))
     bucket = env("S3_BUCKET_NAME")
@@ -384,6 +509,8 @@ def main() -> int:
         print(json.dumps({"processed": len(results), "failed": sum(row["status"] != "succeeded" for row in results)}))
         return int(any(row["status"] != "succeeded" for row in results))
     queue_owner = None
+    if args.manifest and not args.unledgered:
+        parser.error("a manifest run is not recorded in the job ledger; use --job-id, or pass --unledgered for a test")
     if args.job_id:
         queue_owner = f"{os.uname().nodename if hasattr(os, 'uname') else 'worker'}:{uuid.uuid4().hex}"
         manifest = task_queue.claim(args.job_id, queue_owner)

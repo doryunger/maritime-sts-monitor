@@ -447,3 +447,42 @@ def list_jobs():
 
 def ready_ids():
     return client().zrangebyscore(keys()["pending"], "-inf", int(time.time() * 1000))
+
+
+def counts():
+    redis = client()
+    k = keys()
+    now_ms = int(time.time() * 1000)
+    return {
+        "ready": redis.zcount(k["pending"], "-inf", now_ms),
+        "retry_wait": redis.zcount(k["pending"], f"({now_ms}", "+inf"),
+        "claimed": redis.scard(k["inflight"]),
+        "completed": redis.scard(k["completed"]),
+        "failed": redis.scard(k["failed"]),
+    }
+
+
+def drop(job_ids):
+    if not job_ids:
+        return
+    redis = client()
+    k = keys()
+    with redis.pipeline(transaction=True) as pipe:
+        for job_id in job_ids:
+            pipe.zrem(k["pending"], job_id)
+            for name in ("failed", "inflight", "recovering", "completed"):
+                pipe.srem(k[name], job_id)
+        pipe.execute()
+
+
+def clear_failed(job_ids):
+    if not job_ids:
+        return
+    redis = client()
+    k = keys()
+    with redis.pipeline(transaction=True) as pipe:
+        for job_id in job_ids:
+            pipe.srem(k["failed"], job_id)
+            pipe.srem(k["inflight"], job_id)
+            pipe.srem(k["recovering"], job_id)
+        pipe.execute()

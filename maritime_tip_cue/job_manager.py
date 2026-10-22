@@ -53,6 +53,8 @@ def cycle(redis, s3, bucket, cfg, events):
             int(queue_cfg["max_retries"]),
             int(queue_cfg["retry_delay_seconds"]),
         )
+        newly_superseded = catalogue.supersede_jobs(db)
+        task_queue.drop([row[0] for row in db.execute("SELECT job_id FROM jobs WHERE status='superseded'")])
         done = {row[0] for row in db.execute("SELECT job_id FROM jobs WHERE status='succeeded'")}
         failed = {row[0] for row in db.execute("SELECT job_id FROM jobs WHERE status='failed'")}
         retry_wait = {
@@ -65,7 +67,7 @@ def cycle(redis, s3, bucket, cfg, events):
         task_queue.sync_terminal(done, failed)
         task_queue.sync_retry_wait(retry_wait)
         queued = catalogue.refresh_queue(db)
-    return {"finalized": completed, "expired_leases": expired, "queued": queued, "errors": errors}
+    return {"finalized": completed, "expired_leases": expired, "queued": queued, "superseded": len(newly_superseded), "errors": errors}
 
 
 def run(interval):
@@ -85,7 +87,6 @@ def run(interval):
 
 
 def scan_and_dispatch_one():
-    redis = task_queue.client()
     cfg = settings()["catalogue"]
     path = database_path()
     with catalogue.controller_lock(path), closing(catalogue.connect(path)) as db:
@@ -98,7 +99,7 @@ def scan_and_dispatch_one():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("run", "once", "scan-one"))
+    parser.add_argument("command", choices=("run", "once", "scan-one", "queue-status"))
     parser.add_argument("--interval", type=int, default=10)
     parser.add_argument("--job-id")
     args = parser.parse_args()
@@ -109,10 +110,12 @@ def main():
     if args.command == "run":
         run(args.interval)
         return 0
+    if args.command == "queue-status":
+        print(json.dumps(task_queue.counts(), sort_keys=True))
+        return 0
     if args.command == "scan-one":
         return scan_and_dispatch_one()
     if args.job_id:
-        redis = task_queue.client()
         path = database_path()
         with catalogue.controller_lock(path), closing(catalogue.connect(path)) as db:
             dispatched = catalogue.refresh_one_job(db, args.job_id)

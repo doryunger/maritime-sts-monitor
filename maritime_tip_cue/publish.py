@@ -4,7 +4,7 @@ import json
 import re
 import sys
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -16,6 +16,7 @@ from PIL import ImageDraw, ImageFont
 from rasterio.warp import transform as warp_transform
 from shapely.geometry import Point
 
+from maritime_tip_cue import task_queue
 from maritime_tip_cue.config import DATA_DIR, env, settings
 from maritime_tip_cue.sts import rules as rules_mod
 from maritime_tip_cue.watch import registry, report, review
@@ -70,6 +71,35 @@ def vessel_positions(source: str, rec: dict, lat: float, lon: float) -> list[tup
         return [p if None not in p else None for p in pts]
     found = rec.get("vessels") or []
     return [(v["lat"], v["lon"]) for v in found[:2]] + [None] * (2 - len(found[:2]))
+
+
+def run_problem(no: int, completed: set[str], allow_legacy: bool) -> str | None:
+    path = registry.folder_of(no)
+    if not (path / "state.db").exists():
+        return "no run database"
+    store = Store(path / "state.db", path)
+    try:
+        row = store.db.execute("select args, status from runs order by run_id desc limit 1").fetchone()
+    finally:
+        store.close()
+    if row is None:
+        return "no run record"
+    if row["status"] != "done":
+        return f"run status is {row['status']}"
+    job_id = json.loads(row["args"] or "{}").get("job_id")
+    if job_id is None:
+        return None if allow_legacy else "not created by a queue job (pass --legacy to publish it deliberately)"
+    if job_id not in completed:
+        return f"job {job_id[:12]} has no succeeded attempt in the ledger"
+    return None
+
+
+def check_runs(runs: list[int], allow_legacy: bool = False) -> None:
+    completed = task_queue.client().smembers(task_queue.keys()["completed"])
+    problems = {no: reason for no in runs if (reason := run_problem(no, completed, allow_legacy))}
+    if problems:
+        detail = "; ".join(f"run {no}: {reason}" for no, reason in sorted(problems.items()))
+        raise SystemExit(f"Refusing to publish, nothing written: {detail}")
 
 
 def collect(no: int) -> list[dict]:
@@ -351,8 +381,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(prog="maritime-sts-monitor publish")
     parser.add_argument("runs", nargs="+", type=int)
     parser.add_argument("--upload", action="store_true")
+    parser.add_argument("--legacy", action="store_true")
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
+    check_runs(args.runs, args.legacy)
     rules = rules_mod.load()
     kept, tables = build(args.runs, rules)
     record_and_upload(tables, args.upload)

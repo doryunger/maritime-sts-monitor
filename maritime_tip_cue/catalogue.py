@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from maritime_tip_cue import hotspots, passes
-from maritime_tip_cue.config import ROOT, env, settings
+from maritime_tip_cue.config import ROOT, settings
 from maritime_tip_cue.sts import rules as rules_mod
 
 
@@ -94,6 +94,7 @@ def connect(path):
         ("retry_count", "INTEGER NOT NULL DEFAULT 0"),
         ("available_utc", "TEXT"),
         ("current_attempt_id", "TEXT"),
+        ("superseded_by", "TEXT"),
     ):
         if name not in job_columns:
             db.execute(f"ALTER TABLE jobs ADD COLUMN {name} {definition}")
@@ -269,7 +270,7 @@ def reconcile_redis(db, redis, s3, bucket, artifacts_prefix, events, max_retries
                     "SELECT status FROM job_attempts WHERE attempt_id=? AND job_id=?",
                     (attempt_id, job_id),
                 ).fetchone()
-                if prior_attempt is not None and prior_attempt["status"] in ("failed", "lease_expired", "succeeded"):
+                if prior_attempt is not None and prior_attempt["status"] in ("failed", "stopped", "lease_expired", "succeeded"):
                     if row["status"] in ("retry_wait", "succeeded", "failed"):
                         final_status = {
                             "retry_wait": "retry",
@@ -291,7 +292,7 @@ def reconcile_redis(db, redis, s3, bucket, artifacts_prefix, events, max_retries
                 raise ValueError("Claim event is missing its SQLite attempt record")
             receipt = None
             status = "failed"
-            error_text = "Worker heartbeat lease expired"
+            error_text = "Worker stopped without a receipt: heartbeat lease expired"
             if event_type == "result":
                 value = redis.get(task_queue.keys()["result"] + job_id + ":" + attempt_id)
                 if value is None:
@@ -302,7 +303,7 @@ def reconcile_redis(db, redis, s3, bucket, artifacts_prefix, events, max_retries
                     or receipt.get("job_id") != job_id
                     or receipt.get("attempt_id") != attempt_id
                     or receipt.get("manifest_sha256") != row["manifest_sha256"]
-                    or receipt.get("status") not in ("succeeded", "failed")
+                    or receipt.get("status") not in ("succeeded", "failed", "stopped")
                     or not isinstance(receipt.get("artifacts"), list)
                 ):
                     raise ValueError("Invalid Redis attempt receipt")
@@ -366,7 +367,7 @@ def reconcile_redis(db, redis, s3, bucket, artifacts_prefix, events, max_retries
                     db.execute(
                         "UPDATE job_attempts SET status=?,finished_utc=?,error=?,receipt_json=? WHERE attempt_id=?",
                         (
-                            "failed" if event_type == "result" else "lease_expired",
+                            "stopped" if event_type == "lease_expired" or status == "stopped" else "failed",
                             utc_now(),
                             error_text,
                             receipt_text,
@@ -398,6 +399,162 @@ def reconcile_redis(db, redis, s3, bucket, artifacts_prefix, events, max_retries
             errors.append({"phase": "reconcile", "job_id": job_id, "attempt_id": attempt_id, "error": str(error)})
             raise
     return finalized, errors
+
+
+def scene_keys(manifest_json):
+    return frozenset((row["site"], row["source"], row["scene"]) for row in json.loads(manifest_json)["scenes"])
+
+
+def supersede_jobs(db):
+    rows = db.execute("SELECT job_id,status,created_utc,manifest_json FROM jobs").fetchall()
+    keys = {row["job_id"]: scene_keys(row["manifest_json"]) for row in rows}
+    succeeded = [row for row in rows if row["status"] == "succeeded"]
+    covered = {}
+    for row in succeeded:
+        for key in keys[row["job_id"]]:
+            covered.setdefault(key, row["job_id"])
+    open_states = ("pending", "dispatched", "retry_wait")
+    active = sorted((row for row in rows if row["status"] in open_states), key=lambda r: (r["created_utc"], r["job_id"]))
+    newest = {}
+    for row in active:
+        newest[keys[row["job_id"]]] = row["job_id"]
+    running = {
+        keys[row["job_id"]]: row["job_id"] for row in rows if row["status"] == "running"
+    }
+    result = {}
+    for row in rows:
+        if row["status"] not in open_states + ("failed",):
+            continue
+        job_keys = keys[row["job_id"]]
+        owners = {covered.get(key) for key in job_keys}
+        if None not in owners:
+            result[row["job_id"]] = sorted(owners)[0]
+        elif row["status"] != "failed" and newest[job_keys] != row["job_id"]:
+            result[row["job_id"]] = newest[job_keys]
+        elif row["status"] == "failed" and (job_keys in newest or job_keys in running):
+            result[row["job_id"]] = newest.get(job_keys) or running[job_keys]
+    with db:
+        for job_id, by in result.items():
+            db.execute(
+                "UPDATE jobs SET status='superseded',superseded_by=?,current_attempt_id=NULL WHERE job_id=?",
+                (by, job_id),
+            )
+    return result
+
+
+OPEN_STATES = ("pending", "dispatched", "retry_wait")
+
+
+def audit(db, redis=None):
+    jobs = db.execute("SELECT job_id,status,manifest_json FROM jobs").fetchall()
+    by_scene = {}
+    for job in jobs:
+        for key in scene_keys(job["manifest_json"]):
+            by_scene.setdefault(key, []).append((job["job_id"], job["status"]))
+    baseline = {
+        (row["site"], row["source"]): row["baseline_utc"] for row in db.execute("SELECT * FROM channels")
+    }
+    seen = {}
+    for row in db.execute("SELECT site,source,scene,MIN(first_discovered_utc) first FROM observations GROUP BY 1,2,3"):
+        seen[(row["site"], row["source"], row["scene"])] = row["first"]
+    states = {}
+    violations = []
+    for key in sorted(set(seen) | set(by_scene)):
+        statuses = [status for _, status in by_scene.get(key, [])]
+        if "succeeded" in statuses:
+            state = "completed"
+        elif "running" in statuses:
+            state = "running"
+        elif any(status in OPEN_STATES for status in statuses):
+            state = "queued"
+        elif "failed" in statuses:
+            state = "failed"
+        elif statuses:
+            state = "superseded_only"
+        elif key in seen and seen[key] <= baseline.get(key[:2], ""):
+            state = "baseline"
+        else:
+            state = "orphan"
+        states[key] = state
+        open_jobs = [job_id for job_id, status in by_scene.get(key, []) if status in OPEN_STATES + ("running",)]
+        if state == "orphan":
+            violations.append({"scene": key, "problem": "observed after baseline but in no job"})
+        if state == "superseded_only":
+            violations.append({"scene": key, "problem": "every job for it is superseded"})
+        if state == "completed" and open_jobs:
+            violations.append({"scene": key, "problem": "completed but still in an open job", "jobs": open_jobs})
+        if len(open_jobs) > 1:
+            violations.append({"scene": key, "problem": "in more than one open job", "jobs": open_jobs})
+    summary = {}
+    for (site, source, _), state in states.items():
+        counts = summary.setdefault(f"{site}/{source}", {})
+        counts[state] = counts.get(state, 0) + 1
+    result = {"scenes": summary, "violations": violations}
+    if redis is not None:
+        from maritime_tip_cue import task_queue
+
+        k = task_queue.keys()
+        expected = {
+            "completed": {j["job_id"] for j in jobs if j["status"] == "succeeded"},
+            "failed": {j["job_id"] for j in jobs if j["status"] == "failed"},
+            "inflight": {j["job_id"] for j in jobs if j["status"] == "running"},
+            "pending": {j["job_id"] for j in jobs if j["status"] in OPEN_STATES},
+        }
+        actual = {
+            "completed": set(redis.smembers(k["completed"])),
+            "failed": set(redis.smembers(k["failed"])),
+            "inflight": set(redis.smembers(k["inflight"])),
+            "pending": set(redis.zrange(k["pending"], 0, -1)),
+        }
+        drift = {}
+        for name in expected:
+            extra, missing = sorted(actual[name] - expected[name]), sorted(expected[name] - actual[name])
+            if name == "pending":
+                missing = [j for j in missing if (job := next(x for x in jobs if x["job_id"] == j)) and job["status"] != "retry_wait"]
+            if extra or missing:
+                drift[name] = {"in_redis_only": extra, "in_ledger_only": missing}
+        result["redis_drift"] = drift
+    return result
+
+
+def ledger(db):
+    jobs = []
+    for row in db.execute(
+        "SELECT job_id,site,source,status,created_utc,retry_count,available_utc,superseded_by,error,manifest_json "
+        "FROM jobs ORDER BY created_utc DESC,job_id"
+    ):
+        manifest = json.loads(row["manifest_json"])
+        attempts = [
+            {
+                "attempt_no": attempt["attempt_no"],
+                "verdict": attempt["status"],
+                "finished_utc": attempt["finished_utc"],
+                "error": attempt["error"],
+            }
+            for attempt in db.execute(
+                "SELECT attempt_no,status,finished_utc,error FROM job_attempts WHERE job_id=? ORDER BY attempt_no",
+                (row["job_id"],),
+            )
+        ]
+        jobs.append(
+            {
+                "job_id": row["job_id"],
+                "site": row["site"],
+                "source": row["source"],
+                "status": row["status"],
+                "created_utc": row["created_utc"],
+                "retry_count": row["retry_count"],
+                "available_utc": row["available_utc"],
+                "superseded_by": row["superseded_by"],
+                "error": row["error"],
+                "scenes": [
+                    {"scene_id": scene["scene"], "source": scene["source"], "captured": scene["time"]}
+                    for scene in manifest["scenes"]
+                ],
+                "attempts": attempts,
+            }
+        )
+    return {"jobs": jobs}
 
 
 def refresh_queue(db):
@@ -498,6 +655,21 @@ def job_status(db, job_id):
         "retry_count": row["retry_count"],
         "available_utc": row["available_utc"],
         "scenes": [scene["scene"] for scene in manifest["scenes"]],
+        "attempts": [
+            {
+                "attempt_no": attempt["attempt_no"],
+                "owner": attempt["owner"],
+                "verdict": attempt["status"],
+                "started_utc": attempt["started_utc"],
+                "finished_utc": attempt["finished_utc"],
+                "error": attempt["error"],
+            }
+            for attempt in db.execute(
+                "SELECT attempt_no,owner,status,started_utc,finished_utc,error FROM job_attempts "
+                "WHERE job_id=? ORDER BY attempt_no",
+                (job_id,),
+            )
+        ],
     }
 
 
@@ -651,9 +823,25 @@ def status(db):
     return result
 
 
+def requeue_failed(db, job_id=None):
+    from maritime_tip_cue import task_queue
+
+    query = "SELECT job_id FROM jobs WHERE status='failed'" + (" AND job_id=?" if job_id else "")
+    ids = [row[0] for row in db.execute(query, (job_id,) if job_id else ())]
+    with db:
+        for failed_id in ids:
+            db.execute(
+                "UPDATE jobs SET status='pending',retry_count=0,available_utc=NULL,error=NULL,"
+                "current_attempt_id=NULL WHERE job_id=?",
+                (failed_id,),
+            )
+    task_queue.clear_failed(ids)
+    return {"requeued": ids}
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("scan", "scan-one", "status", "jobs", "job-status", "redis-requeue-stale"))
+    parser.add_argument("command", choices=("scan", "scan-one", "status", "jobs", "job-status", "redis-requeue-stale", "requeue-failed", "audit", "ledger"))
     parser.add_argument("--backfill", action="store_true")
     parser.add_argument("--single-scene", action="store_true")
     parser.add_argument("--limit", type=int, default=20)
@@ -663,8 +851,8 @@ def main():
         parser.error("--limit must be positive")
     if args.single_scene and args.command != "jobs":
         parser.error("--single-scene is only valid with jobs")
-    if args.job_id and args.command != "job-status":
-        parser.error("--job-id is only valid with job-status")
+    if args.job_id and args.command not in ("job-status", "requeue-failed"):
+        parser.error("--job-id is only valid with job-status and requeue-failed")
     if args.command == "job-status" and not args.job_id:
         parser.error("job-status requires --job-id")
     if args.command == "scan-one" and args.backfill:
@@ -677,6 +865,12 @@ def main():
     cfg = settings()["catalogue"]
     path = Path(cfg["database"])
     path = path if path.is_absolute() else ROOT / path
+    if args.command == "ledger":
+        readonly = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+        readonly.row_factory = sqlite3.Row
+        with closing(readonly) as db:
+            print(json.dumps(ledger(db), sort_keys=True))
+        return 0
     with controller_lock(path), closing(connect(path)) as db:
         if args.command in ("scan", "scan-one"):
             result = scan(db, cfg, args.backfill, args.command == "scan-one")
@@ -686,6 +880,12 @@ def main():
             result = pending_jobs(db, args.single_scene, args.limit)
         elif args.command == "job-status":
             result = job_status(db, args.job_id)
+        elif args.command == "audit":
+            from maritime_tip_cue import task_queue
+
+            result = audit(db, task_queue.client())
+        elif args.command == "requeue-failed":
+            result = requeue_failed(db, args.job_id)
         else:
             result = status(db)
     print(json.dumps(result, sort_keys=True))

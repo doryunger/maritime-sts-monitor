@@ -81,6 +81,55 @@ sudo python3 deploy/catalogue/run-one-scene.py --job-id <job_id>
 The job manager rejects unknown, multi-scene, claimed, completed or not-yet-retryable jobs before the wake
 status handler is polled.
 
+## Automatic worker dispatch
+
+`sts-worker-dispatcher.timer` runs `dispatch_worker.py` every ten minutes on the Ubuntu host. It reads
+`queue-status` from the job manager and does nothing, without touching the wake handler, unless at least one
+job is ready (delayed retries do not count). When jobs are ready it holds `data/dispatcher/dispatcher.lock`,
+wakes EC2 through the existing handler, and runs `worker drain` over SSH in a named container with a remote
+`timeout`, removing the container afterwards. It stops polling the handler when the drain ends, so the wake
+service's idle policy stops the instance.
+
+Safeguards, all in `data/dispatcher/state.json` or environment settings:
+
+- `DISPATCH_MAX_SESSION_SECONDS` (default 14400) bounds one session; the SSH client, the remote container and
+  the local wake script are all terminated at the limit.
+- `DISPATCH_MAX_NO_PROGRESS_SESSIONS` (default 3): that many consecutive sessions that complete no job open a
+  breaker and the instance is no longer woken; inspect the failures, then `dispatch_worker.py --reset`.
+- `DISPATCH_MAX_SECONDS_PER_DAY` (default 43200) caps worker time over a rolling 24 hours.
+- `--pause` and `--resume` create or remove `data/dispatcher/paused`; pause it while processing locally.
+- `--dry-run` prints the decision and queue counts and never wakes the instance.
+- Inside the container the worker aborts on a lost lease, on Redis being unreachable for longer than the lease,
+  and past `worker.queue.max_seconds_per_scene` times the job's scene count (set only in the worker config).
+
+`job_manager queue-status` prints the Redis counts the dispatcher uses. `catalogue requeue-failed [--job-id ...]`
+returns terminal failed jobs to pending with a fresh retry budget after their cause is fixed.
+
+Install: copy both units to `/etc/systemd/system/`, `systemctl daemon-reload`,
+`systemctl enable --now sts-worker-dispatcher.timer`. Rebuild the worker image on EC2 first.
+
+### Pre-deployment test plan
+
+Run in order on the Ubuntu host with `sudo python3 deploy/catalogue/dispatch_worker.py <flag>`; stop at the first
+failure. None of steps 1-3 wakes EC2.
+
+1. CI and local unit tests pass (`tests/test_dispatcher.py`, `tests/test_task_queue.py`, `tests/test_requeue_and_guards.py`).
+2. `--preflight`: settings load, key permissions are 600, Docker and the manager image answer `queue-status`, the state
+   directory is writable. Expect one JSON line with the queue counts and `breaker` 0.
+3. `--dry-run`: expect `would-run` while jobs are ready and nothing is claimed, `skip` with the reason otherwise.
+   Check `--pause` gives `paused` and `--resume` clears it. Also `catalogue audit` must show no violations or drift.
+4. EC2 prerequisites, checked by hand: worker image rebuilt from this commit (the run.py fix and abort guards);
+   `config.local.yaml` on EC2 has `worker.queue.max_seconds_per_scene`, since `worker drain` refuses without it;
+   `nvidia-smi`, `/opt/ai2-models`, 3 GB free disk, instance profile S3 access.
+5. Kill drill (wakes EC2): with one real ready job, run with `DISPATCH_MAX_SESSION_SECONDS=120`. Expect exit 124, no
+   `sts-worker-drain` container left on EC2 (`docker ps`), the attempt recorded as `stopped` in `catalogue job-status`,
+   the job back to `retry_wait`, and EC2 stopping by the wake service's idle policy. This spends one retry.
+6. Live drain with defaults over one S2 and one S1 job from different hot spots: both `succeeded`, five artifacts
+   plus `state.db` and `events.jsonl` under each attempt prefix, `progress` equal to the jobs finished, and
+   `catalogue audit` clean afterwards. Repeat until every hot spot and both sensors have succeeded once.
+7. Only then `systemctl enable --now sts-worker-dispatcher.timer`, and pause the dispatcher whenever the local
+   runner is processing (it also skips while any job is claimed).
+
 ## Queue operation
 
 The manager records every attempt in SQLite. Workers heartbeat every configured interval while holding a

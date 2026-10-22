@@ -1,24 +1,3 @@
-regions:
-  gibraltar:
-    south: 34.5
-    west: -7.5
-    north: 37.5
-    east: -1.0
-  bab_el_mandeb:
-    south: 11.0
-    west: 41.5
-    north: 16.5
-    east: 45.0
-  hormuz:
-    south: 24.0
-    west: 54.0
-    north: 27.5
-    east: 58.5
-
-track_retention_hours: 72
-coverage_cell_deg: 0.1
-coverage_window_hours: 24
-
 s3:
   hotspots_key: hotspots/sts_hotspots.json
   findings_prefix: sts/
@@ -54,6 +33,7 @@ catalogue:
   results_prefix: catalogue/results/
   claims_prefix: catalogue/claims/
   artifacts_prefix: catalogue/artifacts/
+  reviews_prefix: catalogue/reviews/
 
 worker:
   path: data/worker

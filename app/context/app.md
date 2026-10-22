@@ -3,17 +3,16 @@
 Local web app for looking at runs and doing QA, in place of the per-run static report and QA pages.
 `app/start.cmd` serves it at http://127.0.0.1:8765/ (`config.yaml` `app`); the first start builds the frontend
 with npm. On the dev PC it starts hidden at login from
-`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\sts-runs-app.vbs`. Both startup paths establish
-the SSH tunnel to private Redis before starting the server. Tunnel settings and the Redis target stay in ignored
-local files. After a frontend change run `npm run build` and reload; after a backend change restart the app.
+`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\sts-runs-app.vbs`. The server starts on its own and
+never waits for a network connection: the Jobs page reads the ledger over SSH when it is opened, and shows an error
+instead of failing to start when the control host is unreachable. After a frontend change run `npm run build` and reload; after a backend change restart the app.
 
 ## backend
-`queue.py` reads shared Redis jobs on request for `/api/jobs`; it never claims or changes jobs. Local scene
-status is read directly from registered SQLite runs without rendering QA reports. Matching uses area, sensor
-and scene ID only, so it is advisory: older local runs can have different boundaries or rules and cannot serve
-as completion receipts. A failed Redis read returns an unavailable queue, never an empty one. The local PC has
-no private VPC route, so `redis_tunnel.py` forwards a loopback port through the saved SSH connection to the
-control host. The app uses this tunnel without exposing Redis publicly.
+`ledger.py` runs the read-only `catalogue ledger` command on the control host over SSH (cached 20 s) and
+`queue.py` serves it for `/api/jobs`: every job with its ledger status, superseded-by link, attempts and verdicts.
+The SQLite ledger there is the only source of truth; local runs, Redis and this PC's registry are not consulted for
+job state, so a local run never makes a job look done. An unreachable control host returns an error, never an
+empty list. SSH details come from the ignored `data/secrets/control_host.json` (optional `project_dir`).
 
 QA saves resolve IDs against the complete persisted hull table, including hulls outside the sampled review cards.
 The single-hull sample changes as processing adds detections or flags reserve sample slots; validating against

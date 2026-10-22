@@ -33,7 +33,7 @@ def ensure_tunnel():
         pass
     secret_path = ROOT / "data" / "secrets" / "control_host.json"
     control = json.loads(secret_path.read_text(encoding="utf-8-sig"))
-    identity = Path(control["identity_file"])
+    identity = Path(os.path.expandvars(os.path.expanduser(control["identity_file"])))
     if not identity.is_absolute():
         identity = ROOT / identity
     ssh = shutil.which("ssh.exe") or shutil.which("ssh")

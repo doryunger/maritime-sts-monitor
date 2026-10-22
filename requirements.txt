@@ -19,3 +19,4 @@ matplotlib
 adbc-driver-gizmosql
 pyarrow
 pandas
+fakeredis[lua]

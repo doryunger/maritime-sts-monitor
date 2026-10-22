@@ -58,27 +58,26 @@ def stage_one(store: Store, scene: dict, site: dict, shore: Shore, rules: dict, 
     if work.exists():
         raise RuntimeError(f"stale temporary scene workspace remains: {work}")
     work.mkdir(parents=True)
-    try:
-        secs, windows, features = detector.detect(source, scene, rules, work, tuple(site["bbox"]), log)
-        dets, counts = common.prepare(features, source, site, shore, rules, structures)
-        scratch = work / "scratch"
-        if source == "s2":
-            cands = s2.candidates(dets, rules)
-            index = s2.extract(scratch, cands, scene, rules, folder / "s2_windows", log) if cands else []
-            data = {"dets": dets, "index": index, "windows": windows}
-            info = {"dets": counts, "candidates": len(cands)}
-        else:
-            wins = s1.load_windows(scratch, windows)
-            pixel = rules["s1_outline"]["pixel_m"]
-            placed, outside = s1.place(dets, wins, pixel)
-            counts["outside_windows"] = outside
-            objs = s1.group_objects(wins, placed, rules["s1_objects"], pixel)
-            big = [o for o in objs if o["length_m"] >= rules["s1_objects"]["min_length_m"]]
-            saved = s1.save_chips(folder / "chips", big, placed, wins, rules)
-            data = {"dets": placed, "objects": saved, "windows": windows}
-            info = {"dets": counts, "objects": len(objs), "candidates": len(big)}
-        store.save_detected(scene, features, info, round(secs), data)
-        return info | {"detector_s": round(secs)}
+    secs, windows, features = detector.detect(source, scene, rules, work, tuple(site["bbox"]), log)
+    dets, counts = common.prepare(features, source, site, shore, rules, structures)
+    scratch = work / "scratch"
+    if source == "s2":
+        cands = s2.candidates(dets, rules)
+        index = s2.extract(scratch, cands, scene, rules, folder / "s2_windows", log) if cands else []
+        data = {"dets": dets, "index": index, "windows": windows}
+        info = {"dets": counts, "candidates": len(cands)}
+    else:
+        wins = s1.load_windows(scratch, windows)
+        pixel = rules["s1_outline"]["pixel_m"]
+        placed, outside = s1.place(dets, wins, pixel)
+        counts["outside_windows"] = outside
+        objs = s1.group_objects(wins, placed, rules["s1_objects"], pixel)
+        big = [o for o in objs if o["length_m"] >= rules["s1_objects"]["min_length_m"]]
+        saved = s1.save_chips(folder / "chips", big, placed, wins, rules)
+        data = {"dets": placed, "objects": saved, "windows": windows}
+        info = {"dets": counts, "objects": len(objs), "candidates": len(big)}
+    store.save_detected(scene, features, info, round(secs), data)
+    return info | {"detector_s": round(secs)}
 
 
 def stage_two_s2(store: Store, scene: dict, folder: Path, rules: dict, data: dict) -> dict:
@@ -222,7 +221,10 @@ def main() -> int:
     parser.add_argument("--db")
     parser.add_argument("--sources", default="s1,s2")
     parser.add_argument("--reanalyse", action="store_true")
+    parser.add_argument("--unledgered", action="store_true")
     args = parser.parse_args()
+    if not args.unledgered:
+        parser.error("direct runs are not recorded in the job ledger; use the queue, or pass --unledgered for an experiment")
     sys.stdout.reconfigure(encoding="utf-8")
     rules = rules_mod.load()
     site = next(s for s in hotspots.load() if s["name"] == args.site)

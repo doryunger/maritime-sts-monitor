@@ -89,3 +89,62 @@ default is `config.yaml`. An EC2 installation needs its Linux detector environme
 paths configured there, plus protected S3/AIS credentials and the pinned AIS certificate. Settings and
 runtime assets are local to that installation; the catalogue job supplies detection rules, not deployment
 paths or credentials. No EC2 start/stop calls or remote command transport are implemented by this component.
+
+## Worker dispatcher
+
+Progress is measured as growth of the Redis `completed` set, not exit codes: a drain can exit 0 after only
+failing jobs. Three consecutive sessions with no growth open the breaker, so a systematic fault (bad image,
+unreachable archive) costs at most three bounded sessions instead of waking the instance every ten minutes
+indefinitely. Termination is layered because killing the SSH client alone leaves the remote container running:
+remote `timeout` plus a named container removed before and after, the local wake script killed at the session
+limit, and the worker's own abort inside the container. The local launcher claims from the same Redis, so
+local and EC2 work never overlap on a job; pause the dispatcher anyway to keep EC2 from being woken for jobs
+the local machine is about to take. `max_seconds_per_scene` is left unset in the root config so local runs
+are not killed by a GPU-sized limit.
+
+Scenes processed in the earlier hand-run passes (runs 2-9) are not in the catalogue ledger: 29 of the 47
+scenes in the ready and failed jobs on 2026-10-22 already have a `checked` row in a local run. Rerunning them
+through the queue is what writes their receipts, so the ledger and Redis stay the single record.
+
+## Attempt verdicts and run records
+
+Every attempt ends as exactly one of `succeeded`, `failed` or `stopped`, stored in `job_attempts.status` and
+shown by `catalogue job-status`. `stopped` means the attempt did not finish by its own result: the worker
+aborted on a lost lease, unreachable Redis or the runtime limit (it writes a `stopped` receipt first when the
+lease is still valid), or it died and its lease expired with no receipt. A job is `failed` only after its
+retry budget is spent. Whatever the verdict, the worker uploads the run record under the attempt prefix:
+`state.db` snapshot (runs, scenes, hulls, events) and `events.jsonl`, plus manifest and rules; the Parquets
+are added on success. This is the same per-run record the local `data/runs/N` folders hold. Runs 1-9 predate
+the ledger and stay as legacy; new runs are only created through the queue (`watch.run` refuses without
+`--unledgered`).
+
+## Scenes, not jobs, are the unit of work
+
+A job id is the hash of its manifest, which includes the rules, so a rules change makes the next scan create a
+second job for every scene still unfinished (found 2026-10-22: 12 scenes with two jobs, one per rules hash).
+`catalogue.supersede_jobs` runs each manager cycle and closes the extras as `superseded` with `superseded_by`
+set: an open or failed job whose scenes are all covered by a succeeded job; an open job with a newer open job
+over the same scenes (newest rules win); a failed job with an open or running twin. Partially overlapping
+multi-scene jobs and running jobs are never touched. Superseded jobs leave Redis and are not requeued; their
+attempt history stays. Failed jobs with no covering job stay failed; `requeue-failed` is for those and never
+resurrects a superseded one.
+
+`catalogue audit` is the check that the ledger is unambiguous. Every observed scene gets one state: `completed`,
+`running`, `queued`, `failed`, `baseline` (seen at the first scan, never queued by design), or a violation
+(`orphan`: observed after baseline but in no job; completed yet still in an open job; in more than one open
+job; every job superseded). It also lists Redis drift against the SQLite statuses. Observation `version` is a
+hash of the site and rules, so a rules change makes a catalogue scan see every scene as new again; the
+supersede step is what stops that from re-running completed scenes. Reprocessing under new rules must be a
+deliberate action, not a side effect of a scan.
+
+## Review data on S3
+
+The worker also uploads each attempt's run folder to `catalogue/reviews/<job_id>/<attempt>/`, whatever the verdict:
+`review.png`, `scenes/**` (the S1 chips and S2 windows the app renders QA cards from), a `state.db` snapshot and an
+`index.json` listing every file with size and sha256. `cache/` and `work/` are left out, and the live database and
+its WAL files are replaced by the snapshot. A run folder is a few MB. The receipt carries `review` (prefix, index,
+file count) or `review_error`; a failed review upload never fails the job, because the Parquets and run record are
+the result and the review data can be regenerated from the run record only by rerunning. Run numbers are per
+machine, so the S3 layout is keyed by job and attempt, never by run number. The app will later list attempts from
+this prefix and fetch files on demand. The EC2 role needs `s3:PutObject` on `catalogue/reviews/*` (worker README).
+

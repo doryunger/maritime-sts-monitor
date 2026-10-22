@@ -74,6 +74,12 @@ the bucket configured in `.env` and attach this policy to the EC2 role:
       "Resource": "arn:aws:s3:::<S3_BUCKET_NAME>/catalogue/artifacts/*"
     },
     {
+      "Sid": "WriteWorkerRunReviewData",
+      "Effect": "Allow",
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::<S3_BUCKET_NAME>/catalogue/reviews/*"
+    },
+    {
       "Sid": "ReadSentinel1Scenes",
       "Effect": "Allow",
       "Action": "s3:GetObject",
