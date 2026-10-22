@@ -91,6 +91,7 @@ from rslp.main import main
 from rslp.utils.mp import init_mp
 
 MODULE = importlib.import_module(f"rslp.{spec['project']}.predict_pipeline")
+rslearn_utils = importlib.import_module("rslp.utils.rslearn")
 SETUP = "setup_dataset_with_image_files" if spec["project"] == "sentinel1_vessels" else "setup_dataset_with_scene_ids"
 DETECTOR_GROUPS = ("detector_predict", "default")
 RECORDED = []
