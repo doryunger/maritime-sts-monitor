@@ -11,7 +11,6 @@ from pathlib import Path
 
 import torch
 import yaml
-from upath import UPath
 
 CUDA_STOP = threading.Event()
 RUNNER_OWNER = multiprocessing.current_process().name == "MainProcess"
@@ -91,7 +90,6 @@ from rslp.main import main
 from rslp.utils.mp import init_mp
 
 MODULE = importlib.import_module(f"rslp.{spec['project']}.predict_pipeline")
-rslearn_utils = importlib.import_module("rslp.utils.rslearn")
 SETUP = "setup_dataset_with_image_files" if spec["project"] == "sentinel1_vessels" else "setup_dataset_with_scene_ids"
 DETECTOR_GROUPS = ("detector_predict", "default")
 RECORDED = []
@@ -102,13 +100,6 @@ def model_patches() -> dict:
     size = config["patch_size"]
     ratio = config.get("overlap_ratio", 0)
     return {"patch_size": size, "overlap_ratio": ratio, "overlap_pixels": round(size * ratio)}
-
-
-def route_model_management_dir(model_cfg_fname: str, ds_path: UPath, groups=None, extra_args=None) -> None:
-    model_management = Path(spec["windows_path"]).parent / "model_management"
-    args = list(extra_args or [])
-    args += ["--management_dir", str(model_management)]
-    ORIGINAL_RUN_MODEL_PREDICT(model_cfg_fname, ds_path, groups=groups or [], extra_args=args)
 
 
 def write_windows() -> None:
@@ -126,9 +117,6 @@ class RecordingWindow(MODULE.Window):
 
 
 MODULE.Window = RecordingWindow
-ORIGINAL_RUN_MODEL_PREDICT = MODULE.run_model_predict
-rslearn_utils.run_model_predict = route_model_management_dir
-MODULE.run_model_predict = route_model_management_dir
 
 
 def narrowed(*args, **kwargs):
