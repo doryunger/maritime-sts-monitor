@@ -520,22 +520,31 @@ def audit(db, redis=None):
 def ledger(db):
     jobs = []
     for row in db.execute(
-        "SELECT job_id,site,source,status,created_utc,retry_count,available_utc,superseded_by,error,manifest_json "
-        "FROM jobs ORDER BY created_utc DESC,job_id"
+        "SELECT job_id,site,source,status,created_utc,dispatched_utc,completed_utc,retry_count,available_utc,"
+        "superseded_by,error,manifest_json FROM jobs ORDER BY created_utc DESC,job_id"
     ):
         manifest = json.loads(row["manifest_json"])
         attempts = [
             {
                 "attempt_no": attempt["attempt_no"],
                 "verdict": attempt["status"],
+                "owner": attempt["owner"],
+                "started_utc": attempt["started_utc"],
                 "finished_utc": attempt["finished_utc"],
                 "error": attempt["error"],
             }
             for attempt in db.execute(
-                "SELECT attempt_no,status,finished_utc,error FROM job_attempts WHERE job_id=? ORDER BY attempt_no",
+                "SELECT attempt_no,status,owner,started_utc,finished_utc,error FROM job_attempts "
+                "WHERE job_id=? ORDER BY attempt_no",
                 (row["job_id"],),
             )
         ]
+        stopped = [a for a in attempts if a["verdict"] in ("failed", "stopped", "lease_expired")]
+        before_requeue = max(0, len(stopped) - row["retry_count"]) if row["status"] in OPEN_STATES else 0
+        for attempt in attempts[:before_requeue]:
+            attempt["before_requeue"] = True
+        moments = [row["created_utc"], row["dispatched_utc"], row["completed_utc"]]
+        moments += [a["started_utc"] for a in attempts] + [a["finished_utc"] for a in attempts]
         jobs.append(
             {
                 "job_id": row["job_id"],
@@ -547,6 +556,7 @@ def ledger(db):
                 "available_utc": row["available_utc"],
                 "superseded_by": row["superseded_by"],
                 "error": row["error"],
+                "last_update_utc": max(m for m in moments if m),
                 "scenes": [
                     {"scene_id": scene["scene"], "source": scene["source"], "captured": scene["time"]}
                     for scene in manifest["scenes"]

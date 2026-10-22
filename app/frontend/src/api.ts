@@ -43,8 +43,11 @@ export interface QueueJob {
   site: string;
   status: string;
   created_utc: string;
+  last_update_utc: string;
+  source: string;
+  error: string | null;
   superseded_by: string | null;
-  attempts: { attempt_no: number; verdict: string; finished_utc: string | null; error: string | null }[];
+  attempts: { attempt_no: number; verdict: string; worker: string | null; finished_utc: string | null; error: string | null; before_requeue: boolean }[];
   scene_details: { scene_id: string; source: string; captured: string; local_runs: LocalScene[] }[];
 }
 
