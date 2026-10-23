@@ -19,7 +19,6 @@ COPY deploy/gpu-worker/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 ARG RSLEARN_VERSION=0.1.17
 ARG DETECTOR_REVISION=9cfaf6e9a13fcb993c687b591eb3f71df7c144c5
-ENV STS_DETECTOR_REVISION=${DETECTOR_REVISION}
 RUN pip install --no-cache-dir "rslearn[extra]==${RSLEARN_VERSION}"
 RUN wget -q "https://codeload.github.com/allenai/rslearn_projects/tar.gz/${DETECTOR_REVISION}" -O /tmp/rslearn-projects.tar.gz && mkdir -p /opt/ai2-detectors/rslearn_projects && tar -xzf /tmp/rslearn-projects.tar.gz -C /opt/ai2-detectors/rslearn_projects --strip-components=1 && rm /tmp/rslearn-projects.tar.gz && printf 'rslearn==%s\n' "${RSLEARN_VERSION}" > /tmp/constraints.txt && pip install --no-cache-dir -c /tmp/constraints.txt -e '/opt/ai2-detectors/rslearn_projects[extra]'
 COPY maritime_tip_cue /app/maritime_tip_cue
@@ -28,6 +27,7 @@ COPY rules /app/rules
 RUN mkdir -p /app/data
 ARG GIT_COMMIT=
 ENV STS_GIT_COMMIT=${GIT_COMMIT}
+ENV STS_DETECTOR_REVISION=${DETECTOR_REVISION}
 ENV STS_CONFIG_PATH=/app/config.local.yaml
 COPY --from=model_weights /opt/ai2-models /opt/ai2-models
 RUN python -c "import torch; import rslp.sentinel1_vessels.predict_pipeline; import rslp.sentinel2_vessels.predict_pipeline; import rslp.vessel_attribute.train; assert torch.__version__.startswith('2.7.0')"
