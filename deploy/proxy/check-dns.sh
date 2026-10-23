@@ -11,7 +11,7 @@ for name in "$APP_DOMAIN" "$VIEWER_DOMAIN"; do
     if [[ " $resolved " == *" $public_ip "* ]]; then
         echo "ok   $name -> $public_ip"
     else
-        echo "FAIL $name resolves to '${resolved}' but this host is $public_ip"
+        echo "FAIL $name resolves to '${resolved:-nothing}' but this host is $public_ip"
         status=1
     fi
 done
