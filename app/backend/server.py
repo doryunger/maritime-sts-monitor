@@ -9,12 +9,13 @@ from fastapi import Body, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.backend import queue, runs, s3runs
+from app.backend import auth, queue, runs, s3runs
 from maritime_tip_cue.config import settings
 
 DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
 app = FastAPI(title="STS runs")
+auth.install(app)
 
 
 def known(no: int) -> None:
@@ -88,7 +89,9 @@ def main() -> int:
         sys.stdout = sys.stderr = log
     if not DIST.exists():
         print("frontend not built: cd app/frontend && npm install && npm run build", flush=True)
-    uvicorn.run(app, host=cfg["host"], port=int(os.environ.get("STS_APP_PORT") or cfg["port"]), log_level="warning")
+    host = os.environ.get("STS_APP_HOST") or cfg["host"]
+    auth.check_exposure(host)
+    uvicorn.run(app, host=host, port=int(os.environ.get("STS_APP_PORT") or cfg["port"]), log_level="warning")
     return 0
 
 

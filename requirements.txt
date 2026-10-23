@@ -21,3 +21,4 @@ pyarrow
 pandas
 fakeredis[lua]
 tzdata
+httpx
