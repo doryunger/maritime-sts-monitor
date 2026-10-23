@@ -7,7 +7,8 @@ set +a
 public_ip="$(curl -fsS --max-time 10 https://checkip.amazonaws.com | tr -d '[:space:]')"
 status=0
 for name in "$APP_DOMAIN" "$VIEWER_DOMAIN"; do
-    resolved="$( (getent ahostsv4 "$name" || true) | awk '{print $1}' | sort -u | tr '\n' ' ')"
+    resolved="$(curl -fsS --max-time 10 -H 'accept: application/dns-json' "https://cloudflare-dns.com/dns-query?name=${name}&type=A" \
+        | python3 -c 'import sys,json; print(" ".join(sorted(a["data"] for a in json.load(sys.stdin).get("Answer", []) if a.get("type") == 1)))' || true)"
     if [[ " $resolved " == *" $public_ip "* ]]; then
         echo "ok   $name -> $public_ip"
     else

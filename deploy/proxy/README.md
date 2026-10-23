@@ -16,7 +16,7 @@ live in `data/proxy/` (ignored by Git).
 ```bash
 cd /home/ubuntu/maritime-sts-monitor
 cp deploy/proxy/proxy.env.example deploy/proxy/proxy.env   # set APP_DOMAIN, VIEWER_DOMAIN
-bash deploy/proxy/check-dns.sh                            # both names must resolve to this host
+bash deploy/proxy/check-dns.sh                            # both names must resolve to this host (asks a public resolver, not the host's cached one)
 mkdir -p data/proxy/data data/proxy/config
 sudo cp deploy/proxy/sts-proxy.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now sts-proxy
