@@ -16,16 +16,11 @@ manager, so it is always up and does not depend on the development PC.
 
 ## Access
 
-The container uses the host network and binds `127.0.0.1:8010` (`STS_APP_PORT` in the unit), so nothing is exposed to
-the internet. From the PC, run `app\open-remote.cmd`: it opens an SSH tunnel to the control host (details from the
-ignored `data/secrets/control_host.json`) and opens http://127.0.0.1:8010/. By hand:
-
-```powershell
-ssh -i $env:USERPROFILE\Downloads\sts-instance.pem -N -L 8010:127.0.0.1:8010 ubuntu@<control-host>
-```
-
-Do not publish the port or open it in the Lightsail firewall without adding authentication: the app can write QA
-flags.
+Users reach the app at https://sts.stamsite.cc/ (Caddy, see `deploy/proxy/`), signed in with the login below. The app
+itself listens only on `127.0.0.1:8010` (`STS_APP_HOST` and `STS_APP_PORT` in the unit), so the only way in from the
+internet is through the proxy. The username is `sts` and the password is `STS_APP_PASSWORD` in the host `.env`; the app
+refuses to listen on a non-loopback address without one. After 5 wrong passwords a client address is locked out for
+5 minutes. `app\open-remote.cmd` still opens an SSH tunnel to http://127.0.0.1:8010/ from the PC if the proxy is down.
 
 ## Build and install
 

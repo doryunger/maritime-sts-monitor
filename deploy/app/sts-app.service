@@ -6,7 +6,7 @@ After=network-online.target sts-redis.service docker.service
 [Service]
 Type=simple
 ExecStartPre=-/usr/bin/docker rm -f sts-app
-ExecStart=/usr/bin/docker run --rm --name sts-app --network host --user 1000:1000 --memory 400m -e STS_RUNS_FROM_S3=1 -e STS_APP_PORT=8010 -e STS_APP_HOST=0.0.0.0 --env-file /home/ubuntu/maritime-sts-monitor/.env -v /home/ubuntu/maritime-sts-monitor/data/catalogue:/app/data/catalogue:ro -v /home/ubuntu/maritime-sts-monitor/data/app/runs:/app/data/runs -v /home/ubuntu/maritime-sts-monitor/data/app/reviews:/app/reviews maritime-sts-app
+ExecStart=/usr/bin/docker run --rm --name sts-app --network host --user 1000:1000 --memory 400m -e STS_RUNS_FROM_S3=1 -e STS_APP_PORT=8010 -e STS_APP_HOST=127.0.0.1 --env-file /home/ubuntu/maritime-sts-monitor/.env -v /home/ubuntu/maritime-sts-monitor/data/catalogue:/app/data/catalogue:ro -v /home/ubuntu/maritime-sts-monitor/data/app/runs:/app/data/runs -v /home/ubuntu/maritime-sts-monitor/data/app/reviews:/app/reviews maritime-sts-app
 ExecStop=/usr/bin/docker stop --time 10 sts-app
 Restart=always
 RestartSec=5
