@@ -123,3 +123,11 @@ def test_progress_is_published_per_scene_and_replaced_on_each_write(redis):
     task_queue.save_progress("j", {"a": {"status": "checked", "stage": None}})
     assert task_queue.read_progress("j") == {"a": {"status": "checked", "stage": None}}
     assert redis.ttl(task_queue.keys()["progress"] + "j") > 0
+
+
+def test_restore_keeps_the_original_ready_time_so_clock_skew_cannot_hide_a_job(redis):
+    dispatch("j")
+    first = redis.zscore(task_queue.keys()["pending"], "j")
+    time.sleep(0.01)
+    task_queue.restore({"j": manifest("j")}, [])
+    assert redis.zscore(task_queue.keys()["pending"], "j") == first

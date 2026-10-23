@@ -78,7 +78,7 @@ if redis.call('SISMEMBER', KEYS[2], ARGV[1]) == 1 then return 0 end
 if redis.call('SISMEMBER', KEYS[1], ARGV[1]) == 1 then return 0 end
 if redis.call('SISMEMBER', KEYS[5], ARGV[1]) == 1 then return 0 end
 if redis.call('SISMEMBER', KEYS[6], ARGV[1]) == 1 then return 0 end
-redis.call('ZADD', KEYS[4], ARGV[3], ARGV[1])
+redis.call('ZADD', KEYS[4], 'NX', ARGV[3], ARGV[1])
 return 1
 """
 
