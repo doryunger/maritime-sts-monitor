@@ -2,8 +2,9 @@
 
 Local web app for looking at runs and doing QA, in place of the per-run static report and QA pages.
 `app/start.cmd` serves it at http://127.0.0.1:8765/ (`config.yaml` `app`); the first start builds the frontend
-with npm. On the dev PC it starts hidden at login from
-`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\sts-runs-app.vbs`. The server starts on its own and
+with npm. On the dev PC it starts hidden at logon from the Task Scheduler task `STS runs app`
+(`pythonw -m app.backend.server`, working directory the repo, restart on failure; it replaced a Startup-folder script
+because Windows delays those by over a minute). The server starts on its own and
 never waits for a network connection: the Jobs page reads the ledger over SSH when it is opened, and shows an error
 instead of failing to start when the control host is unreachable. After a frontend change run `npm run build` and reload; after a backend change restart the app.
 
