@@ -16,15 +16,16 @@ manager, so it is always up and does not depend on the development PC.
 
 ## Access
 
-The container uses the host network and binds `127.0.0.1:8765`, so nothing is exposed to the internet. Reach it from
-the PC through SSH:
+The container uses the host network and binds `127.0.0.1:8010` (`STS_APP_PORT` in the unit), so nothing is exposed to
+the internet. From the PC, run `app\open-remote.cmd`: it opens an SSH tunnel to the control host (details from the
+ignored `data/secrets/control_host.json`) and opens http://127.0.0.1:8010/. By hand:
 
 ```powershell
-ssh -i $env:USERPROFILE\Downloads\sts-instance.pem -N -L 8765:127.0.0.1:8765 ubuntu@<control-host>
+ssh -i $env:USERPROFILE\Downloads\sts-instance.pem -N -L 8010:127.0.0.1:8010 ubuntu@<control-host>
 ```
 
-then open http://127.0.0.1:8765/. Do not publish the port or open it in the Lightsail firewall without adding
-authentication: the app can write QA flags.
+Do not publish the port or open it in the Lightsail firewall without adding authentication: the app can write QA
+flags.
 
 ## Build and install
 
@@ -39,5 +40,5 @@ sudo cp deploy/app/sts-app.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now sts-app
 ```
 
-The unit runs the image as uid 1000 with a 400 MB memory limit and `Restart=always`. It reads the same protected
+The unit sets `STS_APP_PORT=8010` and runs the image as uid 1000 with a 400 MB memory limit and `Restart=always`. It reads the same protected
 `.env` as the job manager (Redis URL, AWS settings). Update with a new `docker build` and `systemctl restart sts-app`.

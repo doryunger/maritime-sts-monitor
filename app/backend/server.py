@@ -88,7 +88,7 @@ def main() -> int:
         sys.stdout = sys.stderr = log
     if not DIST.exists():
         print("frontend not built: cd app/frontend && npm install && npm run build", flush=True)
-    uvicorn.run(app, host=cfg["host"], port=cfg["port"], log_level="warning")
+    uvicorn.run(app, host=cfg["host"], port=int(os.environ.get("STS_APP_PORT") or cfg["port"]), log_level="warning")
     return 0
 
 
