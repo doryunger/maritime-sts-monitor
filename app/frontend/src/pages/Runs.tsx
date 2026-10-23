@@ -15,6 +15,7 @@ const COLUMNS: { key: Key; title: string }[] = [
 ];
 
 const STORE = "runs.sort";
+const PAGE_SIZE = 30;
 const SHOW_EMPTY = "runs.show_empty";
 const KEYS = COLUMNS.map((c) => c.key);
 const SCENE_CACHE = "runs.scene_index.v1";
@@ -66,7 +67,7 @@ export default function Runs() {
       ? { key: fromUrl, dir: params.get("dir") === "asc" ? 1 : -1 }
       : remembered() ?? { key: "captured", dir: -1 };
   const setSort = (next: { key: Key; dir: 1 | -1 }) => {
-    setParams({ sort: next.key, dir: next.dir === 1 ? "asc" : "desc" }, { replace: true });
+    setParams({ sort: next.key, dir: next.dir === 1 ? "asc" : "desc", page: "1" }, { replace: true });
     try {
       localStorage.setItem(STORE, JSON.stringify(next));
     } catch {
@@ -128,6 +129,7 @@ export default function Runs() {
   const toggle = (key: Key) => setSort({ key, dir: sort.key === key ? (sort.dir === 1 ? -1 : 1) : 1 });
   const toggleEmpty = (checked: boolean) => {
     setShowEmpty(checked);
+    goto(1);
     try {
       localStorage.setItem(SHOW_EMPTY, String(checked));
     } catch {
@@ -135,7 +137,16 @@ export default function Runs() {
     }
   };
   const open = (r: SceneRow) => go(`/runs/${r.run}?scene=${encodeURIComponent(r.scene_id)}`);
-  const visible = showEmpty ? sorted : sorted.filter((r) => r.review !== "nothing to review" || r.status === "failed");
+  const requested = Number(params.get("page"));
+  const goto = (next: number) => {
+    const copy = new URLSearchParams(params);
+    copy.set("page", String(next));
+    setParams(copy, { replace: true });
+  };
+  const matching = showEmpty ? sorted : sorted.filter((r) => r.review !== "nothing to review" || r.status === "failed");
+  const pages = Math.max(1, Math.ceil(matching.length / PAGE_SIZE));
+  const page = Number.isInteger(requested) && requested >= 1 ? Math.min(requested, pages) : 1;
+  const visible = matching.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   if (error && !rows) return <p className="error">Could not load runs: {error}</p>;
   if (!rows) return <p className="muted">Loading runs…</p>;
@@ -147,7 +158,7 @@ export default function Runs() {
       <p className="muted">One row per scene. Click a column title to sort, a row to open its QA.</p>
       <div className="table-options">
         <label><input type="checkbox" checked={showEmpty} onChange={(e) => toggleEmpty(e.target.checked)} /> Show scenes with no review cards</label>
-        <span className="muted small">Showing {visible.length} of {sorted.length} scenes</span>
+        <span className="muted small">Showing {matching.length} of {sorted.length} scenes</span>
         <span className="muted small">{refreshing ? "Checking for updates..." : checked ? `Updated ${when(checked)}` : ""}</span>
       </div>
       <div className="wrap">
@@ -181,6 +192,12 @@ export default function Runs() {
           </tbody>
         </table>
       </div>
+      {matching.length > PAGE_SIZE && <div className="table-options">
+        <button onClick={() => goto(page - 1)} disabled={page <= 1}>Previous</button>
+        <span className="small">Page {page} of {pages}</span>
+        <button onClick={() => goto(page + 1)} disabled={page >= pages}>Next</button>
+        <span className="muted small">Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, matching.length)} of {matching.length}</span>
+      </div>}
       <p className="muted small">Captured: satellite capture time. Created: when processing of that scene finished.</p>
     </section>
   );

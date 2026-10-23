@@ -15,6 +15,7 @@ const COLUMNS: { key: Key; title: string }[] = [
 const KEYS = COLUMNS.map((c) => c.key);
 const STORE = "jobs.sort";
 const CLOSED = ["superseded"];
+const PAGE_SIZE = 30;
 const ORDER = ["claimed", "ready", "retry_wait", "failed", "succeeded", "superseded"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -76,8 +77,9 @@ export default function Jobs() {
   const sort: { key: Key; dir: 1 | -1 } = fromUrl && KEYS.includes(fromUrl)
     ? { key: fromUrl, dir: params.get("dir") === "desc" ? -1 : 1 }
     : remembered() ?? { key: "status", dir: 1 };
+  const requested = Number(params.get("page"));
   const setSort = (next: { key: Key; dir: 1 | -1 }) => {
-    setParams({ sort: next.key, dir: next.dir === 1 ? "asc" : "desc" }, { replace: true });
+    setParams({ sort: next.key, dir: next.dir === 1 ? "asc" : "desc", page: "1" }, { replace: true });
     try {
       localStorage.setItem(STORE, JSON.stringify(next));
     } catch {
@@ -104,6 +106,14 @@ export default function Jobs() {
       return primary * sort.dir || a.site.localeCompare(b.site) || earliest(a).localeCompare(earliest(b)) || a.job_id.localeCompare(b.job_id);
     });
   }, [data, showDone, sort.key, sort.dir]);
+  const pages = Math.max(1, Math.ceil(jobs.length / PAGE_SIZE));
+  const page = Number.isInteger(requested) && requested >= 1 ? Math.min(requested, pages) : 1;
+  const goto = (next: number) => {
+    const copy = new URLSearchParams(params);
+    copy.set("page", String(next));
+    setParams(copy, { replace: true });
+  };
+  const visible = jobs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const count = (status: string) => data?.jobs?.filter((job) => job.status === status).length ?? 0;
   return <section>
     <h1>Jobs</h1>
@@ -111,7 +121,7 @@ export default function Jobs() {
     <p className="muted small">Scenes: ✓ completed, … in progress, – waiting, ✗ failed. Progress counts completed scenes per job.</p>
     <div className="table-options">
       <button onClick={() => void refresh()} disabled={loading}>{loading ? "Refreshing..." : "Refresh"}</button>
-      <label><input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} /> Show superseded jobs</label>
+      <label><input type="checkbox" checked={showDone} onChange={(e) => { setShowDone(e.target.checked); goto(1); }} /> Show superseded jobs</label>
       {data && <span className="muted small">Checked <Time t={data.checked_utc} /></span>}
     </div>
     {error && <p className="error">Could not refresh: {error}. The previous view, if present, is unchanged.</p>}
@@ -127,7 +137,7 @@ export default function Jobs() {
           </th>)}
           <th>Progress</th><th>Attempts</th><th>Job</th>
         </tr></thead>
-        <tbody>{jobs.map((job) => <tr key={job.job_id}>
+        <tbody>{visible.map((job) => <tr key={job.job_id}>
           <td>{label(job.site)}</td>
           <td>{job.source.toUpperCase()}</td>
           <td><span className="status">{job.status}</span>{job.superseded_by && <div className="muted small" title={job.superseded_by}>by {job.superseded_by.slice(0, 8)}</div>}</td>
@@ -144,6 +154,12 @@ export default function Jobs() {
           <td className="mono small" title={job.job_id}>{job.job_id.slice(0, 8)}</td>
         </tr>)}</tbody>
       </table></div>}
+      {jobs.length > PAGE_SIZE && <div className="table-options">
+        <button onClick={() => goto(page - 1)} disabled={page <= 1}>Previous</button>
+        <span className="small">Page {page} of {pages}</span>
+        <button onClick={() => goto(page + 1)} disabled={page >= pages}>Next</button>
+        <span className="muted small">Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, jobs.length)} of {jobs.length} jobs</span>
+      </div>}
     </>}
   </section>;
 }
