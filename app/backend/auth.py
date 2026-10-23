@@ -24,6 +24,14 @@ def check_exposure(host: str) -> None:
         raise SystemExit("Refusing to listen on a non-loopback address without STS_APP_PASSWORD set")
 
 
+def client_address(request: Request) -> str:
+    peer = request.client.host if request.client else "unknown"
+    forwarded = request.headers.get("x-forwarded-for")
+    if peer in LOOPBACK and forwarded:
+        return forwarded.split(",")[0].strip() or peer
+    return peer
+
+
 def recent_failures(client: str, now: float) -> list[float]:
     kept = [t for t in _failures.get(client, []) if now - t < LOCKOUT_SECONDS]
     _failures[client] = kept
@@ -47,7 +55,7 @@ def install(app: FastAPI) -> None:
 
     @app.middleware("http")
     async def guard(request: Request, call_next):
-        client = request.client.host if request.client else "unknown"
+        client = client_address(request)
         now = time.time()
         if len(recent_failures(client, now)) >= MAX_FAILURES:
             return Response("Too many failed attempts; try again later.", status_code=429, headers={"Retry-After": str(LOCKOUT_SECONDS)})
