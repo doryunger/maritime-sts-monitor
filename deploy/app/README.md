@@ -8,9 +8,11 @@ manager, so it is always up and does not depend on the development PC.
 - **Jobs:** the ledger read directly from `data/catalogue/tracker.db` (mounted read-only, opened with `mode=ro`) plus
   live scene progress from Redis. `STS_LEDGER_LOCAL=1` in the image selects this; without it the app reads the ledger
   over SSH, which is how the development PC runs it.
-- **Runs and QA:** read from run folders under `data/app/runs`, which is empty on the host. Runs made by the EC2 worker
-  reach S3 as review data (`catalogue/reviews/<job>/<attempt>/`); loading those into the app is not built yet, so this
-  page is empty on the host until then. QA flags are written to the run's own database.
+- **Runs and QA:** run folders live under `data/app/runs` (a host volume). With `STS_RUNS_FROM_S3=1`, set in the unit,
+  the app syncs every 5 minutes: each succeeded job's attempt from `catalogue/reviews/<job>/<attempt>/` and the older
+  local runs from `catalogue/reviews/legacy/run-<n>/` are downloaded, checked against the sizes and hashes in their
+  `index.json`, and registered under local run numbers. A run already downloaded is never overwritten, so QA flags
+  saved in its database stay. Run numbers on the host differ from those on the development PC.
 
 ## Access
 
