@@ -14,3 +14,6 @@ data
 *.cer
 *.p12
 *.pfx
+app/frontend/node_modules
+app/frontend/dist
+node_modules

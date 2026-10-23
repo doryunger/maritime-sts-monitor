@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -8,7 +9,7 @@ from fastapi import Body, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.backend import queue, runs
+from app.backend import queue, runs, s3runs
 from maritime_tip_cue.config import settings
 
 DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
@@ -80,6 +81,8 @@ if DIST.exists():
 
 def main() -> int:
     cfg = settings()["app"]
+    if os.environ.get("STS_RUNS_FROM_S3") == "1":
+        s3runs.start()
     if sys.stdout is None:
         log = open(Path(__file__).resolve().parent.parent / "server.log", "a", encoding="utf-8")
         sys.stdout = sys.stderr = log

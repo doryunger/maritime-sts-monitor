@@ -65,3 +65,9 @@ The expandable AIS matching evidence reads `ais_candidates` from SQLite and show
 their decision evidence per slot, plus counts of satellite and unnamed exclusions. This is diagnostic context, not a
 vessel identity QA label; the imagery review flags remain the only user feedback stored by the app.
 
+## Deployment on the control host
+
+`deploy/app/` holds the image (a Node stage builds the frontend, a Python stage runs `app.backend.server`), the systemd
+unit and the install steps. On the host the ledger is read straight from the SQLite file (`STS_LEDGER_LOCAL=1`), the
+port stays on loopback and is reached through an SSH tunnel, and the Runs page is empty until run folders can be
+loaded from the S3 review data. The development PC keeps its own copy, which reads the ledger over SSH.

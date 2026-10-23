@@ -21,6 +21,13 @@ def fetch() -> dict:
     with _lock:
         if _cache["value"] is not None and time.monotonic() - _cache["at"] < TTL_SECONDS:
             return _cache["value"]
+        if os.environ.get("STS_LEDGER_LOCAL") == "1":
+            from maritime_tip_cue import catalogue
+            from maritime_tip_cue.config import settings
+
+            database = Path(settings()["catalogue"]["database"])
+            _cache.update(at=time.monotonic(), value=catalogue.ledger_file(database if database.is_absolute() else ROOT / database))
+            return _cache["value"]
         control = control_host()
         identity = Path(os.path.expandvars(os.path.expanduser(control["identity_file"])))
         if not identity.is_absolute():

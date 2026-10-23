@@ -5,7 +5,7 @@ import sys
 import boto3
 
 from maritime_tip_cue import publish, worker
-from maritime_tip_cue.config import env
+from maritime_tip_cue.config import env, settings
 from maritime_tip_cue.sts import rules as rules_mod
 from maritime_tip_cue.watch import registry
 
@@ -28,12 +28,41 @@ def plan(run_no: int) -> dict:
     return {"run": run_no, "out": out, "job_id": job_id, "attempt": receipt["attempt_id"], "commit": commit, "manifest": manifest, "workspace": workspace}
 
 
+def legacy(runs: list[int], upload: bool) -> int:
+    client = boto3.client("s3", region_name=env("AWS_REGION")) if upload else None
+    bucket = env("S3_BUCKET_NAME")
+    for no in runs:
+        out = registry.folder_of(no)
+        store = publish.Store(out / "state.db", out)
+        try:
+            job_id = publish.run_job_id(store)
+            status = store.db.execute("select status from runs order by run_id desc limit 1").fetchone()[0]
+        finally:
+            store.close()
+        if status != "done":
+            raise SystemExit(f"run {no} has status {status}; only finished runs are uploaded")
+        print(f"run {no}: legacy review data, job {job_id[:8] if job_id else 'none'}", flush=True)
+        if not upload:
+            continue
+        folder = worker.worker_root() / "_legacy" / f"run-{no}"
+        snapshot = worker.export_record(out, folder)[0]
+        prefix = settings()["catalogue"]["reviews_prefix"].rstrip("/") + f"/legacy/run-{no}/"
+        meta = {"legacy": True, "run_no": no, "job_id": job_id}
+        print(json.dumps({"run": no, "review": worker.upload_review_folder(client, bucket, prefix, out, snapshot, meta)}), flush=True)
+    if not upload:
+        print("dry run; pass --upload to send")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="maritime-sts-monitor backfill")
     parser.add_argument("runs", nargs="+", type=int)
     parser.add_argument("--upload", action="store_true")
+    parser.add_argument("--legacy", action="store_true")
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
+    if args.legacy:
+        return legacy(args.runs, args.upload)
     publish.check_runs(args.runs)
     plans = [plan(no) for no in args.runs]
     for item in plans:

@@ -18,3 +18,10 @@ jobs:
       - run: ruff check . --select F,E9 --exclude .venv,app/frontend
       - run: python -m compileall -q maritime_tip_cue app
       - run: python -m pytest -q
+
+  app-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f deploy/app/Dockerfile -t maritime-sts-app .
+      - run: docker run --rm --entrypoint python maritime-sts-app -c "import app.backend.server"

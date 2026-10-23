@@ -526,6 +526,7 @@ def ledger(db, progress=None):
         manifest = json.loads(row["manifest_json"])
         attempts = [
             {
+                "attempt_id": attempt["attempt_id"],
                 "attempt_no": attempt["attempt_no"],
                 "verdict": attempt["status"],
                 "owner": attempt["owner"],
@@ -534,7 +535,7 @@ def ledger(db, progress=None):
                 "error": attempt["error"],
             }
             for attempt in db.execute(
-                "SELECT attempt_no,status,owner,started_utc,finished_utc,error FROM job_attempts "
+                "SELECT attempt_id,attempt_no,status,owner,started_utc,finished_utc,error FROM job_attempts "
                 "WHERE job_id=? ORDER BY attempt_no",
                 (row["job_id"],),
             )
@@ -566,6 +567,26 @@ def ledger(db, progress=None):
             }
         )
     return {"jobs": jobs}
+
+
+def read_progress():
+    progress = {}
+    try:
+        from maritime_tip_cue import task_queue
+
+        redis = task_queue.client()
+        for key in redis.scan_iter(task_queue.keys()["progress"] + "*"):
+            progress[key.rsplit(":", 1)[1]] = {scene_id: json.loads(value) for scene_id, value in redis.hgetall(key).items()}
+    except Exception:
+        return {}
+    return progress
+
+
+def ledger_file(path):
+    readonly = sqlite3.connect(f"file:{Path(path).as_posix()}?mode=ro", uri=True)
+    readonly.row_factory = sqlite3.Row
+    with closing(readonly) as db:
+        return ledger(db, read_progress())
 
 
 def refresh_queue(db):
@@ -877,21 +898,7 @@ def main():
     path = Path(cfg["database"])
     path = path if path.is_absolute() else ROOT / path
     if args.command == "ledger":
-        readonly = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
-        readonly.row_factory = sqlite3.Row
-        progress = {}
-        try:
-            from maritime_tip_cue import task_queue
-
-            redis = task_queue.client()
-            for key in redis.scan_iter(task_queue.keys()["progress"] + "*"):
-                progress[key.rsplit(":", 1)[1]] = {
-                    scene_id: json.loads(value) for scene_id, value in redis.hgetall(key).items()
-                }
-        except Exception:
-            progress = {}
-        with closing(readonly) as db:
-            print(json.dumps(ledger(db, progress), sort_keys=True))
+        print(json.dumps(ledger_file(path), sort_keys=True))
         return 0
     with controller_lock(path), closing(connect(path)) as db:
         if args.command in ("scan", "scan-one"):

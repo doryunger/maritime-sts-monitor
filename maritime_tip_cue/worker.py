@@ -250,6 +250,11 @@ REVIEW_SKIP_NAMES = {"state.db", "state.db-wal", "state.db-shm"}
 
 def upload_review(client, bucket: str, manifest: dict, out: Path, snapshot: Path, run_no: int, attempt: str) -> dict:
     prefix = settings()["catalogue"]["reviews_prefix"].rstrip("/") + f"/{manifest['job_id']}/{attempt}/"
+    meta = {"job_id": manifest["job_id"], "attempt_id": attempt, "run_no": run_no}
+    return upload_review_folder(client, bucket, prefix, out, snapshot, meta)
+
+
+def upload_review_folder(client, bucket: str, prefix: str, out: Path, snapshot: Path, meta: dict) -> dict:
     files = []
     sources = [(snapshot, "state.db")]
     for path in sorted(out.rglob("*")):
@@ -264,13 +269,7 @@ def upload_review(client, bucket: str, manifest: dict, out: Path, snapshot: Path
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         client.upload_file(str(path), bucket, prefix + relative, ExtraArgs={"Metadata": {"sha256": digest}})
         files.append({"path": relative, "size": path.stat().st_size, "sha256": digest})
-    index = {
-        "schema_version": 1,
-        "job_id": manifest["job_id"],
-        "attempt_id": attempt,
-        "run_no": run_no,
-        "files": files,
-    }
+    index = {"schema_version": 1, **meta, "files": files}
     client.put_object(Bucket=bucket, Key=prefix + "index.json", Body=encode(index), ContentType="application/json")
     return {"prefix": prefix, "index": prefix + "index.json", "files": len(files)}
 
