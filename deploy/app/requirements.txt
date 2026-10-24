@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+numpy
+scipy
+shapely
+pillow
+rasterio
+pyyaml
+boto3
+requests
+redis

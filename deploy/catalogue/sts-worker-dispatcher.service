@@ -1,0 +1,12 @@
+[Unit]
+Description=Wake the GPU worker for ready STS jobs and let it idle-stop
+Wants=network-online.target sts-redis.service
+After=network-online.target sts-redis.service
+
+[Service]
+Type=oneshot
+TimeoutStartSec=5h
+ExecStart=/usr/bin/python3 /home/ubuntu/maritime-sts-monitor/deploy/catalogue/dispatch_worker.py
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077

@@ -14,7 +14,7 @@ def _load_env() -> None:
         return
     for line in env_file.read_text().splitlines():
         line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
+        if line and "=" in line:
             key, value = line.split("=", 1)
             os.environ.setdefault(key.strip(), value.strip())
 
@@ -31,4 +31,7 @@ def env(name: str) -> str:
 
 @cache
 def settings() -> dict:
-    return yaml.safe_load((ROOT / "config.yaml").read_text())
+    path = Path(os.environ.get("STS_CONFIG_PATH") or ROOT / "config.yaml")
+    if not path.is_absolute():
+        path = ROOT / path
+    return yaml.safe_load(path.read_text())

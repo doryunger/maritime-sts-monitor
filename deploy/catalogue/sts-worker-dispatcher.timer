@@ -1,0 +1,10 @@
+[Unit]
+Description=Check for ready STS jobs every ten minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=10min
+Unit=sts-worker-dispatcher.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,50 @@
+s3:
+  hotspots_key: hotspots/sts_hotspots.json
+  findings_prefix: sts/
+  captures_prefix: captures/
+
+land:
+  - data/land/ne_10m_land.geojson
+  - data/land/ne_10m_minor_islands.geojson
+
+ai2:
+  root: /opt/ai2-detectors
+  scratch_root: data/worker/scratch
+  env:
+    RSLP_APPLY_WORKERS: "0"
+    RSLEARN_NUM_DATA_LOADER_WORKERS: "0"
+    PYTHONIOENCODING: utf-8
+
+ais_archive:
+  tls_root_cert: data/secrets/ais_archive_cert.pem
+  default_user: gizmosql_user
+
+structures:
+  path: data/structures/osm_structures.geojson
+  overpass_url: https://overpass-api.de/api/interpreter
+
+runs:
+  path: data/runs
+
+catalogue:
+  database: data/catalogue/tracker.db
+  log_path: data/catalogue/scans.jsonl
+  jobs_prefix: catalogue/jobs/
+  results_prefix: catalogue/results/
+  claims_prefix: catalogue/claims/
+  artifacts_prefix: catalogue/artifacts/
+  reviews_prefix: catalogue/reviews/
+
+worker:
+  path: data/worker
+  queue:
+    heartbeat_seconds: 60
+    lease_seconds: 900
+    max_seconds_per_scene: 1200
+    max_retries: 1
+    retry_delay_seconds: 300
+
+app:
+  host: 127.0.0.1
+  port: 8765
+  reviews: reviews

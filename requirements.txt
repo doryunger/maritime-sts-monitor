@@ -12,3 +12,13 @@ pystac-client
 planetary-computer
 pytest
 ruff
+boto3
+requests
+redis
+matplotlib
+adbc-driver-gizmosql
+pyarrow
+pandas
+fakeredis[lua]
+tzdata
+httpx

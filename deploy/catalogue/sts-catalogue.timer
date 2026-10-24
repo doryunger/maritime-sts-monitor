@@ -1,0 +1,10 @@
+[Unit]
+Description=Check STS catalogues four times daily
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:05:00 UTC
+Persistent=true
+Unit=sts-catalogue.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,16 @@
+boto3
+requests
+redis
+PyYAML
+shapely
+numpy
+scipy
+pillow
+rasterio
+pystac-client
+planetary-computer
+pyarrow
+pandas
+matplotlib
+adbc-driver-gizmosql
+psycopg[binary]

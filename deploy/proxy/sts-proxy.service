@@ -1,0 +1,16 @@
+[Unit]
+Description=HTTPS reverse proxy for the STS app and the viewer
+Wants=network-online.target
+After=network-online.target docker.service sts-app.service
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/docker rm -f sts-proxy
+ExecStart=/usr/bin/docker run --rm --name sts-proxy --network host --memory 150m --env-file /home/ubuntu/maritime-sts-monitor/deploy/proxy/proxy.env -v /home/ubuntu/maritime-sts-monitor/deploy/proxy/Caddyfile:/etc/caddy/Caddyfile:ro -v /home/ubuntu/maritime-sts-monitor/data/proxy/data:/data -v /home/ubuntu/maritime-sts-monitor/data/proxy/config:/config caddy:2-alpine
+ExecStop=/usr/bin/docker stop --time 10 sts-proxy
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: sudo apt-get update && sudo apt-get install -y libgdal-dev
+      - run: pip install -r requirements.txt
+      - run: ruff check . --select F,E9 --exclude .venv,app/frontend
+      - run: python -m compileall -q maritime_tip_cue app
+      - run: python -m pytest -q
+
+  app-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f deploy/app/Dockerfile -t maritime-sts-app .
+      - run: docker run --rm --entrypoint python maritime-sts-app -c "import app.backend.server"
+
+  proxy-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker run --rm -e APP_DOMAIN=sts.example.com -e VIEWER_DOMAIN=shadow.example.com -e ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory -v "$PWD/deploy/proxy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
