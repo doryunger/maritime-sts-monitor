@@ -1,5 +1,5 @@
 [Unit]
-Description=STS Redis and SQLite job manager
+Description=STS Redis and Postgres ledger job manager
 Wants=network-online.target sts-redis.service
 After=network-online.target sts-redis.service
 

@@ -1,15 +1,14 @@
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
 from maritime_tip_cue import pgimport
-from maritime_tip_cue.watch import state
 
 
 def test_timestamps_become_aware_utc_and_blank_becomes_null():
-    assert pgimport.convert("2026-10-19T20:40:06Z", "timestamp with time zone") == datetime(2026, 10, 19, 20, 40, 6, tzinfo=timezone.utc)
+    assert pgimport.convert("2026-10-19T20:40:06Z", "timestamp with time zone") == datetime(2026, 10, 19, 20, 40, 6, tzinfo=UTC)
     assert pgimport.convert("2026-10-19T11:33:32.454Z", "timestamp with time zone").microsecond == 454000
     assert pgimport.convert("2026-10-20T09:15:00.123456Z", "timestamp with time zone").microsecond == 123456
     assert pgimport.convert("", "timestamp with time zone") is None
@@ -44,7 +43,7 @@ def test_runs_from_the_pc_are_legacy_and_the_rest_come_from_jobs():
 def test_every_sqlite_column_has_a_postgres_column():
     schema = pgimport.pg.SCHEMA
     memory = sqlite3.connect(":memory:")
-    memory.executescript(state.SCHEMA + state.AIS_MATCHES + state.AIS_CANDIDATES + state.VESSEL_IDENTITIES)
+    memory.executescript(pgimport.LEGACY_SCHEMA)
     pairs = list(pgimport.TABLES) + [("vessel_identities", "vessel_identities")]
     for sqlite_table, pg_table in pairs:
         block = schema.split(f"create table if not exists review.{pg_table} (")[1].split("\n);")[0]

@@ -8,7 +8,7 @@ from maritime_tip_cue.ais import match
 from maritime_tip_cue.equasis import client
 from maritime_tip_cue.equasis import resolve as equasis
 from maritime_tip_cue.sts import rules as rules_mod
-from maritime_tip_cue.watch.state import Store
+from tests.pgstore import add_match, add_scene, new_store
 
 RULES = rules_mod.load()["identity"]
 
@@ -50,20 +50,26 @@ OTHER = {"imo": "9000001", "name": "AVA 6", "gross_tonnage": "5000", "type": "Ge
 DETAIL = {"9226140": {"call_sign": "VRXU4", "mmsi": "477226000", "dwt": "44401", "status": "In Service/Commission"}}
 
 
-def store_with_matches(tmp_path, ships):
-    store = Store(tmp_path / "state.db", tmp_path)
-    for index, (ship_id, name, flag) in enumerate(ships):
-        store.db.execute(
-            "insert into ais_matches (scene_id, site, hull_id, ship_id, name, flag, chosen, slot, ais_length_m) values ('s','x',?,?,?,?,1,'a',180)",
-            (f"h{index}", ship_id, name, flag),
-        )
-        store.db.execute(
-            "insert into ais_candidates (scene_id, site, hull_id, slot, ship_id, type_code, dwt, flag) values ('s','x',?,'a',?,'8',44400,?)",
-            (f"h{index}", ship_id, flag),
-        )
-    store.db.commit()
-    return store
+@pytest.fixture
+def make(pgdb, tmp_path, monkeypatch):
+    stores = []
 
+    def build(ships):
+        store = new_store(monkeypatch, tmp_path)
+        add_scene(store, hulls=[f"h{index}" for index in range(len(ships))])
+        for index, (ship_id, name, flag) in enumerate(ships):
+            add_match(store, hull_id=f"h{index}", ship_id=ship_id, name=name, flag=flag, ais_length_m=180)
+            store.db.execute(
+                "insert into review.ais_candidates (run_key, scene_id, site, hull_id, slot, ship_id, type_code, dwt, flag) "
+                "values (%s,'s','x',%s,'a',%s,'8',44400,%s)",
+                (store.run_key, f"h{index}", ship_id, flag),
+            )
+        stores.append(store)
+        return store
+
+    yield build
+    for store in stores:
+        store.close()
 
 def test_search_page_is_parsed_into_candidates():
     rows = client.parse_search(BeautifulSoup(SEARCH_HTML, "html.parser"))
@@ -94,58 +100,53 @@ def test_unknown_or_ambiguous_names_stay_unresolved():
     assert record["confidence"] == "unresolved" and "imo" not in record
 
 
-def test_each_known_vessel_is_looked_up_once_in_order_and_saved_with_its_identity(tmp_path):
-    store = store_with_matches(tmp_path, [("1", "AVA 6", "HK"), ("2", "OTHER", "PA"), ("1", "AVA 6", "HK")])
+def test_each_known_vessel_is_looked_up_once_in_order_and_saved_with_its_identity(make):
+    store = make([("1", "AVA 6", "HK"), ("2", "OTHER", "PA"), ("1", "AVA 6", "HK")])
     eq = FakeEquasis({"AVA 6": [AVA]}, DETAIL)
     summary = equasis.enrich(store, RULES, eq)
     assert eq.searches == ["AVA 6", "OTHER"] and summary["looked_up"] == 2 and summary["resolved"] == 1
-    identity = store.db.execute("select * from vessel_identities where ship_id = '1'").fetchone()
+    identity = store.db.execute("select * from review.vessel_identities where ship_id = '1'").fetchone()
     assert (identity["imo"], identity["mmsi"], identity["source"]) == ("9226140", "477226000", "equasis")
-    match_row = store.db.execute("select imo, mmsi from ais_matches where ship_id = '1' and hull_id = 'h0'").fetchone()
+    match_row = store.db.execute("select imo, mmsi from review.ais_matches where ship_id = '1' and hull_id = 'h0'").fetchone()
     assert (match_row["imo"], match_row["mmsi"]) == ("9226140", "477226000")
     assert equasis.enrich(store, RULES, FakeEquasis({})) == {"looked_up": 0, "resolved": 0, "unresolved": 0, "skipped": None}
-    store.close()
 
 
-def test_a_ship_is_never_asked_twice_and_the_limit_caps_one_run(tmp_path):
-    store = store_with_matches(tmp_path, [("1", "A", "HK"), ("2", "B", "HK"), ("3", "C", "HK")])
+def test_a_ship_is_never_asked_twice_and_the_limit_caps_one_run(make):
+    store = make([("1", "A", "HK"), ("2", "B", "HK"), ("3", "C", "HK")])
     eq = FakeEquasis({})
     summary = equasis.enrich(store, dict(RULES, max_lookups_per_run=2), eq)
     assert summary["looked_up"] == 2 and eq.searches == ["A", "B"]
     equasis.enrich(store, RULES, eq)
     assert eq.searches == ["A", "B", "C"]
-    store.close()
 
 
-def test_a_lost_session_stops_the_run_without_hiding_the_vessels_already_done(tmp_path):
-    store = store_with_matches(tmp_path, [("1", "AVA 6", "HK"), ("2", "BOOM", "HK"), ("3", "LATER", "HK")])
+def test_a_lost_session_stops_the_run_without_hiding_the_vessels_already_done(make):
+    store = make([("1", "AVA 6", "HK"), ("2", "BOOM", "HK"), ("3", "LATER", "HK")])
     eq = FakeEquasis({"AVA 6": [AVA]}, DETAIL, fail_on="BOOM")
     summary = equasis.enrich(store, RULES, eq, log=lambda *a, **k: None)
     assert summary["looked_up"] == 1 and "SessionExpired" in summary["skipped"]
     assert eq.searches == ["AVA 6", "BOOM"]
-    assert store.db.execute("select count(*) from vessel_identities").fetchone()[0] == 1
-    store.close()
+    assert store.db.execute("select count(*) as n from review.vessel_identities").fetchone()["n"] == 1
 
 
-def test_without_credentials_the_enrichment_is_skipped_quietly(tmp_path, monkeypatch):
-    store = store_with_matches(tmp_path, [("1", "AVA 6", "HK")])
+def test_without_credentials_the_enrichment_is_skipped_quietly(make, monkeypatch):
+    store = make([("1", "AVA 6", "HK")])
     monkeypatch.setattr(equasis, "configured", lambda: False)
     summary = equasis.enrich(store, RULES)
     assert summary["skipped"] and summary["looked_up"] == 0
-    store.close()
 
 
-def test_archive_identities_are_used_first_so_equasis_is_not_asked_for_them(tmp_path):
-    store = store_with_matches(tmp_path, [("1", "AVA 6", "HK"), ("2", "OTHER", "HK")])
+def test_archive_identities_are_used_first_so_equasis_is_not_asked_for_them(make):
+    store = make([("1", "AVA 6", "HK"), ("2", "OTHER", "HK")])
     archive = {"1": {"imo": 9226140, "mmsi": 477226000, "flag": "HK", "gross_tonnage": 29303, "equasis_dwt": 44401, "call_sign": "VRXU4",
                      "confidence": "strong", "false_flag": "False", "resolved_utc": "2026-10-13T00:00:00+00:00"}}
     match.refresh_identities(store, lambda ids: {i: archive[i] for i in ids if i in archive})
     eq = FakeEquasis({})
     equasis.enrich(store, RULES, eq)
     assert eq.searches == ["OTHER"]
-    stored = store.db.execute("select imo, gross_tonnage, dwt, source from vessel_identities where ship_id = '1'").fetchone()
-    assert tuple(stored) == ("9226140", "29303", "44401", "archive")
-    store.close()
+    stored = store.db.execute("select imo, gross_tonnage, dwt, source from review.vessel_identities where ship_id = '1'").fetchone()
+    assert tuple(stored.values()) == ("9226140", "29303", "44401", "archive")
 
 
 def test_requests_are_spaced_by_the_configured_delay():

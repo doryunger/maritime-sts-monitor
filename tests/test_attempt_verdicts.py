@@ -1,8 +1,8 @@
 import json
-from contextlib import closing
 
 import fakeredis
 import pytest
+from psycopg.types.json import Jsonb
 
 from maritime_tip_cue import catalogue, task_queue
 
@@ -10,18 +10,17 @@ JOB = "j" * 64
 
 
 @pytest.fixture
-def setup(monkeypatch, tmp_path):
+def setup(monkeypatch, pgdb):
     server = fakeredis.FakeRedis(decode_responses=True)
     monkeypatch.setattr(task_queue, "client", lambda: server)
     manifest = {"job_id": JOB, "site": {"name": "site-a"}, "scenes": [{"scene": "s"}]}
-    with closing(catalogue.connect(tmp_path / "t.db")) as db:
-        db.execute(
-            "INSERT INTO jobs (job_id,site,source,created_utc,manifest_json,manifest_sha256,status) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (JOB, "site-a", "s2", "t", json.dumps(manifest), JOB, "dispatched"),
-        )
-        db.commit()
-        yield db, server, manifest
+    pgdb.execute(
+        "INSERT INTO processing.jobs (job_id,site,source,created_utc,manifest_json,manifest_sha256,status) "
+        "VALUES (%s,%s,%s,now(),%s,%s,%s)",
+        (JOB, "site-a", "s2", Jsonb(manifest), JOB, "dispatched"),
+    )
+    pgdb.commit()
+    return pgdb, server, manifest
 
 
 def attempt_events(server, attempt, kind):
@@ -50,7 +49,7 @@ def reconcile(db, server, events):
 
 def test_stopped_receipt_is_recorded_as_stopped_and_retried(setup):
     db, server, _ = setup
-    task_queue.restore({JOB: json.loads(db.execute("select manifest_json from jobs").fetchone()[0])}, [])
+    task_queue.restore({JOB: db.execute("select manifest_json from processing.jobs").fetchone()[0]}, [])
     server.set(task_queue.keys()["result"] + JOB + ":a1", json.dumps(receipt("a1", "stopped", "maximum runtime")))
     reconcile(db, server, attempt_events(server, "a1", "result"))
     status = catalogue.job_status(db, JOB)

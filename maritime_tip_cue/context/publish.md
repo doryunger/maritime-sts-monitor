@@ -65,8 +65,8 @@ review data under the receipt's attempt id, then `publish_run`, gated on the led
 backfilled on 2026-10-22; runs 1-9 predate the ledger and keep their earlier publication.
 
 Reproducing a finding: every published row carries `job_id`, `attempt_id`, `run`, `scene_id`, `hull_id`, `finding_id`,
-`review_prefix` (the attempt's review folder on S3: chips and windows the QA card is drawn from, the run database and
-`events.jsonl`), `rules_sha256` (the pinned rules in the job manifest, also under the attempt's artifacts),
+`review_prefix` (the attempt's review folder on S3: chips and windows the QA card is drawn from; the run's state and events are
+in Postgres under the attempt's run), `rules_sha256` (the pinned rules in the job manifest, also under the attempt's artifacts),
 `code_commit` (the image's `STS_GIT_COMMIT` build argument, or the repository head locally) and `detector_revision`
 (the Ai2 detector revision baked into the image; empty for local runs). The scene itself is not stored: rerun the
 job's manifest against a fresh download of `scene_id`. Review data is a QA aid, never a gate: a missing review upload

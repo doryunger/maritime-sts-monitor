@@ -7,6 +7,8 @@ from pathlib import Path
 from maritime_tip_cue.config import ROOT, settings
 from maritime_tip_cue.watch.state import Store
 
+MARK = "update review.ais_matches set is_sanctioned = true where run_key = %s and ship_id = %s and chosen"
+
 
 def list_path() -> Path:
     path = Path(settings()["sanctions"]["path"])
@@ -44,18 +46,19 @@ def apply(store: Store, listed: dict | None = None) -> int:
         return 0
     flagged = 0
     with store.tx():
-        for row in store.db.execute("select ship_id, imo from vessel_identities where imo is not null and imo <> ''").fetchall():
+        for row in store.db.execute("select ship_id, imo from review.vessel_identities where imo is not null and imo <> ''").fetchall():
             lists = lists_for(row["imo"], listed)
-            store.db.execute("update vessel_identities set sanctions_lists = ? where ship_id = ?", (lists or None, row["ship_id"]))
+            store.db.execute("update review.vessel_identities set sanctions_lists = %s where ship_id = %s", (lists or None, row["ship_id"]))
             if lists:
-                store.db.execute("update ais_matches set is_sanctioned = 1 where ship_id = ? and chosen = 1", (row["ship_id"],))
+                store.db.execute(MARK, (store.run_key, row["ship_id"]))
                 flagged += 1
         for row in store.db.execute(
-            "select distinct m.ship_id, m.imo from ais_matches m left join vessel_identities v on v.ship_id = m.ship_id "
-            "where m.chosen = 1 and m.imo is not null and m.imo <> '' and v.ship_id is null"
+            "select distinct m.ship_id, m.imo from review.ais_matches m left join review.vessel_identities v on v.ship_id = m.ship_id "
+            "where m.run_key = %s and m.chosen and m.imo is not null and m.imo <> '' and v.ship_id is null",
+            (store.run_key,),
         ).fetchall():
             if lists_for(row["imo"], listed):
-                store.db.execute("update ais_matches set is_sanctioned = 1 where ship_id = ? and chosen = 1", (row["ship_id"],))
+                store.db.execute(MARK, (store.run_key, row["ship_id"]))
                 flagged += 1
     return flagged
 

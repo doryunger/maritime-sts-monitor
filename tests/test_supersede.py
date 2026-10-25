@@ -1,8 +1,6 @@
-import json
-from contextlib import closing
-
 import fakeredis
 import pytest
+from psycopg.types.json import Jsonb
 
 from maritime_tip_cue import catalogue, job_manager, task_queue
 
@@ -12,21 +10,21 @@ def scenes(*names):
 
 
 @pytest.fixture
-def db(tmp_path):
-    with closing(catalogue.connect(tmp_path / "t.db")) as connection:
-        yield connection
+def db(pgdb):
+    return pgdb
 
 
 def add(db, job_id, status, created, *names):
     db.execute(
-        "INSERT INTO jobs (job_id,site,source,created_utc,manifest_json,manifest_sha256,status) VALUES (?,?,?,?,?,?,?)",
-        (job_id, "s", "s2", created, json.dumps(scenes(*names)), job_id, status),
+        "INSERT INTO processing.jobs (job_id,site,source,created_utc,manifest_json,manifest_sha256,status) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+        (job_id, "s", "s2", created, Jsonb(scenes(*names)), job_id, status),
     )
     db.commit()
 
 
 def status(db, job_id):
-    row = db.execute("SELECT status,superseded_by FROM jobs WHERE job_id=?", (job_id,)).fetchone()
+    row = db.execute("SELECT status,superseded_by FROM processing.jobs WHERE job_id=%s", (job_id,)).fetchone()
     return tuple(row)
 
 
@@ -77,7 +75,7 @@ def test_superseded_job_is_removed_from_redis_and_not_requeued(db, monkeypatch):
     catalogue.refresh_queue(db)
     assert server.zcard(task_queue.keys()["pending"]) == 2
     catalogue.supersede_jobs(db)
-    task_queue.drop([r[0] for r in db.execute("SELECT job_id FROM jobs WHERE status='superseded'")])
+    task_queue.drop([r[0] for r in db.execute("SELECT job_id FROM processing.jobs WHERE status='superseded'")])
     assert server.zrange(task_queue.keys()["pending"], 0, -1) == ["new"]
     catalogue.refresh_queue(db)
     assert server.zrange(task_queue.keys()["pending"], 0, -1) == ["new"]
@@ -86,14 +84,14 @@ def test_superseded_job_is_removed_from_redis_and_not_requeued(db, monkeypatch):
 
 def observe(db, scene, first="2026-10-22"):
     db.execute(
-        "INSERT INTO observations VALUES ('s','s2',?,'v','g',?,?,'{}')",
+        "INSERT INTO processing.observations VALUES ('s','s2',%s,'v','g',%s,%s,'{}')",
         (scene, first, first),
     )
     db.commit()
 
 
 def test_audit_classifies_every_scene_and_flags_gaps(db):
-    db.execute("INSERT INTO channels VALUES ('s','s2','2026-10-20')")
+    db.execute("INSERT INTO processing.channels VALUES ('s','s2','2026-10-20')")
     for scene in "abcdefg":
         observe(db, scene, "2026-10-20" if scene == "g" else "2026-10-22")
     add(db, "j1", "succeeded", "2026-10-22", "a")

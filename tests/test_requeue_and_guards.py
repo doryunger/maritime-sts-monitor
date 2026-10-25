@@ -1,9 +1,8 @@
-import json
 import threading
-from contextlib import closing
 
 import fakeredis
 import pytest
+from psycopg.types.json import Jsonb
 
 from maritime_tip_cue import catalogue, config, task_queue, worker
 
@@ -22,22 +21,22 @@ def manifest(job_id):
     return {"job_id": job_id, "site": {"name": "site-a"}, "scenes": [{"scene": "s"}]}
 
 
-def test_requeued_failed_job_can_be_dispatched_and_claimed_again(redis, tmp_path):
-    with closing(catalogue.connect(tmp_path / "t.db")) as db:
-        db.execute(
-            "INSERT INTO jobs (job_id,site,source,created_utc,manifest_json,manifest_sha256,status,retry_count,error) "
-            "VALUES ('j','site-a','s2','t',?,'j','failed',2,'boom')",
-            (json.dumps(manifest("j")),),
-        )
-        db.commit()
-        task_queue.restore({"j": manifest("j")}, [])
-        task_queue.claim("j", "w1")
-        task_queue.finalize("j", "w1", "failed")
-        assert task_queue.claim("j", "w2") is None
-        assert catalogue.requeue_failed(db)["requeued"] == ["j"]
-        catalogue.refresh_queue(db)
-        row = db.execute("SELECT status,retry_count,error FROM jobs WHERE job_id='j'").fetchone()
-        assert tuple(row) == ("dispatched", 0, None)
+def test_requeued_failed_job_can_be_dispatched_and_claimed_again(redis, pgdb):
+    pgdb.execute(
+        "INSERT INTO processing.jobs "
+        "(job_id,site,source,created_utc,manifest_json,manifest_sha256,status,retry_count,error) "
+        "VALUES ('j','site-a','s2',now(),%s,'j','failed',2,'boom')",
+        (Jsonb(manifest("j")),),
+    )
+    pgdb.commit()
+    task_queue.restore({"j": manifest("j")}, [])
+    task_queue.claim("j", "w1")
+    task_queue.finalize("j", "w1", "failed")
+    assert task_queue.claim("j", "w2") is None
+    assert catalogue.requeue_failed(pgdb)["requeued"] == ["j"]
+    catalogue.refresh_queue(pgdb)
+    row = pgdb.execute("SELECT status,retry_count,error FROM processing.jobs WHERE job_id='j'").fetchone()
+    assert tuple(row) == ("dispatched", 0, None)
     assert task_queue.claim("j", "w2") is not None
 
 

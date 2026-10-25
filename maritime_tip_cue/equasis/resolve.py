@@ -1,7 +1,7 @@
 import re
 import sys
-from difflib import SequenceMatcher
 from datetime import UTC, datetime
+from difflib import SequenceMatcher
 
 import pycountry
 import requests
@@ -154,7 +154,7 @@ def resolve_vessel(eq: Equasis, ours: dict, rules: dict) -> dict:
         "reasons": "+".join(why),
         "equasis_name": best["name"],
         "equasis_flag": best["flag"],
-        "false_flag": int(false_flag(best["flag"])),
+        "false_flag": false_flag(best["flag"]),
         "vessel_type": best["type"],
         "gross_tonnage": best["gross_tonnage"],
         "year_built": best["year_built"],
@@ -172,11 +172,12 @@ def resolve_vessel(eq: Equasis, ours: dict, rules: dict) -> dict:
 def pending(store: Store) -> list[dict]:
     rows = store.db.execute(
         "select m.ship_id, m.name, m.flag, m.ais_length_m as length_m, c.type_code, c.dwt "
-        "from ais_matches m left join ais_candidates c on c.scene_id = m.scene_id and c.site = m.site "
-        "and c.hull_id = m.hull_id and c.slot = m.slot and c.ship_id = m.ship_id "
-        "left join vessel_identities v on v.ship_id = m.ship_id "
-        "where m.chosen = 1 and m.ship_id is not null and m.name is not null and v.ship_id is null "
-        "order by m.scene_id, m.hull_id, m.slot"
+        "from review.ais_matches m left join review.ais_candidates c on c.run_key = m.run_key and c.scene_id = m.scene_id "
+        "and c.site = m.site and c.hull_id = m.hull_id and c.slot = m.slot and c.ship_id = m.ship_id "
+        "left join review.vessel_identities v on v.ship_id = m.ship_id "
+        "where m.run_key = %s and m.chosen and m.ship_id is not null and m.name is not null and v.ship_id is null "
+        "order by m.scene_id, m.hull_id, m.slot, m.id",
+        (store.run_key,),
     ).fetchall()
     seen, vessels = set(), []
     for row in rows:
@@ -188,14 +189,17 @@ def pending(store: Store) -> list[dict]:
 
 def save_identity(store: Store, ship_id: str, record: dict) -> None:
     values = {field: record.get(field) for field in FIELDS}
+    updates = ", ".join(f"{field} = excluded.{field}" for field in FIELDS)
     store.db.execute(
-        f"insert or replace into vessel_identities (ship_id, {', '.join(FIELDS)}) values (?{', ?' * len(FIELDS)})",
-        (ship_id, *values.values()),
+        f"insert into review.vessel_identities (ship_id, first_run_key, {', '.join(FIELDS)}) values (%s, %s{', %s' * len(FIELDS)}) "
+        f"on conflict (ship_id) do update set {updates}",
+        (ship_id, store.run_key, *values.values()),
     )
     if record.get("imo"):
         store.db.execute(
-            "update ais_matches set imo = coalesce(imo, ?), mmsi = coalesce(mmsi, nullif(?, '')) where ship_id = ? and chosen = 1",
-            (record["imo"], record.get("mmsi"), ship_id),
+            "update review.ais_matches set imo = coalesce(imo, %s), mmsi = coalesce(mmsi, nullif(%s, '')) "
+            "where run_key = %s and ship_id = %s and chosen",
+            (record["imo"], record.get("mmsi"), store.run_key, ship_id),
         )
 
 

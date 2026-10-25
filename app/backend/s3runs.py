@@ -8,9 +8,9 @@ from pathlib import Path
 import boto3
 from botocore.exceptions import ClientError
 
-from app.backend import ledger
 from maritime_tip_cue.config import env, settings
 from maritime_tip_cue.watch import registry
+from maritime_tip_cue.watch.registry import fetch
 
 INTERVAL_SECONDS = 300
 _missing: set[str] = set()
@@ -18,15 +18,6 @@ _missing: set[str] = set()
 
 def folder_name(job_id: str, attempt_id: str) -> str:
     return f"{job_id[:12]}-{attempt_id[:8]}"
-
-
-def succeeded_attempts(jobs: list[dict]):
-    for job in jobs:
-        if job["status"] != "succeeded":
-            continue
-        done = [a for a in job["attempts"] if a["verdict"] == "succeeded" and a.get("attempt_id")]
-        if done:
-            yield job["job_id"], done[-1]["attempt_id"]
 
 
 def download(client, bucket: str, prefix: str, target: Path) -> None:
@@ -41,46 +32,36 @@ def download(client, bucket: str, prefix: str, target: Path) -> None:
         data = destination.read_bytes()
         if len(data) != entry["size"] or hashlib.sha256(data).hexdigest() != entry["sha256"]:
             raise ValueError(f"checksum mismatch for {entry['path']}")
-    if not (target / "state.db").is_file():
-        raise ValueError("review data has no run database")
 
 
-def legacy_runs(client, bucket: str) -> list[tuple[str, str]]:
-    base = settings()["catalogue"]["reviews_prefix"].rstrip("/") + "/legacy/"
-    found = []
-    token = None
-    while True:
-        args = {"Bucket": bucket, "Prefix": base, "Delimiter": "/"}
-        if token:
-            args["ContinuationToken"] = token
-        page = client.list_objects_v2(**args)
-        found += [(item["Prefix"].rstrip("/").rsplit("/", 1)[1], item["Prefix"]) for item in page.get("CommonPrefixes", [])]
-        if not page.get("IsTruncated"):
-            return found
-        token = page["NextContinuationToken"]
+def review_prefix(row: dict) -> str | None:
+    base = settings()["catalogue"]["reviews_prefix"].rstrip("/")
+    if row["origin"] == "legacy":
+        return f"{base}/legacy/run-{row['run_no']}/"
+    if row["job_id"] and row["attempt_id"]:
+        return f"{base}/{row['job_id']}/{row['attempt_id']}/"
+    return None
 
 
-def sync_once(client, bucket: str, jobs: list[dict] | None = None) -> dict:
-    jobs = ledger.fetch()["jobs"] if jobs is None else jobs
+def wanted_runs() -> list[dict]:
+    return fetch(None, "select run_key, run_no, origin, folder, attempt_id, job_id from review.run_lineage order by run_no")
+
+
+def sync_once(client, bucket: str) -> dict:
     root = registry.runs_root()
     root.mkdir(parents=True, exist_ok=True)
-    known = {row["folder"] for row in registry.listing()}
     added, errors = [], []
-    wanted = [
-        (folder_name(job_id, attempt_id), settings()["catalogue"]["reviews_prefix"].rstrip("/") + f"/{job_id}/{attempt_id}/")
-        for job_id, attempt_id in succeeded_attempts(jobs)
-    ]
-    wanted += [(f"legacy-{name}", prefix) for name, prefix in legacy_runs(client, bucket)]
-    for name, prefix in wanted:
-        if name in known or name in _missing:
+    for row in wanted_runs():
+        name = row["folder"]
+        final = root / name
+        prefix = review_prefix(row)
+        if final.is_dir() or name in _missing or prefix is None:
             continue
         temporary = root / f".tmp-{name}"
         shutil.rmtree(temporary, ignore_errors=True)
         try:
             download(client, bucket, prefix, temporary)
-            final = root / name
             temporary.rename(final)
-            registry.register(final)
             added.append(name)
         except ClientError as error:
             shutil.rmtree(temporary, ignore_errors=True)

@@ -36,8 +36,14 @@ operational and dependency based; this directory is not a standalone sparse chec
 
 Create ignored `config.local.yaml` from `deploy/gpu-worker/config.worker.example.yaml` and an ignored `.env`
 from `deploy/gpu-worker/.env.example` beside the clone. The config sets the image detector path and persistent
-`/app/data` paths. The environment file supplies `STS_REDIS_URL`, `S3_BUCKET_NAME`, GizmoSQL settings and the
-AWS region. Attach an EC2 instance profile that grants required read access to result receipts and scene sources,
+`/app/data` paths. The environment file supplies `STS_REDIS_URL`, `STS_DATABASE_URL`, `S3_BUCKET_NAME`, GizmoSQL
+settings and the AWS region. `STS_DATABASE_URL` reaches the control host's Postgres (review store and job ledger) at
+the host's private address with `sslmode=verify-full`; copy the server certificate from the host's
+`data/postgres/tls/server.crt` to `data/secrets/sts_pg_server.crt` on EC2 (the `.env.example` URL names its
+in-container path `/app/data/secrets/sts_pg_server.crt`), keep the file out of Git, and open port 5432 in the host
+firewall only to the worker's private address. Verify with `docker run --rm --network host --env-file .env -v
+"$PWD/data:/app/data" --entrypoint python maritime-sts-gpu-worker -c "from maritime_tip_cue import pg;
+print(pg.connect().execute('select 1').fetchone())"`. Attach an EC2 instance profile that grants required read access to result receipts and scene sources,
 and write access to the attempt artifact prefix. The container uses the EC2 metadata credential provider; verify
 that it can obtain credentials before claiming a job. The role is attached to the tested instance, and the
 worker's live `ListBucket` preflight for `catalogue/results/` passed after the bucket-specific policy was

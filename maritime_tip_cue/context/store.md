@@ -16,6 +16,22 @@ Choices that are not obvious from the DDL:
 - `vessel_identities` is one global table (the SQLite copies were per run and empty on the host).
 - The importer reads each source from an in-memory snapshot, writes one run per transaction and checks the row counts
   against the source before it commits. A run already present is skipped, so re-running cannot overwrite reviews.
+- The code side (`watch/state.py`, `registry.py`, `pgutil.py`): one `Store` per run, bound to `run_key`, each with its own
+  autocommit connection that reconnects when the server drops it (hours-long detector runs). `pg.connect()` is the only
+  way in. Timestamps leave the store as ISO strings with a `Z` (`pgutil.iso`), so reports and the HTTP API keep their
+  shape; fractional seconds are normalised (the SQLite text kept whatever precision the producer wrote, e.g. `.703000Z`
+  now reads `.703Z`; compared on 63 runs, nothing else differed).
+- A re-check upserts hulls rather than delete and insert them, because `qa_flags` and `captures` reference hulls with
+  `on delete cascade`; a delete-and-insert would silently drop the reviewers' flags. A hull that disappears but has a
+  flag stays as `role = 'duplicate'`.
+- Run creation takes the number first (`nextval`) and then inserts with that explicit `run_no`, so the folder name
+  `legacy-run-<n>` is known at insert time. `pgimport` inserts explicit numbers too; `pg init` resets the sequence.
+- The worker records the attempt before it creates the run: after the queue claim it calls `ledger.ensure_attempt`,
+  commits, and polls `processing.job_attempts` for up to `worker.attempt_wait_seconds` (120, `config.yaml`; the manager
+  may have raced it, or the job may not be eligible) and raises if the row never appears. Only then is the run row
+  created with `attempt_id`. A re-run of the same attempt reuses its run row; a new attempt gets a new run and
+  re-detects its scenes, so every derived row belongs to the attempt that produced it.
+- `vessel_identities` is global; `first_run_key` is set by the run whose lookup first stored the ship.
 - Remote access is TLS only with password logins; the user name is random. Credentials never go in Git.
 
 ## traceability

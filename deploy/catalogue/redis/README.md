@@ -23,12 +23,12 @@ On both tracker and EC2, add `STS_REDIS_URL=redis://sts:<password>@<private-ip>:
 `.env`; keep the actual endpoint and secret out of Git. Install the Redis Python requirement from
 `deploy/catalogue/requirements.txt`. Queue operations use the `sts:tasks` key prefix by default.
 
-The tracker SQLite database remains the source for discovery and durable job history. Redis is the active
-batch. The six-hour catalogue scan discovers jobs; a separate always-on job manager dispatches SQLite jobs,
-consumes Redis Stream claim, result and lease-expiry events, and updates SQLite after validating receipts and
+The Postgres ledger remains the source for discovery and durable job history. Redis is the active
+batch. The six-hour catalogue scan discovers jobs; a separate always-on job manager dispatches ledger jobs,
+consumes Redis Stream claim, result and lease-expiry events, and updates the ledger after validating receipts and
 successful S3 artifacts. Workers atomically claim jobs and renew leases with heartbeats. Result publication is
 fenced by attempt identity. Failed or expired attempts receive one delayed retry; another failure is terminal.
-The manager recovers pending, retry-waiting and terminal Redis state from SQLite each cycle. A task whose
+The manager recovers pending, retry-waiting and terminal Redis state from the ledger each cycle. A task whose
 worker stops heartbeating is recovered after its configured lease expires; do not manually requeue active jobs.
 The `sts` ACL user must allow `MULTI` and `EXEC` as well as Streams and scripting commands because the manager
 uses Redis transactions when it synchronizes retry and terminal state.
@@ -50,13 +50,13 @@ wake or processing was started during tracker migration.
 
 The always-on `sts-job-manager.service` and Redis Streams ACL permission were installed on Ubuntu on
 2026-10-21. Redis restarted successfully with no in-flight jobs, the manager created its consumer group, and
-its first cycle completed without errors: eight jobs remain dispatched in SQLite and two remain succeeded.
+its first cycle completed without errors: eight jobs remain dispatched in the ledger and two remain succeeded.
 The service only reconciles jobs; it does not start or stop EC2.
 
 An isolated EC2 queue canary passed on 2026-10-22 using the existing managed wake controller. The test kept
 the controller's idle timer refreshed while active, claimed a synthetic task, rejected a duplicate claim,
 renewed its heartbeat, expired and recovered one lease, allowed exactly one retry, and finalized an intentional
-second-attempt failure in SQLite and Redis. No production job was claimed and no scene was processed. The
+second-attempt failure in the ledger and Redis. No production job was claimed and no scene was processed. The
 worker checkout currently on EC2 is the unrelated geo-dataset-generator application, so the STS worker image
 and detector runtime still need deployment before a real scene can be processed. See
 [EC2 lifecycle test procedure](../../../maritime_tip_cue/context/watch.md#ec2-lifecycle-reference).

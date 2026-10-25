@@ -1,14 +1,16 @@
 import argparse
 import hashlib
 import json
-import os
-import sqlite3
 import uuid
 from contextlib import closing, contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from maritime_tip_cue import hotspots, passes
+from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
+
+from maritime_tip_cue import hotspots, passes, pg
+from maritime_tip_cue import ledger as attempt_ledger
 from maritime_tip_cue.config import ROOT, settings
 from maritime_tip_cue.sts import rules as rules_mod
 
@@ -52,80 +54,52 @@ def make_manifest(site, scenes, raw_rules):
     return {**core, "job_id": digest(core), "created_utc": utc_now()}
 
 
-def connect(path):
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(path)
-    db.row_factory = sqlite3.Row
-    db.executescript("""
-        CREATE TABLE IF NOT EXISTS scans (
-            scan_id TEXT PRIMARY KEY, started_utc TEXT NOT NULL, ended_utc TEXT,
-            status TEXT NOT NULL, summary_json TEXT
-        );
-        CREATE TABLE IF NOT EXISTS channels (
-            site TEXT NOT NULL, source TEXT NOT NULL, baseline_utc TEXT NOT NULL,
-            PRIMARY KEY (site, source)
-        );
-        CREATE TABLE IF NOT EXISTS observations (
-            site TEXT NOT NULL, source TEXT NOT NULL, scene TEXT NOT NULL,
-            version TEXT NOT NULL, processing_group TEXT NOT NULL,
-            first_discovered_utc TEXT NOT NULL, last_seen_utc TEXT NOT NULL,
-            row_json TEXT NOT NULL, PRIMARY KEY (site, source, scene, version)
-        );
-        CREATE TABLE IF NOT EXISTS jobs (
-            job_id TEXT PRIMARY KEY, site TEXT NOT NULL, source TEXT NOT NULL,
-            created_utc TEXT NOT NULL, manifest_json TEXT NOT NULL,
-            manifest_sha256 TEXT NOT NULL, status TEXT NOT NULL,
-            dispatched_utc TEXT, completed_utc TEXT, error TEXT, receipt_json TEXT,
-            retry_count INTEGER NOT NULL DEFAULT 0, available_utc TEXT, current_attempt_id TEXT
-        );
-        CREATE TABLE IF NOT EXISTS job_attempts (
-            attempt_id TEXT PRIMARY KEY, job_id TEXT NOT NULL, attempt_no INTEGER NOT NULL,
-            owner TEXT NOT NULL, status TEXT NOT NULL, started_utc TEXT NOT NULL,
-            finished_utc TEXT, error TEXT, receipt_json TEXT
-        );
-        CREATE TABLE IF NOT EXISTS scan_sources (
-            scan_id TEXT NOT NULL, site TEXT NOT NULL, source TEXT NOT NULL,
-            status TEXT NOT NULL, matched INTEGER NOT NULL, new INTEGER NOT NULL,
-            baseline INTEGER NOT NULL, error TEXT, PRIMARY KEY (scan_id, site, source)
-        );
-    """)
-    job_columns = {row[1] for row in db.execute("PRAGMA table_info(jobs)")}
-    for name, definition in (
-        ("retry_count", "INTEGER NOT NULL DEFAULT 0"),
-        ("available_utc", "TEXT"),
-        ("current_attempt_id", "TEXT"),
-        ("superseded_by", "TEXT"),
-    ):
-        if name not in job_columns:
-            db.execute(f"ALTER TABLE jobs ADD COLUMN {name} {definition}")
+LOCK_KEY = 0x5354534C45444752
+
+
+def connect():
+    db = pg.connect()
+    db.commit()
+    db.autocommit = True
     return db
 
 
+def rows(db, sql, params=()):
+    with db.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(sql, params)
+        return cursor.fetchall()
+
+
+def one(db, sql, params=()):
+    found = rows(db, sql, params)
+    return found[0] if found else None
+
+
 @contextmanager
-def controller_lock(path):
-    lock_path = Path(str(path) + ".lock")
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("a+b") as handle:
-        if os.name == "nt":
-            import msvcrt
+def tx(db):
+    with db.transaction():
+        yield
+    if not db.autocommit:
+        db.commit()
 
-            handle.seek(0)
-            handle.write(b"0")
-            handle.flush()
-            handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-        else:
-            import fcntl
 
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        try:
-            yield
-        finally:
-            if os.name == "nt":
-                handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+def jsonb(value):
+    return Jsonb(value, dumps=lambda item: canonical_bytes(item).decode())
+
+
+def iso(value):
+    return value.isoformat() if value is not None else None
+
+
+@contextmanager
+def controller_lock(db):
+    if not db.execute("SELECT pg_try_advisory_lock(%s)", (LOCK_KEY,)).fetchone()[0]:
+        raise BlockingIOError("Another catalogue controller holds the ledger lock")
+    try:
+        yield
+    finally:
+        if not db.closed and not db.broken:
+            db.execute("SELECT pg_advisory_unlock(%s)", (LOCK_KEY,))
 
 
 def serialize_scene(row):
@@ -135,95 +109,104 @@ def serialize_scene(row):
     return json.loads(canonical_bytes(result))
 
 
-def record_channel(db, scan_id, site, source, rows, raw_rules, backfill):
-    now = utc_now()
+def insert_job(db, manifest, site, source, created, scan_id):
+    inserted = db.execute(
+        "INSERT INTO processing.jobs (job_id,site,source,created_utc,manifest_json,manifest_sha256,status,scan_id) "
+        "VALUES (%s,%s,%s,%s,%s,%s,'pending',%s) ON CONFLICT (job_id) DO NOTHING",
+        (manifest["job_id"], site, source, created, jsonb(manifest), manifest["job_id"], scan_id),
+    ).rowcount
+    if inserted:
+        for scene in manifest["scenes"]:
+            db.execute(
+                "INSERT INTO processing.job_scenes (job_id,site,source,scene) VALUES (%s,%s,%s,%s) "
+                "ON CONFLICT DO NOTHING",
+                (manifest["job_id"], scene["site"], scene["source"], scene["scene"]),
+            )
+    return bool(inserted)
+
+
+def record_channel(db, scan_id, site, source, rows_found, raw_rules, backfill):
+    now = datetime.now(UTC)
     version = digest({"site": site, "rules": raw_rules})
-    initial = db.execute("SELECT 1 FROM channels WHERE site=? AND source=?", (site["name"], source)).fetchone() is None
+    initial = one(db, "SELECT 1 FROM processing.channels WHERE site=%s AND source=%s", (site["name"], source)) is None
     new, changed_groups, new_scenes = 0, set(), []
-    with db:
-        for row in rows:
+    with tx(db):
+        for row in rows_found:
             stored = serialize_scene(row)
             group = passes.processing_group(source, row["scene"])
-            cursor = db.execute(
-                "INSERT OR IGNORE INTO observations VALUES (?,?,?,?,?,?,?,?)",
-                (site["name"], source, row["scene"], version, group, now, now, canonical_bytes(stored).decode()),
-            )
-            if cursor.rowcount:
+            inserted = db.execute(
+                "INSERT INTO processing.observations (site,source,scene,version,processing_group,first_discovered_utc,"
+                "last_seen_utc,row_json,scan_id) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+                (site["name"], source, row["scene"], version, group, now, now, jsonb(stored), scan_id),
+            ).rowcount
+            if inserted:
                 new += 1
                 new_scenes.append(row["scene"])
                 if not initial or backfill:
                     changed_groups.add(group)
             else:
                 db.execute(
-                    "UPDATE observations SET last_seen_utc=?, row_json=? "
-                    "WHERE site=? AND source=? AND scene=? AND version=?",
-                    (now, canonical_bytes(stored).decode(), site["name"], source, row["scene"], version),
+                    "UPDATE processing.observations SET last_seen_utc=%s, row_json=%s "
+                    "WHERE site=%s AND source=%s AND scene=%s AND version=%s",
+                    (now, jsonb(stored), site["name"], source, row["scene"], version),
                 )
         for group in sorted(changed_groups):
             members = [
-                json.loads(row[0])
-                for row in db.execute(
-                    "SELECT row_json FROM observations WHERE site=? AND source=? "
-                    "AND version=? AND processing_group=? ORDER BY scene",
+                member["row_json"]
+                for member in rows(
+                    db,
+                    "SELECT row_json FROM processing.observations WHERE site=%s AND source=%s "
+                    "AND version=%s AND processing_group=%s ORDER BY scene",
                     (site["name"], source, version, group),
                 )
             ]
-            manifest = make_manifest(site, members, raw_rules)
-            db.execute(
-                "INSERT OR IGNORE INTO jobs "
-                "(job_id,site,source,created_utc,manifest_json,manifest_sha256,status) VALUES (?,?,?,?,?,?,?)",
-                (
-                    manifest["job_id"],
-                    site["name"],
-                    source,
-                    now,
-                    canonical_bytes(manifest).decode(),
-                    manifest["job_id"],
-                    "pending",
-                ),
-            )
-        db.execute("INSERT OR IGNORE INTO channels VALUES (?,?,?)", (site["name"], source, now))
+            insert_job(db, make_manifest(site, members, raw_rules), site["name"], source, now, scan_id)
         db.execute(
-            "INSERT INTO scan_sources VALUES (?,?,?,?,?,?,?,?)",
-            (scan_id, site["name"], source, "ok", len(rows), new, int(initial and not backfill), None),
+            "INSERT INTO processing.channels (site,source,baseline_utc) VALUES (%s,%s,%s) ON CONFLICT DO NOTHING",
+            (site["name"], source, now),
+        )
+        db.execute(
+            "INSERT INTO processing.scan_sources (scan_id,site,source,status,matched,new,baseline,error) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+            (scan_id, site["name"], source, "ok", len(rows_found), new, int(initial and not backfill), None),
         )
     return {
         "site": site["name"],
         "source": source,
         "status": "ok",
-        "matched": len(rows),
+        "matched": len(rows_found),
         "new": new,
         "baseline": initial and not backfill,
-        "scenes": [{key: row.get(key) for key in ("scene", "time", "cloud", "overlap_km2")} for row in rows],
+        "scenes": [{key: row.get(key) for key in ("scene", "time", "cloud", "overlap_km2")} for row in rows_found],
         "new_scenes": new_scenes,
     }
 
 
-def record_first_s2_scene(db, scan_id, site, rows, raw_rules):
+def record_first_s2_scene(db, scan_id, site, rows_found, raw_rules):
     version = digest({"site": site, "rules": raw_rules})
-    initial = db.execute(
-        "SELECT 1 FROM channels WHERE site=? AND source='s2'",
-        (site["name"],),
-    ).fetchone() is None
+    initial = one(db, "SELECT 1 FROM processing.channels WHERE site=%s AND source='s2'", (site["name"],)) is None
     if initial:
-        return record_channel(db, scan_id, site, "s2", rows, raw_rules, False), None
+        return record_channel(db, scan_id, site, "s2", rows_found, raw_rules, False), None
     selected = None
-    for row in rows:
-        exists = db.execute(
-            "SELECT 1 FROM observations WHERE site=? AND source='s2' AND scene=? AND version=?",
+    for row in rows_found:
+        exists = one(
+            db,
+            "SELECT 1 FROM processing.observations WHERE site=%s AND source='s2' AND scene=%s AND version=%s",
             (site["name"], row["scene"], version),
-        ).fetchone()
+        )
         if exists is None:
             manifest = make_manifest(site, [serialize_scene(row)], raw_rules)
-            prior_job = db.execute("SELECT 1 FROM jobs WHERE job_id=?", (manifest["job_id"],)).fetchone()
-            if prior_job is None:
+            if one(db, "SELECT 1 FROM processing.jobs WHERE job_id=%s", (manifest["job_id"],)) is None:
                 selected = row
                 break
     if selected is None:
-        return record_channel(db, scan_id, site, "s2", rows, raw_rules, False), None
+        return record_channel(db, scan_id, site, "s2", rows_found, raw_rules, False), None
     result = record_channel(db, scan_id, site, "s2", [selected], raw_rules, False)
-    result["matched"] = len(rows)
+    result["matched"] = len(rows_found)
     return result, make_manifest(site, [serialize_scene(selected)], raw_rules)["job_id"]
+
+
+FINISHED_ATTEMPT = ("failed", "stopped", "lease_expired", "succeeded")
 
 
 def reconcile_redis(db, redis, s3, bucket, artifacts_prefix, events, max_retries, retry_delay_seconds):
@@ -236,41 +219,22 @@ def reconcile_redis(db, redis, s3, bucket, artifacts_prefix, events, max_retries
         attempt_id = event.get("attempt_id")
         event_type = event.get("type")
         try:
-            row = db.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
+            row = one(db, "SELECT * FROM processing.jobs WHERE job_id=%s", (job_id,))
             if row is None:
                 continue
             if event_type == "claimed":
-                attempt = db.execute(
-                    "SELECT status FROM job_attempts WHERE attempt_id=?",
-                    (attempt_id,),
-                ).fetchone()
-                with db:
-                    if attempt is None and row["status"] not in ("succeeded", "failed", "running"):
-                        db.execute(
-                            "INSERT OR IGNORE INTO job_attempts "
-                            "(attempt_id,job_id,attempt_no,owner,status,started_utc) VALUES (?,?,?,?,?,?)",
-                            (
-                                attempt_id,
-                                job_id,
-                                row["retry_count"] + 1,
-                                event.get("owner", "unknown"),
-                                "running",
-                                utc_now(),
-                            ),
-                        )
-                        db.execute(
-                            "UPDATE jobs SET status='running',current_attempt_id=? WHERE job_id=?",
-                            (attempt_id, job_id),
-                        )
+                with tx(db):
+                    attempt_ledger.ensure_attempt(db, job_id, attempt_id, event.get("owner", "unknown"))
                 continue
             if event_type not in ("result", "lease_expired"):
                 continue
             if row["current_attempt_id"] != attempt_id:
-                prior_attempt = db.execute(
-                    "SELECT status FROM job_attempts WHERE attempt_id=? AND job_id=?",
+                prior_attempt = one(
+                    db,
+                    "SELECT status FROM processing.job_attempts WHERE attempt_id=%s AND job_id=%s",
                     (attempt_id, job_id),
-                ).fetchone()
-                if prior_attempt is not None and prior_attempt["status"] in ("failed", "stopped", "lease_expired", "succeeded"):
+                )
+                if prior_attempt is not None and prior_attempt["status"] in FINISHED_ATTEMPT:
                     if row["status"] in ("retry_wait", "succeeded", "failed"):
                         final_status = {
                             "retry_wait": "retry",
@@ -281,15 +245,13 @@ def reconcile_redis(db, redis, s3, bucket, artifacts_prefix, events, max_retries
                             job_id,
                             event.get("owner", attempt_id),
                             final_status,
-                            datetime.fromisoformat(row["available_utc"])
-                            if row["status"] == "retry_wait" and row["available_utc"]
-                            else None,
+                            row["available_utc"] if row["status"] == "retry_wait" else None,
                             attempt_id,
                         )
                 continue
-            attempt_row = db.execute("SELECT * FROM job_attempts WHERE attempt_id=?", (attempt_id,)).fetchone()
+            attempt_row = one(db, "SELECT * FROM processing.job_attempts WHERE attempt_id=%s", (attempt_id,))
             if attempt_row is None:
-                raise ValueError("Claim event is missing its SQLite attempt record")
+                raise ValueError("Claim event is missing its ledger attempt record")
             receipt = None
             status = "failed"
             error_text = "Worker stopped without a receipt: heartbeat lease expired"
@@ -310,7 +272,7 @@ def reconcile_redis(db, redis, s3, bucket, artifacts_prefix, events, max_retries
                 status = receipt["status"]
                 error_text = receipt.get("error") or "Worker reported failure"
             if status == "succeeded":
-                manifest = validate_manifest(json.loads(row["manifest_json"]))
+                manifest = validate_manifest(row["manifest_json"])
                 expected = artifacts_prefix.rstrip("/") + "/" + job_id + "/" + attempt_id + "/"
                 if (
                     not isinstance(receipt.get("scene_counts"), dict)
@@ -341,15 +303,17 @@ def reconcile_redis(db, redis, s3, bucket, artifacts_prefix, events, max_retries
                         or head.get("Metadata", {}).get("sha256") != artifact["sha256"]
                     ):
                         raise ValueError("Worker artifact checksum or size mismatch")
-                with db:
+                finished = datetime.now(UTC)
+                with tx(db):
                     db.execute(
-                        "UPDATE job_attempts SET status='succeeded',finished_utc=?,receipt_json=? WHERE attempt_id=?",
-                        (utc_now(), canonical_bytes(receipt).decode(), attempt_id),
+                        "UPDATE processing.job_attempts SET status='succeeded',finished_utc=%s,receipt_json=%s "
+                        "WHERE attempt_id=%s",
+                        (finished, jsonb(receipt), attempt_id),
                     )
                     db.execute(
-                        "UPDATE jobs SET status='succeeded',completed_utc=?,error=NULL,receipt_json=?,"
-                        "current_attempt_id=NULL WHERE job_id=?",
-                        (utc_now(), canonical_bytes(receipt).decode(), job_id),
+                        "UPDATE processing.jobs SET status='succeeded',completed_utc=%s,error=NULL,receipt_json=%s,"
+                        "current_attempt_id=NULL WHERE job_id=%s",
+                        (finished, jsonb(receipt), job_id),
                     )
                 task_queue.finalize(
                     job_id,
@@ -362,29 +326,23 @@ def reconcile_redis(db, redis, s3, bucket, artifacts_prefix, events, max_retries
                 retry = retry_count <= max_retries
                 available = datetime.now(UTC) + timedelta(seconds=retry_delay_seconds) if retry else None
                 terminal_status = "retry_wait" if retry else "failed"
-                receipt_text = canonical_bytes(receipt).decode() if receipt else None
-                with db:
+                receipt_value = jsonb(receipt) if receipt else None
+                with tx(db):
                     db.execute(
-                        "UPDATE job_attempts SET status=?,finished_utc=?,error=?,receipt_json=? WHERE attempt_id=?",
+                        "UPDATE processing.job_attempts SET status=%s,finished_utc=%s,error=%s,receipt_json=%s "
+                        "WHERE attempt_id=%s",
                         (
                             "stopped" if event_type == "lease_expired" or status == "stopped" else "failed",
-                            utc_now(),
+                            datetime.now(UTC),
                             error_text,
-                            receipt_text,
+                            receipt_value,
                             attempt_id,
                         ),
                     )
                     db.execute(
-                        "UPDATE jobs SET status=?,retry_count=?,available_utc=?,error=?,receipt_json=?,"
-                        "current_attempt_id=NULL WHERE job_id=?",
-                        (
-                            terminal_status,
-                            retry_count,
-                            available.isoformat() if available else None,
-                            error_text,
-                            receipt_text,
-                            job_id,
-                        ),
+                        "UPDATE processing.jobs SET status=%s,retry_count=%s,available_utc=%s,error=%s,receipt_json=%s,"
+                        "current_attempt_id=NULL WHERE job_id=%s",
+                        (terminal_status, retry_count, available, error_text, receipt_value, job_id),
                     )
                 finalizer = attempt_row["owner"] if event_type == "result" else attempt_id
                 task_queue.finalize(
@@ -401,28 +359,30 @@ def reconcile_redis(db, redis, s3, bucket, artifacts_prefix, events, max_retries
     return finalized, errors
 
 
-def scene_keys(manifest_json):
-    return frozenset((row["site"], row["source"], row["scene"]) for row in json.loads(manifest_json)["scenes"])
+def scene_keys(manifest):
+    return frozenset((row["site"], row["source"], row["scene"]) for row in manifest["scenes"])
 
 
 def supersede_jobs(db):
-    rows = db.execute("SELECT job_id,status,created_utc,manifest_json FROM jobs").fetchall()
-    keys = {row["job_id"]: scene_keys(row["manifest_json"]) for row in rows}
-    succeeded = [row for row in rows if row["status"] == "succeeded"]
+    found = rows(db, "SELECT job_id,status,created_utc,manifest_json FROM processing.jobs")
+    keys = {row["job_id"]: scene_keys(row["manifest_json"]) for row in found}
+    succeeded = [row for row in found if row["status"] == "succeeded"]
     covered = {}
     for row in succeeded:
         for key in keys[row["job_id"]]:
             covered.setdefault(key, row["job_id"])
     open_states = ("pending", "dispatched", "retry_wait")
-    active = sorted((row for row in rows if row["status"] in open_states), key=lambda r: (r["created_utc"], r["job_id"]))
+    active = sorted(
+        (row for row in found if row["status"] in open_states), key=lambda r: (r["created_utc"], r["job_id"])
+    )
     newest = {}
     for row in active:
         newest[keys[row["job_id"]]] = row["job_id"]
     running = {
-        keys[row["job_id"]]: row["job_id"] for row in rows if row["status"] == "running"
+        keys[row["job_id"]]: row["job_id"] for row in found if row["status"] == "running"
     }
     result = {}
-    for row in rows:
+    for row in found:
         if row["status"] not in open_states + ("failed",):
             continue
         job_keys = keys[row["job_id"]]
@@ -433,10 +393,11 @@ def supersede_jobs(db):
             result[row["job_id"]] = newest[job_keys]
         elif row["status"] == "failed" and (job_keys in newest or job_keys in running):
             result[row["job_id"]] = newest.get(job_keys) or running[job_keys]
-    with db:
+    with tx(db):
         for job_id, by in result.items():
             db.execute(
-                "UPDATE jobs SET status='superseded',superseded_by=?,current_attempt_id=NULL WHERE job_id=?",
+                "UPDATE processing.jobs SET status='superseded',superseded_by=%s,current_attempt_id=NULL "
+                "WHERE job_id=%s",
                 (by, job_id),
             )
     return result
@@ -446,16 +407,19 @@ OPEN_STATES = ("pending", "dispatched", "retry_wait")
 
 
 def audit(db, redis=None):
-    jobs = db.execute("SELECT job_id,status,manifest_json FROM jobs").fetchall()
+    jobs = rows(db, "SELECT job_id,status,manifest_json FROM processing.jobs")
     by_scene = {}
     for job in jobs:
         for key in scene_keys(job["manifest_json"]):
             by_scene.setdefault(key, []).append((job["job_id"], job["status"]))
     baseline = {
-        (row["site"], row["source"]): row["baseline_utc"] for row in db.execute("SELECT * FROM channels")
+        (row["site"], row["source"]): row["baseline_utc"] for row in rows(db, "SELECT * FROM processing.channels")
     }
     seen = {}
-    for row in db.execute("SELECT site,source,scene,MIN(first_discovered_utc) first FROM observations GROUP BY 1,2,3"):
+    for row in rows(
+        db,
+        "SELECT site,source,scene,MIN(first_discovered_utc) first FROM processing.observations GROUP BY 1,2,3",
+    ):
         seen[(row["site"], row["source"], row["scene"])] = row["first"]
     states = {}
     violations = []
@@ -471,7 +435,7 @@ def audit(db, redis=None):
             state = "failed"
         elif statuses:
             state = "superseded_only"
-        elif key in seen and seen[key] <= baseline.get(key[:2], ""):
+        elif key in seen and seen[key] <= baseline.get(key[:2], datetime.min.replace(tzinfo=UTC)):
             state = "baseline"
         else:
             state = "orphan"
@@ -510,7 +474,8 @@ def audit(db, redis=None):
         for name in expected:
             extra, missing = sorted(actual[name] - expected[name]), sorted(expected[name] - actual[name])
             if name == "pending":
-                missing = [j for j in missing if (job := next(x for x in jobs if x["job_id"] == j)) and job["status"] != "retry_wait"]
+                waiting = {j["job_id"] for j in jobs if j["status"] == "retry_wait"}
+                missing = [j for j in missing if j not in waiting]
             if extra or missing:
                 drift[name] = {"in_redis_only": extra, "in_ledger_only": missing}
         result["redis_drift"] = drift
@@ -518,13 +483,13 @@ def audit(db, redis=None):
 
 
 def ledger(db, progress=None):
-    jobs = []
-    for row in db.execute(
-        "SELECT job_id,site,source,status,created_utc,dispatched_utc,completed_utc,retry_count,available_utc,"
-        "superseded_by,error,manifest_json FROM jobs ORDER BY created_utc DESC,job_id"
+    attempts_by_job = {}
+    for attempt in rows(
+        db,
+        "SELECT job_id,attempt_id,attempt_no,status,owner,started_utc,finished_utc,error "
+        "FROM processing.job_attempts ORDER BY attempt_no",
     ):
-        manifest = json.loads(row["manifest_json"])
-        attempts = [
+        attempts_by_job.setdefault(attempt["job_id"], []).append(
             {
                 "attempt_id": attempt["attempt_id"],
                 "attempt_no": attempt["attempt_no"],
@@ -534,12 +499,14 @@ def ledger(db, progress=None):
                 "finished_utc": attempt["finished_utc"],
                 "error": attempt["error"],
             }
-            for attempt in db.execute(
-                "SELECT attempt_id,attempt_no,status,owner,started_utc,finished_utc,error FROM job_attempts "
-                "WHERE job_id=? ORDER BY attempt_no",
-                (row["job_id"],),
-            )
-        ]
+        )
+    jobs = []
+    for row in rows(
+        db,
+        "SELECT job_id,site,source,status,created_utc,dispatched_utc,completed_utc,retry_count,available_utc,"
+        "superseded_by,error,manifest_json->'scenes' AS scenes FROM processing.jobs ORDER BY created_utc DESC,job_id",
+    ):
+        attempts = attempts_by_job.get(row["job_id"], [])
         stopped = [a for a in attempts if a["verdict"] in ("failed", "stopped", "lease_expired")]
         before_requeue = max(0, len(stopped) - row["retry_count"]) if row["status"] in OPEN_STATES else 0
         for attempt in attempts[:before_requeue]:
@@ -552,18 +519,20 @@ def ledger(db, progress=None):
                 "site": row["site"],
                 "source": row["source"],
                 "status": row["status"],
-                "created_utc": row["created_utc"],
+                "created_utc": iso(row["created_utc"]),
                 "retry_count": row["retry_count"],
-                "available_utc": row["available_utc"],
+                "available_utc": iso(row["available_utc"]),
                 "superseded_by": row["superseded_by"],
                 "error": row["error"],
-                "last_update_utc": max(m for m in moments if m),
+                "last_update_utc": iso(max(m for m in moments if m)),
                 "progress": (progress or {}).get(row["job_id"], {}),
                 "scenes": [
                     {"scene_id": scene["scene"], "source": scene["source"], "captured": scene["time"]}
-                    for scene in manifest["scenes"]
+                    for scene in row["scenes"]
                 ],
-                "attempts": attempts,
+                "attempts": [
+                    dict(a, started_utc=iso(a["started_utc"]), finished_utc=iso(a["finished_utc"])) for a in attempts
+                ],
             }
         )
     return {"jobs": jobs}
@@ -576,37 +545,30 @@ def read_progress():
 
         redis = task_queue.client()
         for key in redis.scan_iter(task_queue.keys()["progress"] + "*"):
-            progress[key.rsplit(":", 1)[1]] = {scene_id: json.loads(value) for scene_id, value in redis.hgetall(key).items()}
+            scenes = redis.hgetall(key).items()
+            progress[key.rsplit(":", 1)[1]] = {scene_id: json.loads(value) for scene_id, value in scenes}
     except Exception:
         return {}
     return progress
 
 
-def ledger_file(path):
-    readonly = sqlite3.connect(f"file:{Path(path).as_posix()}?mode=ro", uri=True)
-    readonly.row_factory = sqlite3.Row
-    with closing(readonly) as db:
-        return ledger(db, read_progress())
+READY = "status IN ('pending','dispatched') OR (status='retry_wait' AND available_utc<=%s)"
 
 
 def refresh_queue(db):
     from maritime_tip_cue import task_queue
 
-    now = utc_now()
+    now = datetime.now(UTC)
     jobs = {
-        row["job_id"]: json.loads(row["manifest_json"])
-        for row in db.execute(
-            "SELECT job_id,manifest_json FROM jobs WHERE status IN ('pending','dispatched') "
-            "OR (status='retry_wait' AND available_utc<=?)",
-            (now,),
-        )
+        row["job_id"]: row["manifest_json"]
+        for row in rows(db, f"SELECT job_id,manifest_json FROM processing.jobs WHERE {READY}", (now,))
     }
-    completed = {row[0] for row in db.execute("SELECT job_id FROM jobs WHERE status='succeeded'")}
+    completed = {row["job_id"] for row in rows(db, "SELECT job_id FROM processing.jobs WHERE status='succeeded'")}
     task_queue.restore(jobs, completed)
-    with db:
+    with tx(db):
         db.execute(
-            "UPDATE jobs SET status='dispatched',dispatched_utc=coalesce(dispatched_utc,?) "
-            "WHERE status='pending' OR (status='retry_wait' AND available_utc<=?)",
+            "UPDATE processing.jobs SET status='dispatched',dispatched_utc=coalesce(dispatched_utc,%s) "
+            "WHERE status='pending' OR (status='retry_wait' AND available_utc<=%s)",
             (now, now),
         )
     return len(jobs)
@@ -615,44 +577,43 @@ def refresh_queue(db):
 def refresh_one_job(db, job_id):
     from maritime_tip_cue import task_queue
 
-    row = db.execute(
-        "SELECT job_id,manifest_json,status,available_utc FROM jobs WHERE job_id=?",
+    row = one(
+        db,
+        "SELECT job_id,manifest_json,status,available_utc FROM processing.jobs WHERE job_id=%s",
         (job_id,),
-    ).fetchone()
+    )
     if row is None:
         raise ValueError(f"Unknown job ID: {job_id}")
+    now = datetime.now(UTC)
     available = row["status"] in ("pending", "dispatched") or (
-        row["status"] == "retry_wait"
-        and row["available_utc"] is not None
-        and row["available_utc"] <= utc_now()
+        row["status"] == "retry_wait" and row["available_utc"] is not None and row["available_utc"] <= now
     )
     if not available:
         raise ValueError(f"Job {job_id} is not ready for dispatch: {row['status']}")
-    manifest = json.loads(row["manifest_json"])
+    manifest = row["manifest_json"]
     if len(manifest["scenes"]) != 1:
         raise ValueError(f"Job {job_id} contains {len(manifest['scenes'])} scenes; expected exactly one")
     task_queue.restore({job_id: manifest}, set())
-    with db:
+    with tx(db):
         db.execute(
-            "UPDATE jobs SET status='dispatched',dispatched_utc=coalesce(dispatched_utc,?) "
-            "WHERE job_id=? AND (status IN ('pending','dispatched') OR "
-            "(status='retry_wait' AND available_utc<=?))",
-            (utc_now(), job_id, utc_now()),
+            "UPDATE processing.jobs SET status='dispatched',dispatched_utc=coalesce(dispatched_utc,%s) "
+            "WHERE job_id=%s AND (status IN ('pending','dispatched') OR "
+            "(status='retry_wait' AND available_utc<=%s))",
+            (now, job_id, now),
         )
     return {"job_id": job_id, "site": manifest["site"]["name"], "scenes": len(manifest["scenes"])}
 
 
 def pending_jobs(db, single_scene=False, limit=20):
-    now = utc_now()
-    rows = db.execute(
-        "SELECT job_id,site,source,status,manifest_json FROM jobs "
-        "WHERE status IN ('pending','dispatched') OR "
-        "(status='retry_wait' AND available_utc<=?) ORDER BY created_utc,job_id",
-        (now,),
+    found = rows(
+        db,
+        f"SELECT job_id,site,source,status,manifest_json FROM processing.jobs WHERE {READY} "
+        "ORDER BY created_utc,job_id",
+        (datetime.now(UTC),),
     )
     result = []
-    for row in rows:
-        manifest = json.loads(row["manifest_json"])
+    for row in found:
+        manifest = row["manifest_json"]
         if single_scene and len(manifest["scenes"]) != 1:
             continue
         result.append(
@@ -670,14 +631,14 @@ def pending_jobs(db, single_scene=False, limit=20):
 
 
 def job_status(db, job_id):
-    row = db.execute(
+    row = one(
+        db,
         "SELECT job_id,site,source,status,error,retry_count,available_utc,manifest_json "
-        "FROM jobs WHERE job_id=?",
+        "FROM processing.jobs WHERE job_id=%s",
         (job_id,),
-    ).fetchone()
+    )
     if row is None:
         raise ValueError(f"Unknown job ID: {job_id}")
-    manifest = json.loads(row["manifest_json"])
     return {
         "job_id": row["job_id"],
         "site": row["site"],
@@ -685,20 +646,21 @@ def job_status(db, job_id):
         "status": row["status"],
         "error": row["error"],
         "retry_count": row["retry_count"],
-        "available_utc": row["available_utc"],
-        "scenes": [scene["scene"] for scene in manifest["scenes"]],
+        "available_utc": iso(row["available_utc"]),
+        "scenes": [scene["scene"] for scene in row["manifest_json"]["scenes"]],
         "attempts": [
             {
                 "attempt_no": attempt["attempt_no"],
                 "owner": attempt["owner"],
                 "verdict": attempt["status"],
-                "started_utc": attempt["started_utc"],
-                "finished_utc": attempt["finished_utc"],
+                "started_utc": iso(attempt["started_utc"]),
+                "finished_utc": iso(attempt["finished_utc"]),
                 "error": attempt["error"],
             }
-            for attempt in db.execute(
-                "SELECT attempt_no,owner,status,started_utc,finished_utc,error FROM job_attempts "
-                "WHERE job_id=? ORDER BY attempt_no",
+            for attempt in rows(
+                db,
+                "SELECT attempt_no,owner,status,started_utc,finished_utc,error FROM processing.job_attempts "
+                "WHERE job_id=%s ORDER BY attempt_no",
                 (job_id,),
             )
         ],
@@ -706,24 +668,26 @@ def job_status(db, job_id):
 
 
 def counts(db):
-    return {row["status"]: row["n"] for row in db.execute("SELECT status,COUNT(*) n FROM jobs GROUP BY status")}
+    found = rows(db, "SELECT status,COUNT(*) n FROM processing.jobs GROUP BY status")
+    return {row["status"]: row["n"] for row in found}
 
 
 def scan(db, cfg, backfill=False, first_scene=False):
-    scan_id, started = uuid.uuid4().hex, utc_now()
-    for previous in db.execute("SELECT scan_id,started_utc FROM scans WHERE status='running'").fetchall():
+    scan_id, started_at = uuid.uuid4().hex, datetime.now(UTC)
+    started = started_at.isoformat()
+    for previous in rows(db, "SELECT scan_id,started_utc FROM processing.scans WHERE status='running'"):
         interrupted = {
             "scan_id": previous["scan_id"],
-            "started_utc": previous["started_utc"],
+            "started_utc": iso(previous["started_utc"]),
             "ended_utc": started,
             "status": "interrupted",
             "channels": [],
             "errors": [{"phase": "recovery", "error": "Controller stopped before scan completion"}],
         }
-        with db:
+        with tx(db):
             db.execute(
-                "UPDATE scans SET ended_utc=?,status='interrupted',summary_json=? WHERE scan_id=?",
-                (started, canonical_bytes(interrupted).decode(), previous["scan_id"]),
+                "UPDATE processing.scans SET ended_utc=%s,status='interrupted',summary_json=%s WHERE scan_id=%s",
+                (started_at, jsonb(interrupted), previous["scan_id"]),
             )
         write_log(cfg, interrupted)
     summary = {
@@ -734,8 +698,10 @@ def scan(db, cfg, backfill=False, first_scene=False):
         "backfill": backfill,
         "first_scene": first_scene,
     }
-    with db:
-        db.execute("INSERT INTO scans (scan_id,started_utc,status) VALUES (?,?,'running')", (scan_id, started))
+    with tx(db):
+        db.execute(
+            "INSERT INTO processing.scans (scan_id,started_utc,status) VALUES (%s,%s,'running')", (scan_id, started_at)
+        )
     try:
         raw_rules = json.loads(rules_mod.RULES_PATH.read_text(encoding="utf-8"))
         rules = {
@@ -747,11 +713,11 @@ def scan(db, cfg, backfill=False, first_scene=False):
         if not sites:
             raise ValueError("Shared hot-spot list is empty")
         if first_scene:
-            prior_scans = db.execute(
-                "SELECT summary_json FROM scans WHERE summary_json IS NOT NULL ORDER BY started_utc DESC"
-            ).fetchall()
+            prior_scans = rows(
+                db, "SELECT summary_json FROM processing.scans WHERE summary_json IS NOT NULL ORDER BY started_utc DESC"
+            )
             for prior in prior_scans:
-                prior_summary = json.loads(prior["summary_json"])
+                prior_summary = prior["summary_json"]
                 prior_channels = prior_summary.get("channels", [])
                 if prior_summary.get("first_scene") and prior_channels:
                     previous_site = prior_channels[0]["site"]
@@ -771,20 +737,23 @@ def scan(db, cfg, backfill=False, first_scene=False):
             for source in sources:
                 channel_started = utc_now()
                 try:
-                    rows = passes.find(start, end, [site], rules=rules, sources=[source])
+                    found = passes.find(start, end, [site], rules=rules, sources=[source])
                     if first_scene:
-                        detail, selected_job_id = record_first_s2_scene(db, scan_id, site, rows, raw_rules)
+                        detail, selected_job_id = record_first_s2_scene(db, scan_id, site, found, raw_rules)
                     else:
-                        detail = record_channel(db, scan_id, site, source, rows, raw_rules, backfill)
+                        detail = record_channel(db, scan_id, site, source, found, raw_rules, backfill)
                     summary["channels"].append(detail)
                 except Exception as error:
                     detail = {"site": site["name"], "source": source, "status": "failed", "error": str(error)}
                     summary["channels"].append(detail)
                     summary["errors"].append(detail)
-                    with db:
+                    with tx(db):
                         db.execute(
-                            "INSERT OR REPLACE INTO scan_sources VALUES (?,?,?,?,?,?,?,?)",
-                            (scan_id, site["name"], source, "failed", 0, 0, 0, str(error)),
+                            "INSERT INTO processing.scan_sources "
+                            "(scan_id,site,source,status,matched,new,baseline,error) "
+                            "VALUES (%s,%s,%s,'failed',0,0,0,%s) ON CONFLICT (scan_id,site,source) DO UPDATE SET "
+                            "status=excluded.status,matched=0,new=0,baseline=0,error=excluded.error",
+                            (scan_id, site["name"], source, str(error)),
                         )
                 summary["channels"][-1].update({"started_utc": channel_started, "ended_utc": utc_now()})
                 if selected_job_id:
@@ -798,21 +767,23 @@ def scan(db, cfg, backfill=False, first_scene=False):
                 break
     except Exception as error:
         summary["errors"].append({"phase": "scan", "error": str(error)})
-    summary["ended_utc"] = utc_now()
+    ended_at = datetime.now(UTC)
+    summary["ended_utc"] = ended_at.isoformat()
     summary["status"] = "failed" if summary["errors"] else "ok"
     summary["jobs"] = counts(db)
     for channel in summary["channels"]:
         channel["jobs"] = {
             row["status"]: row["n"]
-            for row in db.execute(
-                "SELECT status,COUNT(*) n FROM jobs WHERE site=? AND source=? GROUP BY status",
+            for row in rows(
+                db,
+                "SELECT status,COUNT(*) n FROM processing.jobs WHERE site=%s AND source=%s GROUP BY status",
                 (channel["site"], channel["source"]),
             )
         }
-    with db:
+    with tx(db):
         db.execute(
-            "UPDATE scans SET ended_utc=?,status=?,summary_json=? WHERE scan_id=?",
-            (summary["ended_utc"], summary["status"], canonical_bytes(summary).decode(), scan_id),
+            "UPDATE processing.scans SET ended_utc=%s,status=%s,summary_json=%s WHERE scan_id=%s",
+            (ended_at, summary["status"], jsonb(summary), scan_id),
         )
     write_log(cfg, summary)
     return summary
@@ -827,19 +798,22 @@ def write_log(cfg, summary):
 
 
 def status(db):
-    latest = db.execute("SELECT summary_json FROM scans ORDER BY started_utc DESC LIMIT 1").fetchone()
-    result = {"last_scan": json.loads(latest[0]) if latest and latest[0] else None, "jobs": counts(db), "sites": []}
+    latest = one(db, "SELECT summary_json FROM processing.scans ORDER BY started_utc DESC LIMIT 1")
+    result = {"last_scan": latest["summary_json"] if latest else None, "jobs": counts(db), "sites": []}
     for site in hotspots.load():
         channels = []
         for source in passes.SOURCES:
-            observation = db.execute(
-                "SELECT COUNT(DISTINCT scene) n,MAX(last_seen_utc) latest FROM observations WHERE site=? AND source=?",
+            observation = one(
+                db,
+                "SELECT COUNT(DISTINCT scene) n,MAX(last_seen_utc) latest FROM processing.observations "
+                "WHERE site=%s AND source=%s",
                 (site["name"], source),
-            ).fetchone()
+            )
             jobs = {
                 row["status"]: row["n"]
-                for row in db.execute(
-                    "SELECT status,COUNT(*) n FROM jobs WHERE site=? AND source=? GROUP BY status",
+                for row in rows(
+                    db,
+                    "SELECT status,COUNT(*) n FROM processing.jobs WHERE site=%s AND source=%s GROUP BY status",
                     (site["name"], source),
                 )
             }
@@ -847,7 +821,7 @@ def status(db):
                 {
                     "source": source,
                     "observed_scenes": observation["n"],
-                    "last_seen_utc": observation["latest"],
+                    "last_seen_utc": iso(observation["latest"]),
                     "jobs": jobs,
                 }
             )
@@ -858,13 +832,13 @@ def status(db):
 def requeue_failed(db, job_id=None):
     from maritime_tip_cue import task_queue
 
-    query = "SELECT job_id FROM jobs WHERE status='failed'" + (" AND job_id=?" if job_id else "")
-    ids = [row[0] for row in db.execute(query, (job_id,) if job_id else ())]
-    with db:
+    query = "SELECT job_id FROM processing.jobs WHERE status='failed'" + (" AND job_id=%s" if job_id else "")
+    ids = [row["job_id"] for row in rows(db, query, (job_id,) if job_id else ())]
+    with tx(db):
         for failed_id in ids:
             db.execute(
-                "UPDATE jobs SET status='pending',retry_count=0,available_utc=NULL,error=NULL,"
-                "current_attempt_id=NULL WHERE job_id=?",
+                "UPDATE processing.jobs SET status='pending',retry_count=0,available_utc=NULL,error=NULL,"
+                "current_attempt_id=NULL WHERE job_id=%s",
                 (failed_id,),
             )
     task_queue.clear_failed(ids)
@@ -873,7 +847,10 @@ def requeue_failed(db, job_id=None):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("scan", "scan-one", "status", "jobs", "job-status", "redis-requeue-stale", "requeue-failed", "audit", "ledger"))
+    commands = (
+        "scan", "scan-one", "status", "jobs", "job-status", "redis-requeue-stale", "requeue-failed", "audit", "ledger"
+    )
+    parser.add_argument("command", choices=commands)
     parser.add_argument("--backfill", action="store_true")
     parser.add_argument("--single-scene", action="store_true")
     parser.add_argument("--limit", type=int, default=20)
@@ -895,12 +872,11 @@ def main():
         print(json.dumps({"requeued": task_queue.requeue_stale()}))
         return 0
     cfg = settings()["catalogue"]
-    path = Path(cfg["database"])
-    path = path if path.is_absolute() else ROOT / path
     if args.command == "ledger":
-        print(json.dumps(ledger_file(path), sort_keys=True))
+        with closing(connect()) as db:
+            print(json.dumps(ledger(db, read_progress()), sort_keys=True))
         return 0
-    with controller_lock(path), closing(connect(path)) as db:
+    with closing(connect()) as db, controller_lock(db):
         if args.command in ("scan", "scan-one"):
             result = scan(db, cfg, args.backfill, args.command == "scan-one")
         elif args.command == "status":

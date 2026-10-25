@@ -4,7 +4,6 @@ import sys
 
 from maritime_tip_cue.equasis import resolve
 from maritime_tip_cue.sts import rules as rules_mod
-from maritime_tip_cue.watch import registry
 from maritime_tip_cue.watch.state import Store
 
 
@@ -14,8 +13,7 @@ def main() -> int:
     args = parser.parse_args()
     rules = rules_mod.load()["identity"]
     for no in args.runs:
-        folder = registry.folder_of(no)
-        store = Store(folder / "state.db", folder)
+        store = Store.open(no)
         try:
             print(json.dumps({"run": no, **resolve.enrich(store, rules)}, sort_keys=True), flush=True)
         finally:

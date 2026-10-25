@@ -5,7 +5,8 @@ from maritime_tip_cue import ledger
 
 def add_job(conn, job_id="j1", status="queued", retries=0):
     conn.execute(
-        "insert into processing.jobs (job_id, site, source, created_utc, manifest_json, manifest_sha256, status, retry_count) "
+        "insert into processing.jobs "
+        "(job_id, site, source, created_utc, manifest_json, manifest_sha256, status, retry_count) "
         "values (%s, 'fujairah_outer', 's2', now(), %s, 'x', %s, %s)",
         (job_id, json.dumps({"job_id": job_id}), status, retries),
     )
@@ -14,9 +15,12 @@ def add_job(conn, job_id="j1", status="queued", retries=0):
 def test_first_claim_records_the_attempt_and_marks_the_job_running(pgdb):
     add_job(pgdb, retries=1)
     assert ledger.ensure_attempt(pgdb, "j1", "a1", "worker-1") is True
-    attempt = pgdb.execute("select job_id, attempt_no, owner, status from processing.job_attempts where attempt_id = 'a1'").fetchone()
+    attempt = pgdb.execute(
+        "select job_id, attempt_no, owner, status from processing.job_attempts where attempt_id = 'a1'"
+    ).fetchone()
     assert attempt == ("j1", 2, "worker-1", "running")
-    assert pgdb.execute("select status, current_attempt_id from processing.jobs where job_id = 'j1'").fetchone() == ("running", "a1")
+    job = pgdb.execute("select status, current_attempt_id from processing.jobs where job_id = 'j1'").fetchone()
+    assert job == ("running", "a1")
 
 
 def test_a_second_call_for_the_same_attempt_changes_nothing(pgdb):

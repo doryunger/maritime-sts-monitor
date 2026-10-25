@@ -19,15 +19,10 @@ from maritime_tip_cue.publish_merge import merge_group
 from maritime_tip_cue.sts import rules as rules_mod
 from maritime_tip_cue.watch import registry, report
 from maritime_tip_cue.watch.geo import haversine_m
+from maritime_tip_cue.watch.pgutil import iso
 from maritime_tip_cue.watch.state import Store, now
 
 QA_LABEL = {"ok": "confirmed", "wrong_verdict": "corrected", "is_pair": "corrected"}
-CAPTURES_SCHEMA = """
-create table if not exists captures (
-    finding_id text, format text, local_path text, s3_uri text, run_id integer, created_utc text, uploaded_utc text,
-    primary key (finding_id, format)
-);
-"""
 
 
 def out_root() -> Path:
@@ -42,16 +37,9 @@ def safe(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "-", text).strip("-")
 
 
-def ensure_tables(store: Store) -> None:
-    pk = [r["name"] for r in store.db.execute("pragma table_info(captures)") if r["pk"]]
-    if pk == ["finding_id"] and not store.db.execute("select count(*) from captures").fetchone()[0]:
-        store.db.execute("drop table captures")
-    store.db.executescript(CAPTURES_SCHEMA)
-
-
 def site_settings(store: Store) -> dict:
-    for r in store.db.execute("select args from runs order by run_id desc"):
-        site = json.loads(r["args"] or "{}").get("hot_spot_settings")
+    for r in store.db.execute("select args from review.run_invocations where run_key = %s order by invocation_id desc", (store.run_key,)):
+        site = (r["args"] or {}).get("hot_spot_settings")
         if site:
             return site
     return {}
@@ -72,19 +60,21 @@ def vessel_positions(source: str, rec: dict, lat: float, lon: float) -> list[tup
 
 
 def run_problem(no: int, completed: set[str], allow_legacy: bool) -> str | None:
-    path = registry.folder_of(no)
-    if not (path / "state.db").exists():
-        return "no run database"
-    store = Store(path / "state.db", path)
     try:
-        row = store.db.execute("select args, status from runs order by run_id desc limit 1").fetchone()
+        store = Store.open(no)
+    except KeyError:
+        return "no such run"
+    try:
+        row = store.db.execute(
+            "select args, status from review.run_invocations where run_key = %s order by invocation_id desc limit 1", (store.run_key,)
+        ).fetchone()
     finally:
         store.close()
     if row is None:
         return "no run record"
     if row["status"] != "done":
         return f"run status is {row['status']}"
-    job_id = json.loads(row["args"] or "{}").get("job_id")
+    job_id = (row["args"] or {}).get("job_id")
     if job_id is None:
         return None if allow_legacy else "not created by a queue job (pass --legacy to publish it deliberately)"
     if job_id not in completed:
@@ -101,8 +91,10 @@ def check_runs(runs: list[int], allow_legacy: bool = False) -> None:
 
 
 def run_job_id(store: Store) -> str | None:
-    row = store.db.execute("select args from runs order by run_id desc limit 1").fetchone()
-    return json.loads(row["args"] or "{}").get("job_id") if row else None
+    row = store.db.execute(
+        "select args from review.run_invocations where run_key = %s order by invocation_id desc limit 1", (store.run_key,)
+    ).fetchone()
+    return (row["args"] or {}).get("job_id") if row else None
 
 
 def collect(no: int) -> list[dict]:
@@ -110,7 +102,7 @@ def collect(no: int) -> list[dict]:
 
 
 def collect_at(path: Path, no: int, job_id: str | None = None, rules: dict | None = None) -> list[dict]:
-    store = Store(path / "state.db", path)
+    store = Store.open(no)
     try:
         site = site_settings(store)
         job_id = job_id or run_job_id(store)
@@ -131,31 +123,34 @@ def collect_at(path: Path, no: int, job_id: str | None = None, rules: dict | Non
         except Exception as error:
             print(f"equasis enrichment skipped: {type(error).__name__}: {error}", file=sys.stderr)
         floor = rules_mod.load()["ais_match"]["min_coverage_ships"]
-        coverage = {(r["scene_id"], r["site"]): r["ships"] for r in store.db.execute("select scene_id, site, ships from ais_coverage")}
+        coverage = {(r["scene_id"], r["site"]): r["ships"] for r in store.db.execute("select scene_id, site, ships from review.ais_coverage where run_key = %s", (store.run_key,))}
         rows = store.db.execute(
-            "select f.*, h.record, s.folder, q.status as qa, q.note as qa_note from findings f "
-            "join hulls h using (scene_id, site, hull_id) join scenes s using (scene_id, site) "
-            "left join qa_flags q on q.hull_id = f.scene_id || '__' || f.hull_id where f.verdict = 'pair'"
+            "select f.*, h.record, s.folder, q.status as qa, q.note as qa_note from review.findings f "
+            "join review.hulls h on h.run_key = f.run_key and h.scene_id = f.scene_id and h.site = f.site and h.hull_id = f.hull_id "
+            "join review.scenes s on s.run_key = f.run_key and s.scene_id = f.scene_id and s.site = f.site "
+            "left join review.qa_flags q on q.run_key = f.run_key and q.hull_id = f.scene_id || '__' || f.hull_id "
+            "where f.run_key = %s and f.verdict = 'pair' order by f.scene_id, f.hull_id",
+            (store.run_key,),
         ).fetchall()
         out = []
         for r in rows:
-            rec = json.loads(r["record"])
+            rec = r["record"]
             parties = {
                 p["slot"]: dict(p)
                 for p in store.db.execute(
                     "select m.slot, m.name, coalesce(m.imo, v.imo) as imo, coalesce(m.mmsi, v.mmsi) as mmsi, m.flag, m.dist_a_m, m.dist_b_m, "
                     "m.report_age_min, m.ship_id, (m.is_sanctioned or coalesce(v.sanctions_lists, '') <> '') as is_sanctioned, v.sanctions_lists, v.call_sign, v.gross_tonnage, v.dwt as equasis_dwt, v.year_built, "
                     "v.vessel_type, v.status as equasis_status, v.confidence as identity_confidence, v.source as identity_source "
-                    "from ais_matches m left join vessel_identities v on v.ship_id = m.ship_id "
-                    "where m.scene_id=? and m.site=? and m.hull_id=? and m.chosen=1",
-                    (r["scene_id"], r["site"], r["hull_id"]),
+                    "from review.ais_matches m left join review.vessel_identities v on v.ship_id = m.ship_id "
+                    "where m.run_key = %s and m.scene_id = %s and m.site = %s and m.hull_id = %s and m.chosen",
+                    (store.run_key, r["scene_id"], r["site"], r["hull_id"]),
                 )
             }
             ships = coverage.get((r["scene_id"], r["site"]))
             out.append(
                 {
                     "run": no, "job_id": job_id, "root": path, "scene_id": r["scene_id"], "site": r["site"], "hull_id": r["hull_id"], "source": r["source"],
-                    "capture_utc": r["capture_utc"], "lat": r["lat"], "lon": r["lon"], "run_verdict": r["run_verdict"],
+                    "capture_utc": iso(r["capture_utc"]), "lat": r["lat"], "lon": r["lon"], "run_verdict": r["run_verdict"],
                     "qa": QA_LABEL.get(r["qa"], "unreviewed"), "qa_note": r["qa_note"], "record": rec, "folder": r["folder"],
                     "parties": parties, "ais_coverage_ships": ships, "ais_covered": ships is not None and ships >= floor,
                     "bbox": site.get("bbox"), "length_m": rec.get("length_m") or (rec.get("check") or {}).get("hull_a_length_m") or rec.get("ai2_length_m"),
@@ -321,16 +316,16 @@ def build(runs: list[int], rules: dict) -> tuple[list[dict], dict]:
 
 
 def complete(found: list[dict]) -> list[dict]:
+    stores: dict[int, Store] = {}
     for f in found:
-        store = Store(f["root"] / "state.db", f["root"])
-        try:
-            sc = store.scene(f["scene_id"], f["site"])
-        finally:
-            store.close()
+        store = stores.setdefault(f["run"], Store.open(f["run"]))
+        sc = store.scene(f["scene_id"], f["site"])
         f["scene_data"] = sc["data"]
         f["record"]["hull_id"] = f["hull_id"]
         if f["source"] == "s2":
             f["record"]["_window"] = report.window_of({"data": sc["data"]}, f["record"])
+    for store in stores.values():
+        store.close()
     return found
 
 
@@ -429,25 +424,40 @@ def record_and_upload(tables: dict, upload: bool, rules: dict) -> None:
         for f in items:
             for fmt, p in f["files"].items():
                 ckey = prefix_c + p.relative_to(root / "captures").as_posix()
-                per_run[f["run"]].append(("capture", f["finding_id"], fmt, str(p), f"s3://{bucket}/{ckey}"))
+                per_run[f["run"]].append(("capture", f["finding_id"], fmt, str(p), f"s3://{bucket}/{ckey}", f["scene_id"], f["site"], f["hull_id"]))
         for no in sorted({f["run"] for f in items}):
             mine = [f for f in items if f["run"] == no]
-            per_run[no].append(("output", str(path), f"s3://{bucket}/{key}", date, site, source, len(items), len(items), ",".join(sorted({f["scene_id"] for f in mine})), sha))
+            per_run[no].append(("output", str(path), f"s3://{bucket}/{key}", date, site, source, len(items), len(items), sorted({f["scene_id"] for f in mine}), sha))
     for no, entries in per_run.items():
-        path = registry.folder_of(no)
-        store = Store(path / "state.db", path)
+        store = Store.open(no)
         try:
-            ensure_tables(store)
-            run_id = store.db.execute("select max(run_id) from runs").fetchone()[0]
+            invocation = store.db.execute("select max(invocation_id) as n from review.run_invocations where run_key = %s", (store.run_key,)).fetchone()["n"]
             with store.tx():
                 for e in entries:
                     if e[0] == "capture":
-                        store.db.execute("insert or replace into captures values (?,?,?,?,?,?,?)", (e[1], e[2], e[3], e[4], run_id, stamp, stamp if upload else None))
+                        store.db.execute(
+                            "insert into review.captures (run_key, finding_id, format, local_path, s3_uri, invocation_id, created_utc, uploaded_utc, scene_id, site, hull) "
+                            "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) on conflict (run_key, finding_id, format) do update set "
+                            "local_path = excluded.local_path, s3_uri = excluded.s3_uri, invocation_id = excluded.invocation_id, "
+                            "created_utc = excluded.created_utc, uploaded_utc = excluded.uploaded_utc, scene_id = excluded.scene_id, "
+                            "site = excluded.site, hull = excluded.hull",
+                            (store.run_key, e[1], e[2], e[3], e[4], invocation, stamp, stamp if upload else None, e[5], e[6], e[7]),
+                        )
                     else:
                         store.db.execute(
-                            "insert or replace into outputs values (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                            (e[1], e[2], stamp, e[3], e[4], e[5], e[6], e[7], 0, e[8], e[9], stamp if upload else None, run_id),
+                            "insert into review.outputs (run_key, path, s3_uri, created_utc, capture_date, site, source, n_rows, n_pairs, n_possible, scene_ids, sha256, uploaded_utc, invocation_id) "
+                            "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) on conflict (run_key, path) do update set "
+                            "s3_uri = excluded.s3_uri, created_utc = excluded.created_utc, capture_date = excluded.capture_date, site = excluded.site, "
+                            "source = excluded.source, n_rows = excluded.n_rows, n_pairs = excluded.n_pairs, n_possible = excluded.n_possible, "
+                            "scene_ids = excluded.scene_ids, sha256 = excluded.sha256, uploaded_utc = excluded.uploaded_utc, invocation_id = excluded.invocation_id",
+                            (store.run_key, e[1], e[2], stamp, e[3], e[4], e[5], e[6], e[7], 0, ",".join(e[8]), e[9], stamp if upload else None, invocation),
                         )
+                        store.db.execute("delete from review.output_scenes where run_key = %s and path = %s", (store.run_key, e[1]))
+                        with store.db.cursor() as cur:
+                            cur.executemany(
+                                "insert into review.output_scenes (run_key, path, scene_id) values (%s,%s,%s) on conflict do nothing",
+                                [(store.run_key, e[1], scene_id) for scene_id in e[8]],
+                            )
         finally:
             store.close()
 

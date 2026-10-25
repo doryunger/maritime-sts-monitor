@@ -91,10 +91,10 @@ def manager_json(env_path, module, *args):
         if result.returncode == 0:
             return json.loads(result.stdout)
         last_error = result.stderr.strip()
-        if "Resource temporarily unavailable" not in last_error:
+        if "holds the ledger lock" not in last_error:
             raise RuntimeError(last_error)
         time.sleep(1)
-    raise RuntimeError(f"Manager database stayed locked: {last_error}")
+    raise RuntimeError(f"Manager ledger lock stayed held: {last_error}")
 
 
 def remote_worker_command(settings, worker_args, container_name=None, max_seconds=None):

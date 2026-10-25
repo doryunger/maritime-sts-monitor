@@ -1,136 +1,94 @@
 import argparse
-import sqlite3
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
+import psycopg
+from psycopg.rows import dict_row
+
+from maritime_tip_cue import pg
 from maritime_tip_cue.config import ROOT, settings
+from maritime_tip_cue.watch.pgutil import iso
+
+COLUMNS = "run_key, run_no, folder, origin, attempt_id, created_utc"
 
 
 def runs_root() -> Path:
     return ROOT / settings()["runs"]["path"]
 
 
-def connect() -> sqlite3.Connection:
-    root = runs_root()
-    root.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(root / "registry.db", timeout=60, isolation_level=None)
-    db.row_factory = sqlite3.Row
-    db.execute("pragma journal_mode=wal")
-    db.execute("create table if not exists runs (run_no integer primary key, folder text unique, created_utc text)")
-    return db
+def folder_name(origin: str, run_no: int, job_id: str | None = None, attempt_id: str | None = None) -> str:
+    if origin == "job":
+        return f"{job_id[:12]}-{attempt_id[:8]}"
+    return f"legacy-run-{run_no}"
 
 
-def now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def created_of(folder: Path) -> str | None:
-    if not (folder / "state.db").exists():
-        return None
-    db = sqlite3.connect(f"file:{(folder / 'state.db').as_posix()}?mode=ro", uri=True)
+def fetch(conn: psycopg.Connection | None, sql: str, params=()) -> list[dict]:
+    own = conn is None
+    conn = conn or pg.connect()
     try:
-        return db.execute("select min(started_utc) from runs").fetchone()[0]
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+        if own:
+            conn.rollback()
+        return rows
     finally:
-        db.close()
+        if own:
+            conn.close()
 
 
-def register(folder: Path) -> int:
-    folder = folder.resolve()
-    name = folder.relative_to(runs_root().resolve()).as_posix()
-    db = connect()
+def shaped(row: dict) -> dict:
+    return row | {"created_utc": iso(row["created_utc"])}
+
+
+def new_run(origin: str = "legacy", attempt_id: str | None = None, job_id: str | None = None, conn: psycopg.Connection | None = None) -> dict:
+    if origin == "job" and not (attempt_id and job_id):
+        raise ValueError("a job run needs its job and attempt")
+    own = conn is None
+    conn = conn or pg.connect()
     try:
-        db.execute("begin immediate")
-        row = db.execute("select run_no from runs where folder=?", (name,)).fetchone()
-        if row is None:
-            no = db.execute("select coalesce(max(run_no), 0) + 1 from runs").fetchone()[0]
-            db.execute("insert into runs values (?,?,?)", (no, name, created_of(folder) or now()))
-        else:
-            no = row["run_no"]
-        db.execute("commit")
-        return no
+        with conn.transaction():
+            run_no = conn.execute("select nextval('review.run_no_seq')").fetchone()[0]
+            folder = folder_name(origin, run_no, job_id, attempt_id)
+            conn.execute(
+                "insert into review.runs (run_no, folder, origin, attempt_id, created_utc) values (%s, %s, %s, %s, now())",
+                (run_no, folder, origin, attempt_id),
+            )
+        if own:
+            conn.commit()
+        return get(run_no, conn)
     finally:
-        db.close()
+        if own:
+            conn.close()
 
 
-def new_run() -> tuple[int, Path]:
-    db = connect()
-    try:
-        db.execute("begin immediate")
-        no = db.execute("select coalesce(max(run_no), 0) + 1 from runs").fetchone()[0]
-        db.execute("insert into runs values (?,?,?)", (no, str(no), now()))
-        db.execute("commit")
-    finally:
-        db.close()
-    folder = runs_root() / str(no)
-    folder.mkdir(parents=True, exist_ok=True)
-    return no, folder
+def get(run_no: int, conn: psycopg.Connection | None = None) -> dict:
+    rows = fetch(conn, f"select {COLUMNS} from review.runs where run_no = %s", (run_no,))
+    if not rows:
+        raise KeyError(f"run {run_no} does not exist")
+    return shaped(rows[0])
+
+
+def by_attempt(attempt_id: str, conn: psycopg.Connection | None = None) -> dict | None:
+    rows = fetch(conn, f"select {COLUMNS} from review.runs where attempt_id = %s", (attempt_id,))
+    return shaped(rows[0]) if rows else None
+
+
+def listing(conn: psycopg.Connection | None = None) -> list[dict]:
+    return [shaped(r) for r in fetch(conn, f"select {COLUMNS} from review.runs order by run_no")]
 
 
 def folder_of(no: int) -> Path:
-    db = connect()
-    try:
-        row = db.execute("select folder from runs where run_no=?", (no,)).fetchone()
-    finally:
-        db.close()
-    if row is None:
-        raise KeyError(f"run {no} is not registered")
-    return runs_root() / row["folder"]
-
-
-def listing() -> list[dict]:
-    db = connect()
-    try:
-        return [dict(r) for r in db.execute("select * from runs order by run_no")]
-    finally:
-        db.close()
-
-
-def running(folder: Path) -> bool:
-    if not (folder / "state.db").exists():
-        return False
-    db = sqlite3.connect(f"file:{(folder / 'state.db').as_posix()}?mode=ro", uri=True)
-    try:
-        row = db.execute("select ended_utc from runs order by run_id desc limit 1").fetchone()
-        return row is not None and row[0] is None
-    finally:
-        db.close()
-
-
-def adopt(no: int, force: bool = False) -> str:
-    folder = folder_of(no)
-    if folder.name == str(no):
-        return f"run {no} already in {folder}"
-    if running(folder) and not force:
-        return f"run {no} ({folder.name}) has not finished; left as is"
-    target = runs_root() / str(no)
-    folder.rename(target)
-    db = connect()
-    try:
-        db.execute("update runs set folder=? where run_no=?", (str(no), no))
-    finally:
-        db.close()
-    return f"run {no}: {folder.name} -> {target.name}"
+    return runs_root() / get(no)["folder"]
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(prog="maritime-sts-monitor registry")
-    parser.add_argument("command", choices=("list", "register", "adopt"))
-    parser.add_argument("target", nargs="*")
-    parser.add_argument("--force", action="store_true")
-    args = parser.parse_args()
+    parser.add_argument("command", choices=("list",))
+    parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
-    if args.command == "register":
-        folders = sorted((Path(t) for t in args.target), key=lambda f: created_of(f) or "")
-        for f in folders:
-            print(f"run {register(f)}: {f}")
-    elif args.command == "adopt":
-        nos = [int(t) for t in args.target] or [r["run_no"] for r in listing()]
-        for no in nos:
-            print(adopt(no, args.force))
-    else:
-        for r in listing():
-            print(f"{r['run_no']:>4}  {r['created_utc']}  {r['folder']}")
+    for r in listing():
+        print(f"{r['run_no']:>4}  {r['created_utc']}  {r['origin']:6}  {r['folder']}")
     return 0
 
 

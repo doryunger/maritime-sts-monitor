@@ -1,42 +1,45 @@
 import io
 
 import pyarrow.parquet as pq
+import pytest
 
 from maritime_tip_cue import publish_merge as merge
 from maritime_tip_cue import refresh_identities as refresher
 from maritime_tip_cue.ais import match
-from maritime_tip_cue.watch.state import Store
-from tests.test_publish_merge import RULE, S3, row  # noqa: F401
+from tests.pgstore import add_match, add_scene, new_store
+from tests.test_publish_merge import RULE, S3, row
 
 
-def store_with(tmp_path, matches):
-    store = Store(tmp_path / "state.db", tmp_path)
-    for ship_id, imo, mmsi, flag, chosen in matches:
-        store.db.execute(
-            "insert into ais_matches (scene_id, site, hull_id, ship_id, name, imo, mmsi, flag, chosen, slot) "
-            "values ('s','x','h',?,'SHIP',?,?,?,?, 'a')",
-            (ship_id, imo, mmsi, flag, chosen),
-        )
-    store.db.commit()
-    return store
+@pytest.fixture
+def make(pgdb, tmp_path, monkeypatch):
+    stores = []
 
+    def build(matches):
+        store = new_store(monkeypatch, tmp_path)
+        add_scene(store, hulls=["h"])
+        for ship_id, imo, mmsi, flag, chosen in matches:
+            add_match(store, hull_id="h", ship_id=ship_id, imo=imo, mmsi=mmsi, flag=flag, chosen=bool(chosen))
+        stores.append(store)
+        return store
 
-def test_refresh_fills_missing_identity_from_the_archive_and_never_overwrites(tmp_path):
-    store = store_with(tmp_path, [("1", None, None, None, 1), ("2", "9999999", None, "PA", 1), ("3", None, None, None, 0)])
+    yield build
+    for store in stores:
+        store.close()
+
+def test_refresh_fills_missing_identity_from_the_archive_and_never_overwrites(make):
+    store = make([("1", None, None, None, 1), ("2", "9999999", None, "PA", 1), ("3", None, None, None, 0)])
     archive = {"1": {"imo": 9226140, "mmsi": 477226000, "flag": "HK"}, "2": {"imo": 1111111, "mmsi": 538003857, "flag": "MH"}, "3": {"imo": 5}}
     changed = match.refresh_identities(store, lambda ids: {i: archive[i] for i in ids})
-    values = {r["ship_id"]: (r["imo"], r["mmsi"], r["flag"]) for r in store.db.execute("select * from ais_matches")}
+    values = {r["ship_id"]: (r["imo"], r["mmsi"], r["flag"]) for r in store.db.execute("select * from review.ais_matches")}
     assert changed == 2
     assert values["1"] == ("9226140", "477226000", "HK")
     assert values["2"] == ("9999999", "538003857", "PA")
     assert values["3"] == (None, None, None)
-    store.close()
 
 
-def test_refresh_survives_an_unresolved_ship(tmp_path):
-    store = store_with(tmp_path, [("1", None, None, None, 1)])
+def test_refresh_survives_an_unresolved_ship(make):
+    store = make([("1", None, None, None, 1)])
     assert match.refresh_identities(store, lambda ids: {}) == 0
-    store.close()
 
 
 def published(s3, **extra):

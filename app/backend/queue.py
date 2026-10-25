@@ -31,7 +31,8 @@ def scene_state(job: dict, scene: dict) -> dict:
         return {"state": state, "stage": known.get("stage"), "updated_utc": known.get("updated_utc")}
     if job["status"] == "running":
         return {"state": "waiting", "stage": None, "updated_utc": None}
-    return {"state": {"failed": "failed", "superseded": "superseded"}.get(job["status"], "queued"), "stage": None, "updated_utc": None}
+    state = {"failed": "failed", "superseded": "superseded"}.get(job["status"], "queued")
+    return {"state": state, "stage": None, "updated_utc": None}
 
 
 def snapshot() -> dict:
@@ -57,5 +58,5 @@ def snapshot() -> dict:
             )
         result["jobs"] = jobs
     except Exception:
-        result["error"] = "Could not read the ledger on the control host. Check the SSH connection and retry."
+        result["error"] = "Could not read the ledger database. Check the connection and retry."
     return result

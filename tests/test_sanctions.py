@@ -5,7 +5,7 @@ import pyarrow.parquet as pq
 from maritime_tip_cue import publish_merge as merge
 from maritime_tip_cue import refresh_identities as refresher
 from maritime_tip_cue import sanctions
-from maritime_tip_cue.watch.state import Store
+from tests.pgstore import add_match, add_scene, new_store
 from tests.test_publish_merge import S3, row
 
 LISTED = {"9338905": "EU+OFAC", "9278064": "UK"}
@@ -26,21 +26,18 @@ def test_imo_numbers_are_matched_however_they_are_written():
     assert sanctions.lists_for(None, LISTED) == ""
 
 
-def test_listed_ships_are_flagged_in_the_run_database_and_others_left_alone(tmp_path):
-    store = Store(tmp_path / "state.db", tmp_path)
+def test_listed_ships_are_flagged_in_the_run_and_others_left_alone(pgdb, tmp_path, monkeypatch):
+    store = new_store(monkeypatch, tmp_path)
+    add_scene(store, hulls=["h1", "h2", "h3"])
     for ship_id, imo, with_identity in (("1", "9338905", True), ("2", "9999999", True), ("3", "9278064", False)):
-        store.db.execute(
-            "insert into ais_matches (scene_id, site, hull_id, ship_id, name, imo, chosen, slot) values ('s','x',?,?,?,?,1,'a')",
-            (f"h{ship_id}", ship_id, f"SHIP{ship_id}", imo),
-        )
+        add_match(store, hull_id=f"h{ship_id}", ship_id=ship_id, name=f"SHIP{ship_id}", imo=imo)
         if with_identity:
-            store.db.execute("insert into vessel_identities (ship_id, imo, source) values (?,?, 'equasis')", (ship_id, imo))
-    store.db.commit()
+            store.db.execute("insert into review.vessel_identities (ship_id, imo, source) values (%s,%s, 'equasis')", (ship_id, imo))
     assert sanctions.apply(store, LISTED) == 2
-    flags = {r["ship_id"]: r["is_sanctioned"] for r in store.db.execute("select ship_id, is_sanctioned from ais_matches")}
-    assert flags == {"1": 1, "2": 0, "3": 1}
-    assert store.db.execute("select sanctions_lists from vessel_identities where ship_id = '1'").fetchone()[0] == "EU+OFAC"
-    assert store.db.execute("select sanctions_lists from vessel_identities where ship_id = '2'").fetchone()[0] is None
+    flags = {r["ship_id"]: r["is_sanctioned"] for r in store.db.execute("select ship_id, is_sanctioned from review.ais_matches")}
+    assert flags == {"1": True, "2": False, "3": True}
+    assert store.db.execute("select sanctions_lists from review.vessel_identities where ship_id = '1'").fetchone()["sanctions_lists"] == "EU+OFAC"
+    assert store.db.execute("select sanctions_lists from review.vessel_identities where ship_id = '2'").fetchone()["sanctions_lists"] is None
     store.close()
 
 

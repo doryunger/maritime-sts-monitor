@@ -4,3 +4,4 @@ requests
 shapely
 numpy
 redis
+psycopg[binary]

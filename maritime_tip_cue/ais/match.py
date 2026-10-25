@@ -1,10 +1,8 @@
 import argparse
-import json
 import math
 import sys
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from datetime import UTC, datetime, timedelta
 
 import numpy as np
 from scipy.optimize import linear_sum_assignment
@@ -13,7 +11,8 @@ from maritime_tip_cue import hotspots
 from maritime_tip_cue.ais import archive
 from maritime_tip_cue.sts import rules as rules_mod
 from maritime_tip_cue.watch.geo import Shore, haversine_m
-from maritime_tip_cue.watch.state import AIS_MATCHES, IGNORED_ROLES, Store
+from maritime_tip_cue.watch.pgutil import iso
+from maritime_tip_cue.watch.state import IGNORED_ROLES, Store
 
 PAIR_VERDICTS = ("pair",)
 COLUMNS = (
@@ -30,22 +29,17 @@ CANDIDATE_COLUMNS = (
 ).split()
 
 
+def insert_sql(table: str, columns: list[str]) -> str:
+    return f"insert into review.{table} (run_key, {', '.join(columns)}) values (%s{', %s' * len(columns)})"
+
+
 def parse_time(text: str) -> datetime:
-    return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(timezone.utc)
-
-
-def ensure_table(store: Store) -> None:
-    cols = [r["name"] for r in store.db.execute("pragma table_info(ais_matches)")]
-    if "ship_id" not in cols:
-        if store.db.execute("select count(*) from ais_matches").fetchone()[0]:
-            raise SystemExit("ais_matches has the old schema and rows")
-        store.db.execute("drop table ais_matches")
-        store.db.executescript(AIS_MATCHES)
+    return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(UTC)
 
 
 def site_bbox(store: Store, site: str) -> list[float]:
-    for r in store.db.execute("select args from runs"):
-        settings = json.loads(r["args"] or "{}").get("hot_spot_settings")
+    for r in store.db.execute("select args from review.run_invocations where run_key = %s order by invocation_id", (store.run_key,)):
+        settings = (r["args"] or {}).get("hot_spot_settings")
         if settings and settings.get("name") == site:
             return settings["bbox"]
     return next(s["bbox"] for s in hotspots.load() if s["name"] == site)
@@ -133,7 +127,7 @@ def project(reports: list[dict], capture: datetime, rule: dict) -> list[dict]:
 
 
 def hull_slots(row: dict) -> dict:
-    rec = json.loads(row["record"])
+    rec = row["record"]
     chk = rec.get("check")
     if chk is not None:
         slots = []
@@ -285,7 +279,7 @@ ARCHIVE_IDENTITY_FIELDS = {
 
 def archive_identity(ident: dict) -> dict:
     record = {target: (str(ident[source]) if ident.get(source) not in (None, "") else None) for source, target in ARCHIVE_IDENTITY_FIELDS.items()}
-    record["false_flag"] = int(str(ident.get("false_flag")).lower() == "true")
+    record["false_flag"] = str(ident.get("false_flag")).lower() == "true"
     record["source"] = "archive"
     record["resolved_utc"] = ident.get("resolved_utc")
     return record
@@ -295,9 +289,10 @@ def refresh_identities(store: Store, loader=load_identities) -> int:
     from maritime_tip_cue.equasis.resolve import FIELDS
 
     rows = store.db.execute(
-        "select m.rowid as id, m.ship_id, m.imo, m.mmsi, m.flag from ais_matches m "
-        "left join vessel_identities v on v.ship_id = m.ship_id "
-        "where m.chosen = 1 and m.ship_id is not null and (v.ship_id is null or m.imo is null or m.mmsi is null or m.flag is null)"
+        "select m.id, m.ship_id, m.imo, m.mmsi, m.flag from review.ais_matches m "
+        "left join review.vessel_identities v on v.ship_id = m.ship_id "
+        "where m.run_key = %s and m.chosen and m.ship_id is not null and (v.ship_id is null or m.imo is null or m.mmsi is null or m.flag is null)",
+        (store.run_key,),
     ).fetchall()
     if not rows:
         return 0
@@ -310,13 +305,14 @@ def refresh_identities(store: Store, loader=load_identities) -> int:
                 continue
             values = tuple(r[k] or (str(ident[k]) if ident.get(k) not in (None, "") else None) for k in ("imo", "mmsi", "flag"))
             if values != (r["imo"], r["mmsi"], r["flag"]):
-                store.db.execute("update ais_matches set imo = ?, mmsi = ?, flag = ? where rowid = ?", (*values, r["id"]))
+                store.db.execute("update review.ais_matches set imo = %s, mmsi = %s, flag = %s where id = %s", (*values, r["id"]))
                 changed += 1
             if ident.get("imo") not in (None, ""):
                 record = archive_identity(ident)
                 store.db.execute(
-                    f"insert or ignore into vessel_identities (ship_id, {', '.join(FIELDS)}) values (?{', ?' * len(FIELDS)})",
-                    (r["ship_id"], *(record.get(field) for field in FIELDS)),
+                    f"insert into review.vessel_identities (ship_id, first_run_key, {', '.join(FIELDS)}) values (%s, %s{', %s' * len(FIELDS)}) "
+                    "on conflict (ship_id) do nothing",
+                    (r["ship_id"], store.run_key, *(record.get(field) for field in FIELDS)),
                 )
     return changed
 
@@ -328,10 +324,11 @@ def utc_text(value: datetime | None) -> str | None:
 def select_hulls(store: Store, verdicts: tuple, all_checked: bool, stats: bool) -> list[dict]:
     q = (
         "select h.scene_id, h.site, h.hull_id, h.lat, h.lon, h.ai2_length_m, h.ai2_width_m, h.ai2_heading, h.role, h.record, "
-        "f.run_verdict, f.verdict, f.source, f.capture_utc, f.qa_status from findings f join hulls h using(scene_id, site, hull_id) "
-        "where f.capture_utc is not null"
+        "f.run_verdict, f.verdict, f.source, f.capture_utc, f.qa_status from review.findings f "
+        "join review.hulls h on h.run_key = f.run_key and h.scene_id = f.scene_id and h.site = f.site and h.hull_id = f.hull_id "
+        "where f.run_key = %s and f.capture_utc is not null"
     )
-    rows = [dict(r) for r in store.db.execute(q)]
+    rows = [r | {"capture_utc": iso(r["capture_utc"])} for r in store.db.execute(q, (store.run_key,))]
     rows = [r for r in rows if r["role"] not in IGNORED_ROLES]
     if stats:
         rows = [r for r in rows if all_checked or r["qa_status"] == "ok"]
@@ -342,7 +339,6 @@ def select_hulls(store: Store, verdicts: tuple, all_checked: bool, stats: bool) 
 
 def run_match(store: Store, rows: list[dict], rules: dict, log=print) -> dict:
     rule = rules["ais_match"]
-    ensure_table(store)
     by_scene = defaultdict(list)
     for r in rows:
         by_scene[(r["scene_id"], r["site"])].append(r)
@@ -354,8 +350,10 @@ def run_match(store: Store, rows: list[dict], rules: dict, log=print) -> dict:
         projected = project(reports, capture, rule)
         with store.tx():
             store.db.execute(
-                "insert or replace into ais_coverage values (?,?,?,?,?,?)",
-                (scene_id, site, len({r["ship_id"] for r in reports}), len(reports), rule["search_window_min"], datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")),
+                "insert into review.ais_coverage (run_key, scene_id, site, ships, reports, window_min, checked_utc) values (%s,%s,%s,%s,%s,%s,now()) "
+                "on conflict (run_key, scene_id, site) do update set ships = excluded.ships, reports = excluded.reports, "
+                "window_min = excluded.window_min, checked_utc = excluded.checked_utc",
+                (store.run_key, scene_id, site, len({r["ship_id"] for r in reports}), len(reports), rule["search_window_min"]),
             )
         hulls = {}
         for r in hs:
@@ -375,14 +373,14 @@ def run_match(store: Store, rows: list[dict], rules: dict, log=print) -> dict:
                     decision = "selected" if selected else "rejected" if ps["reasons"] else "eligible_not_selected"
                     candidates.append(
                         (
-                            scene_id, site, hid, ps["slot"], c["ship_id"], int(bool(c["is_sat"])), c["name"], c.get("type"),
+                            scene_id, site, hid, ps["slot"], c["ship_id"], bool(c["is_sat"]), c["name"], c.get("type"),
                             c.get("type_code"), c.get("gt_type_code"), c.get("flag"), c.get("dwt"), c.get("status"), c.get("state"),
                             utc_text(c["seen_utc"]), c.get("elapsed_min"), utc_text(c.get("captured_utc")), utc_text(c.get("tile_utc")),
                             c["age"], c["method"], utc_text(c.get("before_seen_utc")), c.get("before_age"),
                             utc_text(c.get("after_seen_utc")), c.get("after_age"), c.get("bracket_gap"), c["lat_rep"], c["lon_rep"],
                             c["lat"], c["lon"], ps["dist"], ps["limit"], c.get("length_m"), c.get("width_m"), ps["meas_length"],
                             ps["ldiff"], c.get("ais_heading"), ps["hull_heading"], ps["hdiff"], c.get("speed_kn"), c.get("course"),
-                            c.get("rot"), decision, ",".join(ps["reasons"]), int(bool(c.get("is_sanctioned"))),
+                            c.get("rot"), decision, ",".join(ps["reasons"]), bool(c.get("is_sanctioned")),
                         )
                     )
                     if selected:
@@ -390,24 +388,22 @@ def run_match(store: Store, rows: list[dict], rules: dict, log=print) -> dict:
                         dists = o["dists"]
                         matches.append(
                             (
-                                scene_id, site, hid, c["ship_id"], int(bool(c["is_sat"])), (ident or {}).get("name") or c["name"],
+                                scene_id, site, hid, c["ship_id"], bool(c["is_sat"]), (ident or {}).get("name") or c["name"],
                                 (ident or {}).get("imo"), (ident or {}).get("mmsi"), (ident or {}).get("flag") or c.get("flag"),
                                 utc_text(c["seen_utc"]), c["age"], c["method"], c["lat_rep"], c["lon_rep"], c["lat"], c["lon"],
                                 dists[0], dists[1] if len(dists) > 1 and h["source"] == "s2" else None, ps["limit"], c.get("length_m"),
-                                c.get("width_m"), ps["meas_length"], ps["ldiff"], ps["hdiff"], c.get("speed_kn"), 1,
-                                ps["slot"], "ok", int(bool(c.get("is_sanctioned"))),
+                                c.get("width_m"), ps["meas_length"], ps["ldiff"], ps["hdiff"], c.get("speed_kn"), True,
+                                ps["slot"], "ok", bool(c.get("is_sanctioned")),
                             )
                         )
-        with store.tx():
-            store.db.executemany("delete from ais_matches where scene_id=? and site=? and hull_id=?", [(scene_id, site, r["hull_id"]) for r in hs])
-            store.db.executemany("delete from ais_candidates where scene_id=? and site=? and hull_id=?", [(scene_id, site, r["hull_id"]) for r in hs])
+        with store.tx(), store.db.cursor() as cur:
+            keys = [(store.run_key, scene_id, site, r["hull_id"]) for r in hs]
+            cur.executemany("delete from review.ais_matches where run_key = %s and scene_id = %s and site = %s and hull_id = %s", keys)
+            cur.executemany("delete from review.ais_candidates where run_key = %s and scene_id = %s and site = %s and hull_id = %s", keys)
             if matches:
-                store.db.executemany(f"insert into ais_matches ({','.join(COLUMNS)}) values ({','.join('?' * len(COLUMNS))})", matches)
+                cur.executemany(insert_sql("ais_matches", COLUMNS), [(store.run_key, *m) for m in matches])
             if candidates:
-                store.db.executemany(
-                    f"insert into ais_candidates ({','.join(CANDIDATE_COLUMNS)}) values ({','.join('?' * len(CANDIDATE_COLUMNS))})",
-                    candidates,
-                )
+                cur.executemany(insert_sql("ais_candidates", CANDIDATE_COLUMNS), [(store.run_key, *c) for c in candidates])
         result[(scene_id, site)] = {"hulls": hulls, "projected": projected, "chosen": chosen, "capture": capture, "bbox": bbox}
         log(f"{scene_id[:40]} {site}: {len(hs)} hulls, {len(projected)} ships, {sum(1 for _ in chosen)} chosen")
     return result
@@ -417,7 +413,8 @@ def print_results(store: Store, rows: list[dict]) -> None:
     print("hull | src | verdict | QA | A | B | dist_m | age_min")
     for r in sorted(rows, key=lambda r: (r["capture_utc"], r["hull_id"])):
         ms = store.db.execute(
-            "select * from ais_matches where scene_id=? and site=? and hull_id=? and chosen=1 order by slot", (r["scene_id"], r["site"], r["hull_id"])
+            "select * from review.ais_matches where run_key = %s and scene_id = %s and site = %s and hull_id = %s and chosen order by slot",
+            (store.run_key, r["scene_id"], r["site"], r["hull_id"]),
         ).fetchall()
         by = {m["slot"]: m for m in ms}
         def nm(m):
@@ -506,23 +503,27 @@ def stats(store: Store, result: dict, rules: dict) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("run")
+    ap.add_argument("run", type=int)
     ap.add_argument("--verdicts", default=",".join(PAIR_VERDICTS))
     ap.add_argument("--all-checked", action="store_true")
     ap.add_argument("--stats", action="store_true")
     args = ap.parse_args()
-    store = Store(Path(args.run) / "state.db")
+    store = Store.open(int(args.run))
     rules = rules_mod.load()
     rows = select_hulls(store, tuple(args.verdicts.split(",")), args.all_checked, args.stats)
     if not args.stats and not args.all_checked:
-        ensure_table(store)
         keep = {(r["scene_id"], r["site"], r["hull_id"]) for r in rows}
         stale = set()
         with store.tx():
             for table in ("ais_matches", "ais_candidates"):
-                keys = [tuple(k) for k in store.db.execute(f"select distinct scene_id, site, hull_id from {table}") if tuple(k) not in keep]
+                found = store.db.execute(f"select distinct scene_id, site, hull_id from review.{table} where run_key = %s", (store.run_key,)).fetchall()
+                keys = [(r["scene_id"], r["site"], r["hull_id"]) for r in found if (r["scene_id"], r["site"], r["hull_id"]) not in keep]
                 stale.update(keys)
-                store.db.executemany(f"delete from {table} where scene_id=? and site=? and hull_id=?", keys)
+                with store.db.cursor() as cur:
+                    cur.executemany(
+                        f"delete from review.{table} where run_key = %s and scene_id = %s and site = %s and hull_id = %s",
+                        [(store.run_key, *k) for k in keys],
+                    )
         print(f"cleared AIS records of {len(stale)} hulls that are no longer pairs")
     result = run_match(store, rows, rules)
     if args.stats:

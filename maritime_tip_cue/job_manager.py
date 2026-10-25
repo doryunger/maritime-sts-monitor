@@ -2,18 +2,11 @@ import argparse
 import json
 import time
 from contextlib import closing
-from datetime import datetime
-from pathlib import Path
 
 import boto3
 
 from maritime_tip_cue import catalogue, task_queue
-from maritime_tip_cue.config import ROOT, env, settings
-
-
-def database_path():
-    path = Path(settings()["catalogue"]["database"])
-    return path if path.is_absolute() else ROOT / path
+from maritime_tip_cue.config import env, settings
 
 
 def clients():
@@ -39,8 +32,7 @@ def read_events(redis):
 
 
 def cycle(redis, s3, bucket, cfg, events):
-    path = database_path()
-    with catalogue.controller_lock(path), closing(catalogue.connect(path)) as db:
+    with closing(catalogue.connect()) as db, catalogue.controller_lock(db):
         queue_cfg = settings()["worker"]["queue"]
         expired = task_queue.requeue_stale()
         completed, errors = catalogue.reconcile_redis(
@@ -54,20 +46,27 @@ def cycle(redis, s3, bucket, cfg, events):
             int(queue_cfg["retry_delay_seconds"]),
         )
         newly_superseded = catalogue.supersede_jobs(db)
-        task_queue.drop([row[0] for row in db.execute("SELECT job_id FROM jobs WHERE status='superseded'")])
-        done = {row[0] for row in db.execute("SELECT job_id FROM jobs WHERE status='succeeded'")}
-        failed = {row[0] for row in db.execute("SELECT job_id FROM jobs WHERE status='failed'")}
+        by_status = {}
+        for row in catalogue.rows(db, "SELECT job_id,status,available_utc FROM processing.jobs"):
+            by_status.setdefault(row["status"], []).append(row)
+        task_queue.drop([row["job_id"] for row in by_status.get("superseded", [])])
+        done = {row["job_id"] for row in by_status.get("succeeded", [])}
+        failed = {row["job_id"] for row in by_status.get("failed", [])}
         retry_wait = {
-            row["job_id"]: int(datetime.fromisoformat(row["available_utc"]).timestamp() * 1000)
-            for row in db.execute(
-                "SELECT job_id,available_utc FROM jobs "
-                "WHERE status='retry_wait' AND available_utc IS NOT NULL"
-            )
+            row["job_id"]: int(row["available_utc"].timestamp() * 1000)
+            for row in by_status.get("retry_wait", [])
+            if row["available_utc"] is not None
         }
         task_queue.sync_terminal(done, failed)
         task_queue.sync_retry_wait(retry_wait)
         queued = catalogue.refresh_queue(db)
-    return {"finalized": completed, "expired_leases": expired, "queued": queued, "superseded": len(newly_superseded), "errors": errors}
+    return {
+        "finalized": completed,
+        "expired_leases": expired,
+        "queued": queued,
+        "superseded": len(newly_superseded),
+        "errors": errors,
+    }
 
 
 def run(interval):
@@ -88,8 +87,7 @@ def run(interval):
 
 def scan_and_dispatch_one():
     cfg = settings()["catalogue"]
-    path = database_path()
-    with catalogue.controller_lock(path), closing(catalogue.connect(path)) as db:
+    with closing(catalogue.connect()) as db, catalogue.controller_lock(db):
         scan = catalogue.scan(db, cfg, first_scene=True)
         job_id = scan.get("selected_job_id")
         dispatched = catalogue.refresh_one_job(db, job_id) if job_id else None
@@ -116,8 +114,7 @@ def main():
     if args.command == "scan-one":
         return scan_and_dispatch_one()
     if args.job_id:
-        path = database_path()
-        with catalogue.controller_lock(path), closing(catalogue.connect(path)) as db:
+        with closing(catalogue.connect()) as db, catalogue.controller_lock(db):
             dispatched = catalogue.refresh_one_job(db, args.job_id)
         print(json.dumps({"dispatched": dispatched}, sort_keys=True))
         return 0

@@ -10,7 +10,7 @@ from maritime_tip_cue.watch import run as runmod
 from maritime_tip_cue.watch.state import Store
 
 
-def execute(manifest: dict, run_no: int, out: Path, rules_path: Path) -> dict:
+def execute(manifest: dict, store: Store, rules_path: Path) -> dict:
     from maritime_tip_cue.ais import match
 
     rules = rules_mod.load(rules_path)
@@ -20,11 +20,11 @@ def execute(manifest: dict, run_no: int, out: Path, rules_path: Path) -> dict:
     start, end = min(times), max(times)
     sources = ",".join(sorted({row["source"] for row in scenes}))
     args = argparse.Namespace(sources=sources, reanalyse=False)
-    store = Store(out / "state.db", out)
+    out = store.path
     run_id = store.start_run(
         {
             "job_id": manifest["job_id"],
-            "run_no": run_no,
+            "run_no": store.run_no,
             "rules_sha256": manifest["rules_sha256"],
             "hot_spot_settings": site,
         },
@@ -49,4 +49,3 @@ def execute(manifest: dict, run_no: int, out: Path, rules_path: Path) -> dict:
     finally:
         runmod.SINK.update(store=None, run_id=None, scene=None)
         store.finish_run(run_id, status)
-        store.close()

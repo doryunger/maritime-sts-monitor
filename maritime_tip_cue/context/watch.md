@@ -60,16 +60,27 @@ artifacts remain under the run folder for review and resume. Tiles of one Sentin
 in the overlap can appear in two scenes; no cross-scene merge is done yet.
 
 ## state
-`state.db` (default `<out>/state.db`, `--db` overrides) holds the run state; the schema is in `state.py`. Pair-check inputs
-derived from the detector (`dets`, `index`, `objects`, `windows`) sit as one JSON document in `scenes.data`, because they
-are read back whole and never queried; the raw detector features are rows in `raw_detections`. `hulls.record` keeps the
-full check record as JSON next to the queryable columns. The scene status and its results are written in one
-transaction, so a run killed mid-scene leaves the scene unmarked and it is redone. Files from before the database
-are loaded once with `python -m maritime_tip_cue.watch.state import <run folder>` (old files are left in place).
+Run state lives in Postgres (`review` schema, see [store.md](store.md)); `state.Store` is bound to one run
+(`Store.create`, `Store.open(run_no)`, `Store.for_attempt`) and keeps the old method names. Pair-check inputs derived
+from the detector (`dets`, `index`, `objects`, `windows`) sit as one jsonb document in `scenes.data`, because they are
+read back whole and never queried; the raw detector features are rows in `raw_detections`. `hulls.record` keeps the
+full check record as jsonb next to the queryable columns. The scene status and its results are written in one
+transaction, so a run killed mid-scene leaves the scene unmarked and it is redone. Rows go in as one batch per scene
+(`executemany` in pipeline mode), because the worker on EC2 writes over the network. NaN and infinity become null
+before storing.
+
+`save_checked` upserts the hulls of a scene instead of deleting and re-inserting them: a re-check (`recheck`, a rules
+change) must not cascade away the review flags that reference a hull. A hull that a re-check no longer produces is
+deleted, unless it carries a flag; then it stays with `role = 'duplicate'`, which keeps it out of the `findings` view
+and the app while the flag survives.
+
+A run resumes by number: `watch.run --run N`. The CLI is `python -m maritime_tip_cue.watch.state summary <run_no>` and
+`qa-import <run_no> <flags.json>` (flags matching no hull are skipped and counted). The old `import <folder>` of
+pre-database files and the `--db`/`--out` options of `watch.run` are gone; those files are history.
 
 ## report
 `report.py` is the data layer of the runs app (`app/`): `collect` builds a run's document (run, scenes, listed hulls,
-AIS parties, fixture comparison) from `state.db` and the stored windows and chips, so it works on a finished run
+AIS parties, fixture comparison) from Postgres and the stored windows and chips, so it works on a finished run
 without the detector, and `render` draws one hull's raw or overlay tile on request. The listed singles are the
 already-flagged singles first, then the unflagged singles in a fixed per-hull order (sha1 of seed and hull id) up to
 24. A fixed rank keeps the list stable while reviewing: flagging a listed single only moves it into the kept set. The
@@ -102,15 +113,16 @@ not from the threshold. The fixture verdict is the one the fixture rules give; a
 
 ## qa
 QA is done in the runs app (`app/context/app.md`): one card per listed hull with a flag (OK, wrong verdict with the
-correct one, bad geometry, other; unmeasured hulls take single or pair directly) and a note. A Save
-writes `state.db` `qa_flags` (one row per hull, upserted) and rewrites the committed `reviews/<run>.json`, since
-`state.db` is gitignored; `state.py qa-import <run> <reviews/<run>.json>` reloads it into a fresh database.
-QA changes the findings through the `findings` view: its `verdict` is the reviewer's correct verdict for
+correct one, bad geometry, other; unmeasured hulls take single or pair directly) and a note. A Save upserts
+`review.qa_flags` (key: run and `scene__hull[__site]` id; `site` and `hull` hold the real hull key) in one transaction
+and returns the row read back after commit. Flags are durable in Postgres; the `reviews/<run>.json` mirror is no longer
+written (the tracked files stay as history), and `state.py qa-import <run_no> <reviews/<run>.json>` still loads one.
+QA changes the findings through the `review.findings` view: its `verdict` is the reviewer's correct verdict for
 `wrong_verdict` (`unresolved` while none is picked), the labelled one for unmeasured hulls, `excluded` for
 `bad_geometry` and `other` (rigs, barges, broken outlines), else the run verdict, kept as `run_verdict`.
 Legacy `moving` verdicts and QA labels are read as `single`; the original speed measurement stays in the hull record.
 AIS matching and publishing read `findings`; the cards keep the run verdict, since that is what is judged, and show
-"after QA" where it changed. The view is refreshed when its definition changes.
+"after QA" where it changed.
 First use (fujairah_outer 12-19 Oct 2026, 64 hulls): 11 of 18 pairs OK, 4 wrong, 2 rigs or barges, 1 small
 craft alongside; all 10 unmeasured were single ships.
 
@@ -124,10 +136,12 @@ from the workspace filesystem.
 
 
 ## registry
-Runs are numbered, not named: `data/runs/registry.db` maps run number to folder and creation time, and a new run
-gets the next number and the folder `data/runs/<number>`. `watch.run --run <n>` resumes one; `--out` still
-registers an existing folder (runs launched before numbering). `registry adopt` renames a registered folder to its
-number once its last invocation has ended (an unfinished one is left alone, since a queued resume names it).
+Runs are numbered, not named: a run is a row of `review.runs` (`run_no` from `review.run_no_seq`, `folder`, `origin`,
+`attempt_id`), and `registry.py` is its thin Postgres wrapper (`new_run`, `get`, `by_attempt`, `listing`, `folder_of`;
+`registry list`). `folder` is the directory under `data/runs` (the machine's runs path, `config.yaml` `runs.path`)
+that holds scene windows, chips and the image `cache/`: `<job_id[:12]>-<attempt_id[:8]>` for a queue job,
+`legacy-run-<n>` for a run made on the PC (`watch.run`, experiments, and the PC runs imported by `pgimport`). Run
+numbers are global: one sequence, so the PC and the host agree. `watch.run --run <n>` resumes one.
 
 ## EC2 lifecycle process
 

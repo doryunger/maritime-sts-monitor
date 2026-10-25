@@ -8,9 +8,12 @@ import numpy as np
 from PIL import Image, ImageDraw
 from rasterio.warp import transform as warp_transform
 
-from maritime_tip_cue.sts import confidence, fixtures, rules as rules_mod, s1shape
-from maritime_tip_cue.watch import review, s1 as s1mod
+from maritime_tip_cue.sts import confidence, fixtures, s1shape
+from maritime_tip_cue.sts import rules as rules_mod
+from maritime_tip_cue.watch import review
+from maritime_tip_cue.watch import s1 as s1mod
 from maritime_tip_cue.watch.geo import Shore, haversine_m
+from maritime_tip_cue.watch.pgutil import iso
 from maritime_tip_cue.watch.state import IGNORED_ROLES, VERDICTS, Store
 
 SCALE = 6
@@ -28,7 +31,7 @@ def clean(value):
 
 
 def run_section(store: Store, scenes: list[dict]) -> dict:
-    rows = [dict(r) for r in store.db.execute("select * from runs order by run_id")]
+    rows = store.invocations()
     named = [r for r in rows if r["hot_spot"]]
     times = [s["capture_utc"] for s in scenes]
     return {
@@ -37,7 +40,7 @@ def run_section(store: Store, scenes: list[dict]) -> dict:
         "sources": (named[-1]["sources"] if named else ",".join(sorted({s["source"] for s in scenes}))),
         "rules_sha1": next((r["rules_sha1"] for r in reversed(rows) if r["rules_sha1"]), ""),
         "commit": next((r["commit_hash"] for r in reversed(rows) if r["commit_hash"]), ""),
-        "runs": [{"run_id": r["run_id"], "start": r["started_utc"], "end": r["ended_utc"], "status": r["status"]} for r in rows],
+        "runs": [{"run_id": r["invocation_id"], "start": r["started_utc"], "end": r["ended_utc"], "status": r["status"]} for r in rows],
     }
 
 
@@ -66,11 +69,8 @@ def scene_section(scenes: list[dict]) -> list[dict]:
 
 
 def hull_rows(store: Store, scene: dict) -> list[dict]:
-    out = []
-    for r in store.db.execute("select * from hulls where scene_id=? and site=? order by rowid", (scene["scene_id"], scene["site"])):
-        rec = json.loads(r["record"])
-        out.append(rec | {"hull_id": r["hull_id"], "lat": r["lat"], "lon": r["lon"], "verdict": r["verdict"], "role": r["role"]})
-    return out
+    rows = store.db.execute("select * from review.hulls where run_key = %s and scene_id = %s and site = %s order by hull_id", (store.run_key, scene["scene_id"], scene["site"])).fetchall()
+    return [r["record"] | {"hull_id": r["hull_id"], "lat": r["lat"], "lon": r["lon"], "verdict": r["verdict"], "role": r["role"]} for r in rows]
 
 
 def describe(scene: dict, rec: dict, taken: set, rules: dict) -> dict:
@@ -197,8 +197,8 @@ def render(root: Path, scene: dict, rec: dict, rules: dict, overlay: bool) -> Im
 
 
 def site_of(store: Store, scenes: list[dict]) -> dict | None:
-    for r in store.db.execute("select args from runs order by run_id desc"):
-        site = json.loads(r["args"] or "{}").get("hot_spot_settings")
+    for r in store.db.execute("select args from review.run_invocations where run_key = %s order by invocation_id desc", (store.run_key,)):
+        site = (r["args"] or {}).get("hot_spot_settings")
         if site:
             return site
     name = next((s["site"] for s in scenes if s["site"]), "")
@@ -216,7 +216,7 @@ class Dropped:
         self.shore = Shore(site["bbox"], site["min_shore_distance_m"]) if site else None
         self.raw = {}
         for s in scenes:
-            rows = store.db.execute("select lat, lon from raw_detections where scene_id=? and site=?", (s["scene_id"], s["site"])).fetchall()
+            rows = store.db.execute("select lat, lon from review.raw_detections where run_key = %s and scene_id = %s and site = %s", (store.run_key, s["scene_id"], s["site"])).fetchall()
             kept = (s["data"] or {}).get("dets", [])
             self.raw[(s["scene_id"], s["site"])] = (rows, kept)
 
@@ -363,109 +363,108 @@ def select_review_hulls(hulls: list[dict], n_singles: int, seed: int = 0, keep: 
     return listed, picked, len(singles)
 
 
-def collect(folder: Path, n_singles: int = 24, seed: int = 0, keep: set | None = None) -> tuple[dict, dict]:
-    store = Store(folder / "state.db", folder)
-    try:
-        rules = rules_mod.load()
-        scenes = store.scenes()
-        taken: set = set()
-        all_hulls = []
-        records = {}
-        for s in scenes:
-            for rec in hull_rows(store, s):
-                if rec["role"] in IGNORED_ROLES:
-                    continue
-                h = describe(s, rec, taken, rules)
-                h["image"] = s["source"] == "s1" or window_of(s, rec) is not None
-                all_hulls.append(h)
-                records[h["id"]] = (s, rec)
-        listed, picked, singles_count = select_review_hulls(all_hulls, n_singles, seed, keep)
-        listed.sort(key=lambda h: (SECTIONS.index(h["verdict"]) if h["verdict"] in SECTIONS else 9, h["time"], h["id"]))
-        site = site_of(store, scenes)
-        fx = fixture_section(store, scenes, all_hulls, {h["id"] for h in listed}, site, rules)
-        parties: dict = {}
-        columns = {r["name"] for r in store.db.execute("pragma table_info(ais_matches)")}
-        for r in [] if "slot" not in columns else store.db.execute("select scene_id, hull_id, slot, name, flag, imo, mmsi, dist_a_m, dist_b_m, report_age_min, is_sanctioned from ais_matches where chosen = 1 order by slot"):
-            dist = r["dist_b_m"] if r["slot"] == "b" and r["dist_b_m"] is not None else r["dist_a_m"]
-            parties.setdefault(f"{r['scene_id']}__{r['hull_id']}", []).append(
-                {"slot": r["slot"], "name": r["name"], "flag": r["flag"], "imo": r["imo"], "mmsi": r["mmsi"], "distance_m": dist, "age_min": r["report_age_min"], "is_sanctioned": bool(r["is_sanctioned"])})
-        diagnostics: dict[str, dict[str, list[dict]]] = {}
-        excluded: dict[str, dict[str, dict[str, int]]] = {}
-        candidate_table = store.db.execute("select 1 from sqlite_master where type='table' and name='ais_candidates'").fetchone()
-        if candidate_table:
-            candidate_rows = store.db.execute(
-                "select scene_id, hull_id, slot, ship_id, is_sat, name, type, type_code, flag, seen_utc, report_age_min, method, "
-                "before_age_min, after_age_min, bracket_gap_min, distance_m, ais_length_m, length_diff_m, heading_diff_deg, "
-                "ais_width_m, dwt, is_sanctioned, decision, reasons from ais_candidates order by scene_id, hull_id, slot, distance_m"
-            ).fetchall()
-            for row in candidate_rows:
-                key = f"{row['scene_id']}__{row['hull_id']}"
-                slot = row["slot"]
-                excluded.setdefault(key, {}).setdefault(slot, {"satellite": 0, "unnamed": 0})
-                if row["is_sat"]:
-                    excluded[key][slot]["satellite"] += 1
-                    continue
-                if not row["name"]:
-                    excluded[key][slot]["unnamed"] += 1
-                    continue
-                diagnostics.setdefault(key, {}).setdefault(slot, []).append(
-                    {
-                        "ship_id": row["ship_id"],
-                        "name": row["name"],
-                        "type": row["type"],
-                        "type_code": row["type_code"],
-                        "flag": row["flag"],
-                        "seen_utc": row["seen_utc"],
-                        "age_min": row["report_age_min"],
-                        "method": row["method"],
-                        "before_age_min": row["before_age_min"],
-                        "after_age_min": row["after_age_min"],
-                        "bracket_gap_min": row["bracket_gap_min"],
-                        "distance_m": row["distance_m"],
-                        "ais_length_m": row["ais_length_m"],
-                        "ais_width_m": row["ais_width_m"],
-                        "dwt": row["dwt"],
-                        "is_sanctioned": bool(row["is_sanctioned"]),
-                        "length_diff_m": row["length_diff_m"],
-                        "heading_diff_deg": row["heading_diff_deg"],
-                        "decision": row["decision"],
-                        "reasons": row["reasons"],
-                    }
-                )
-            for key, slot_rows in diagnostics.items():
-                for slot, items in slot_rows.items():
-                    items.sort(key=lambda item: (item["decision"] != "selected", item["distance_m"], item["age_min"]))
-        else:
-            candidate_rows = []
-        coverage = {(r["scene_id"], r["site"]): r["ships"] for r in store.db.execute("select scene_id, site, ships from ais_coverage")}
-        floor = rules["ais_match"]["min_coverage_ships"]
-        for h in listed:
-            h["ais"] = parties.get(h["id"], [])
-            key = h["id"]
-            h["ais_diagnostics"] = {
-                slot: {
-                    "candidate_count": len(diagnostics.get(key, {}).get(slot, [])),
-                    "satellite_excluded": excluded.get(key, {}).get(slot, {}).get("satellite", 0),
-                    "unnamed_excluded": excluded.get(key, {}).get(slot, {}).get("unnamed", 0),
-                    "candidates": diagnostics.get(key, {}).get(slot, [])[:5],
-                }
-                for slot in ("a", "b")
-            } if candidate_rows else None
-            scene_, rec_ = records[h["id"]]
-            try:
-                h["vessels"] = vessel_points(folder, scene_, rec_, rules)
-            except Exception:
-                h["vessels"] = []
-            ships = coverage.get((h["scene_id"], h["site"]))
-            h["ais_status"] = "matched" if h["ais"] else ("not_checked" if ships is None else ("no_data" if ships < floor else "no_match"))
-        doc = {
-            "run": run_section(store, scenes) | {
-                "singles_sample": {"n": len(picked), "of": singles_count, "seed": seed}, "site": site
-            },
-            "scenes": scene_section(scenes),
-            "hulls": listed,
-            "fixtures": fx,
-        }
-        return clean(doc), {h["id"]: records[h["id"]] for h in listed}
-    finally:
-        store.close()
+def collect(store: Store, n_singles: int = 24, seed: int = 0, keep: set | None = None) -> tuple[dict, dict]:
+    folder = store.path
+    rules = rules_mod.load()
+    scenes = store.scenes()
+    taken: set = set()
+    all_hulls = []
+    records = {}
+    for s in scenes:
+        for rec in hull_rows(store, s):
+            if rec["role"] in IGNORED_ROLES:
+                continue
+            h = describe(s, rec, taken, rules)
+            h["image"] = s["source"] == "s1" or window_of(s, rec) is not None
+            all_hulls.append(h)
+            records[h["id"]] = (s, rec)
+    listed, picked, singles_count = select_review_hulls(all_hulls, n_singles, seed, keep)
+    listed.sort(key=lambda h: (SECTIONS.index(h["verdict"]) if h["verdict"] in SECTIONS else 9, h["time"], h["id"]))
+    site = site_of(store, scenes)
+    fx = fixture_section(store, scenes, all_hulls, {h["id"] for h in listed}, site, rules)
+    parties: dict = {}
+    match_rows = store.db.execute(
+        "select scene_id, hull_id, slot, name, flag, imo, mmsi, dist_a_m, dist_b_m, report_age_min, is_sanctioned "
+        "from review.ais_matches where run_key = %s and chosen order by slot, id",
+        (store.run_key,),
+    ).fetchall()
+    for r in match_rows:
+        dist = r["dist_b_m"] if r["slot"] == "b" and r["dist_b_m"] is not None else r["dist_a_m"]
+        parties.setdefault(f"{r['scene_id']}__{r['hull_id']}", []).append(
+            {"slot": r["slot"], "name": r["name"], "flag": r["flag"], "imo": r["imo"], "mmsi": r["mmsi"], "distance_m": dist, "age_min": r["report_age_min"], "is_sanctioned": bool(r["is_sanctioned"])})
+    diagnostics: dict[str, dict[str, list[dict]]] = {}
+    excluded: dict[str, dict[str, dict[str, int]]] = {}
+    candidate_rows = store.db.execute(
+        "select scene_id, hull_id, slot, ship_id, is_sat, name, type, type_code, flag, seen_utc, report_age_min, method, "
+        "before_age_min, after_age_min, bracket_gap_min, distance_m, ais_length_m, length_diff_m, heading_diff_deg, "
+        "ais_width_m, dwt, is_sanctioned, decision, reasons from review.ais_candidates where run_key = %s "
+        "order by scene_id, hull_id, slot, distance_m",
+        (store.run_key,),
+    ).fetchall()
+    for row in candidate_rows:
+        key = f"{row['scene_id']}__{row['hull_id']}"
+        slot = row["slot"]
+        excluded.setdefault(key, {}).setdefault(slot, {"satellite": 0, "unnamed": 0})
+        if row["is_sat"]:
+            excluded[key][slot]["satellite"] += 1
+            continue
+        if not row["name"]:
+            excluded[key][slot]["unnamed"] += 1
+            continue
+        diagnostics.setdefault(key, {}).setdefault(slot, []).append(
+            {
+                "ship_id": row["ship_id"],
+                "name": row["name"],
+                "type": row["type"],
+                "type_code": row["type_code"],
+                "flag": row["flag"],
+                "seen_utc": iso(row["seen_utc"]),
+                "age_min": row["report_age_min"],
+                "method": row["method"],
+                "before_age_min": row["before_age_min"],
+                "after_age_min": row["after_age_min"],
+                "bracket_gap_min": row["bracket_gap_min"],
+                "distance_m": row["distance_m"],
+                "ais_length_m": row["ais_length_m"],
+                "ais_width_m": row["ais_width_m"],
+                "dwt": row["dwt"],
+                "is_sanctioned": bool(row["is_sanctioned"]),
+                "length_diff_m": row["length_diff_m"],
+                "heading_diff_deg": row["heading_diff_deg"],
+                "decision": row["decision"],
+                "reasons": row["reasons"],
+            }
+        )
+    for key, slot_rows in diagnostics.items():
+        for slot, items in slot_rows.items():
+            items.sort(key=lambda item: (item["decision"] != "selected", item["distance_m"], item["age_min"]))
+    coverage = {(r["scene_id"], r["site"]): r["ships"] for r in store.db.execute("select scene_id, site, ships from review.ais_coverage where run_key = %s", (store.run_key,))}
+    floor = rules["ais_match"]["min_coverage_ships"]
+    for h in listed:
+        h["ais"] = parties.get(h["id"], [])
+        key = h["id"]
+        h["ais_diagnostics"] = {
+            slot: {
+                "candidate_count": len(diagnostics.get(key, {}).get(slot, [])),
+                "satellite_excluded": excluded.get(key, {}).get(slot, {}).get("satellite", 0),
+                "unnamed_excluded": excluded.get(key, {}).get(slot, {}).get("unnamed", 0),
+                "candidates": diagnostics.get(key, {}).get(slot, [])[:5],
+            }
+            for slot in ("a", "b")
+        } if candidate_rows else None
+        scene_, rec_ = records[h["id"]]
+        try:
+            h["vessels"] = vessel_points(folder, scene_, rec_, rules)
+        except Exception:
+            h["vessels"] = []
+        ships = coverage.get((h["scene_id"], h["site"]))
+        h["ais_status"] = "matched" if h["ais"] else ("not_checked" if ships is None else ("no_data" if ships < floor else "no_match"))
+    doc = {
+        "run": run_section(store, scenes) | {
+            "singles_sample": {"n": len(picked), "of": singles_count, "seed": seed}, "site": site
+        },
+        "scenes": scene_section(scenes),
+        "hulls": listed,
+        "fixtures": fx,
+    }
+    return clean(doc), {h["id"]: records[h["id"]] for h in listed}

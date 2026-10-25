@@ -7,15 +7,16 @@ import boto3
 from maritime_tip_cue import publish, worker
 from maritime_tip_cue.config import env, settings
 from maritime_tip_cue.sts import rules as rules_mod
-from maritime_tip_cue.watch import registry
 
 
 def plan(run_no: int) -> dict:
-    out = registry.folder_of(run_no)
-    store = publish.Store(out / "state.db", out)
+    store = publish.Store.open(run_no)
+    out = store.path
     try:
         job_id = publish.run_job_id(store)
-        commit = store.db.execute("select commit_hash from runs order by run_id desc limit 1").fetchone()[0]
+        commit = store.db.execute(
+            "select commit_hash from review.run_invocations where run_key = %s order by invocation_id desc limit 1", (store.run_key,)
+        ).fetchone()["commit_hash"]
     finally:
         store.close()
     if job_id is None:
@@ -32,11 +33,13 @@ def legacy(runs: list[int], upload: bool) -> int:
     client = boto3.client("s3", region_name=env("AWS_REGION")) if upload else None
     bucket = env("S3_BUCKET_NAME")
     for no in runs:
-        out = registry.folder_of(no)
-        store = publish.Store(out / "state.db", out)
+        store = publish.Store.open(no)
+        out = store.path
         try:
             job_id = publish.run_job_id(store)
-            status = store.db.execute("select status from runs order by run_id desc limit 1").fetchone()[0]
+            status = store.db.execute(
+                "select status from review.run_invocations where run_key = %s order by invocation_id desc limit 1", (store.run_key,)
+            ).fetchone()["status"]
         finally:
             store.close()
         if status != "done":
@@ -44,11 +47,9 @@ def legacy(runs: list[int], upload: bool) -> int:
         print(f"run {no}: legacy review data, job {job_id[:8] if job_id else 'none'}", flush=True)
         if not upload:
             continue
-        folder = worker.worker_root() / "_legacy" / f"run-{no}"
-        snapshot = worker.export_record(out, folder)[0]
         prefix = settings()["catalogue"]["reviews_prefix"].rstrip("/") + f"/legacy/run-{no}/"
         meta = {"legacy": True, "run_no": no, "job_id": job_id}
-        print(json.dumps({"run": no, "review": worker.upload_review_folder(client, bucket, prefix, out, snapshot, meta)}), flush=True)
+        print(json.dumps({"run": no, "review": worker.upload_review_folder(client, bucket, prefix, out, meta)}), flush=True)
     if not upload:
         print("dry run; pass --upload to send")
     return 0
@@ -74,9 +75,7 @@ def main() -> int:
     bucket = env("S3_BUCKET_NAME")
     rules = rules_mod.load()
     for item in plans:
-        folder = item["workspace"] / item["attempt"]
-        snapshot = worker.export_record(item["out"], folder)[0]
-        review = worker.upload_review(client, bucket, item["manifest"], item["out"], snapshot, item["run"], item["attempt"])
+        review = worker.upload_review(client, bucket, item["manifest"], item["out"], item["run"], item["attempt"])
         provenance = worker.provenance_of(item["manifest"], item["attempt"], review) | {"code_commit": item["commit"] or None}
         published = publish.publish_run(client, bucket, item["out"], item["run"], item["job_id"], rules, provenance)
         print(json.dumps({"run": item["run"], "review": review, "published": published}, sort_keys=True), flush=True)

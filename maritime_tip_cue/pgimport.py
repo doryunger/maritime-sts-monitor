@@ -11,6 +11,76 @@ import psycopg
 
 from maritime_tip_cue import pg
 
+LEGACY_SCHEMA = """
+create table if not exists ais_matches (
+    scene_id text, site text, hull_id text, ship_id text, is_sat integer, name text, imo text, mmsi text, flag text,
+    seen_utc text, report_age_min real, method text, rep_lat real, rep_lon real, proj_lat real, proj_lon real,
+    dist_a_m real, dist_b_m real, limit_m real, ais_length_m real, ais_width_m real, meas_length_m real,
+    length_diff_m real, heading_diff_deg real, speed_kn real, chosen integer, slot text, reasons text
+);
+
+create table if not exists vessel_identities (
+    ship_id text primary key, imo text, mmsi text, call_sign text, gross_tonnage text, dwt text, year_built text,
+    vessel_type text, status text, equasis_name text, equasis_flag text, false_flag integer, confidence text,
+    reasons text, candidates integer, search_name text, source text, resolved_utc text, sanctions_lists text
+);
+
+create table if not exists ais_candidates (
+    scene_id text, site text, hull_id text, slot text, ship_id text, is_sat integer, name text,
+    type text, type_code text, gt_type_code text, flag text, dwt real, status text, state text,
+    seen_utc text, elapsed_min real, captured_utc text, tile_utc text, report_age_min real,
+    method text, before_seen_utc text, before_age_min real, after_seen_utc text, after_age_min real,
+    bracket_gap_min real, rep_lat real, rep_lon real, proj_lat real, proj_lon real, distance_m real,
+    limit_m real, ais_length_m real, ais_width_m real, meas_length_m real, length_diff_m real,
+    ais_heading real, hull_heading real, heading_diff_deg real, speed_kn real, course real, rot real,
+    decision text, reasons text,
+    primary key (scene_id, site, hull_id, slot, ship_id)
+);
+
+create table if not exists ais_coverage (
+    scene_id text, site text, ships integer, reports integer, window_min real, checked_utc text,
+    primary key (scene_id, site)
+);
+create table if not exists runs (
+    run_id integer primary key autoincrement,
+    started_utc text, ended_utc text, args text, hot_spot text, window_start text, window_end text,
+    sources text, rules_sha1 text, commit_hash text, status text
+);
+create table if not exists scenes (
+    scene_id text, site text, source text, capture_utc text, pass_id text, status text, stage text,
+    attempts integer default 0, error text, detector_s real, counts text, data text, folder text,
+    updated_utc text, run_id integer,
+    primary key (scene_id, site)
+);
+create table if not exists raw_detections (
+    scene_id text, site text, idx integer, col integer, row integer, lat real, lon real, score real,
+    feature text,
+    primary key (scene_id, site, idx)
+);
+create table if not exists hulls (
+    scene_id text, site text, hull_id text, lat real, lon real, ai2_length_m real, ai2_width_m real,
+    ai2_heading real, verdict text, role text, record text,
+    primary key (scene_id, site, hull_id)
+);
+create table if not exists outputs (
+    path text primary key, s3_uri text, created_utc text, capture_date text, site text, source text,
+    n_rows integer, n_pairs integer, n_possible integer, scene_ids text, sha256 text, uploaded_utc text,
+    run_id integer
+);
+create table if not exists captures (
+    finding_id text, format text, local_path text, s3_uri text, run_id integer, created_utc text, uploaded_utc text,
+    primary key (finding_id, format)
+);
+create table if not exists qa_flags (
+    hull_id text primary key, scene_id text, source text, verdict text, lat real, lon real, status text,
+    correct_verdict text, note text, reviewer text, updated_utc text, imported_utc text
+);
+create table if not exists events (
+    event_id integer primary key autoincrement, time_utc text, run_id integer, level text, scene_id text,
+    message text
+);
+"""
+
 RENAMES = {"run_id": "invocation_id"}
 TABLES = (
     ("runs", "run_invocations"),

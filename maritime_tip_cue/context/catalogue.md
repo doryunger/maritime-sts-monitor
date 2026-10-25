@@ -15,7 +15,7 @@ these are scenes passing the existing scene rules, not every raw catalogue item.
 
 ## Manifests and queue state
 
-SQLite records observations and the dispatch outbox in the same transaction. A failed S3 write leaves a
+The Postgres ledger (`processing` schema) records observations and the dispatch outbox in the same transaction. A failed S3 write leaves a
 pending job for the next poll. Job IDs hash canonical manifest content: exact scene items, the site snapshot
 and the raw rules snapshot. Creation time is excluded. The `manifest_sha256` receipt field means this core
 hash, which is also the job ID. Immutable conditional S3 writes detect conflicts instead of replacing jobs.
@@ -27,12 +27,12 @@ Boundary or rule changes produce a different job identity rather than mutating q
 
 Successful receipts must cover every requested scene and reference uploaded objects whose sizes and SHA256
 metadata match. Missing objects or malformed receipts leave work incomplete. The six-hour catalogue scan only
-discovers work. The always-on job manager dispatches SQLite jobs to Redis and consumes Redis Stream claim,
-result and lease-expiry events. SQLite stores each attempt, retry count and next eligible time. A worker renews
+discovers work. The always-on job manager dispatches ledger jobs to Redis and consumes Redis Stream claim,
+result and lease-expiry events. The ledger stores each attempt, retry count and next eligible time. A worker renews
 its claim lease; a result is accepted only from the current attempt. Expired leases become one delayed retry,
-and a second unsuccessful attempt is terminal until explicitly requeued. Redis recovery and the SQLite ledger
-are reconciled on each manager cycle, so a restart between either store's update can be repaired. Its SQLite
-lock prevents overlap with a catalogue scan.
+and a second unsuccessful attempt is terminal until explicitly requeued. Redis recovery and the ledger
+are reconciled on each manager cycle, so a restart between either store's update can be repaired. Its
+controller lock prevents overlap with a catalogue scan.
 
 `catalogue jobs --single-scene` lists ready outbox jobs whose manifest contains exactly one scene. The
 `job_manager once --job-id` path republishes only that selected manifest to Redis; it does not run a scan or
@@ -63,11 +63,11 @@ publication is fenced by both owner and attempt identity, and artifacts use that
 prefix, so an expired worker cannot replace a later attempt's result. The manager owns completion and retry
 transitions; workers never put their own jobs back in the queue. A lease timeout or reported failure consumes
 the single configured retry after a delay. A second unsuccessful attempt is recorded as terminal failed and is
-not automatically claimable. Rebuilding Redis state from SQLite preserves running claims, terminal jobs and
+not automatically claimable. Rebuilding Redis state from the ledger preserves running claims, terminal jobs and
 retry delays without introducing duplicate claims.
 
 Each attempt uploads `detections.parquet` for all hull roles, `raw_detections.parquet` for detector output,
-a SQLite backup, the manifest and raw rules. Detection geometry is WKB in WGS84 longitude/latitude, with
+a run-state snapshot, the manifest and raw rules. Detection geometry is WKB in WGS84 longitude/latitude, with
 GeoParquet metadata; empty results retain their schema. Captures/chips remain on the worker. The receipt is
 written last, after uploads. A completed job returns its existing receipt on a duplicate invocation.
 
@@ -80,7 +80,7 @@ Those reviewed, pair-only products remain the responsibility of the existing pub
 The tracker runs in its Docker image under systemd; GPU packages are not loaded on Lightsail. The
 systemd timer invokes a one-shot scan at 00:05, 06:05, 12:05 and 18:05 UTC, away from hourly AIS collection at
 minute 15. The timer persists missed activation across reboots. The manager service restarts after failure and
-host reboot. Scan history is in SQLite, JSONL and the service journal. Manager and worker have separate Docker
+host reboot. Scan history is in the ledger, JSONL and the service journal. Manager and worker have separate Docker
 images and dependency lists while sharing this repository's `maritime_tip_cue` package. Their images build
 from a clone; `.env`, `config.local.yaml`, and persistent `data/` stay host-local.
 
@@ -112,9 +112,9 @@ Every attempt ends as exactly one of `succeeded`, `failed` or `stopped`, stored 
 shown by `catalogue job-status`. `stopped` means the attempt did not finish by its own result: the worker
 aborted on a lost lease, unreachable Redis or the runtime limit (it writes a `stopped` receipt first when the
 lease is still valid), or it died and its lease expired with no receipt. A job is `failed` only after its
-retry budget is spent. Whatever the verdict, the worker uploads the run record under the attempt prefix:
-`state.db` snapshot (runs, scenes, hulls, events) and `events.jsonl`, plus manifest and rules; the Parquets
-are added on success. This is the same per-run record the local `data/runs/N` folders hold. Runs 1-9 predate
+retry budget is spent. Whatever the verdict, the worker uploads the manifest and rules under the attempt prefix and the Parquets on success; the run's own
+record (runs, scenes, hulls, events) is written to Postgres as the attempt goes, so a failed attempt keeps it
+too. Runs 1-9 predate
 the ledger and stay as legacy; new runs are only created through the queue (`watch.run` refuses without
 `--unledgered`).
 
@@ -132,7 +132,7 @@ resurrects a superseded one.
 `catalogue audit` is the check that the ledger is unambiguous. Every observed scene gets one state: `completed`,
 `running`, `queued`, `failed`, `baseline` (seen at the first scan, never queued by design), or a violation
 (`orphan`: observed after baseline but in no job; completed yet still in an open job; in more than one open
-job; every job superseded). It also lists Redis drift against the SQLite statuses. Observation `version` is a
+job; every job superseded). It also lists Redis drift against the ledger statuses. Observation `version` is a
 hash of the site and rules, so a rules change makes a catalogue scan see every scene as new again; the
 supersede step is what stops that from re-running completed scenes. Reprocessing under new rules must be a
 deliberate action, not a side effect of a scan.
@@ -140,11 +140,49 @@ deliberate action, not a side effect of a scan.
 ## Review data on S3
 
 The worker also uploads each attempt's run folder to `catalogue/reviews/<job_id>/<attempt>/`, whatever the verdict:
-`review.png`, `scenes/**` (the S1 chips and S2 windows the app renders QA cards from), a `state.db` snapshot and an
-`index.json` listing every file with size and sha256. `cache/` and `work/` are left out, and the live database and
-its WAL files are replaced by the snapshot. A run folder is a few MB. The receipt carries `review` (prefix, index,
+`review.png`, `scenes/**` (the S1 chips and S2 windows the app renders QA cards from) and an `index.json` listing
+every file with size and sha256. `cache/` and `work/` are left out, and run state is in Postgres, not in this
+folder. A run folder is a few MB. The receipt carries `review` (prefix, index,
 file count) or `review_error`; a failed review upload never fails the job, because the Parquets and run record are
 the result and the review data can be regenerated from the run record only by rerunning. Run numbers are per
 machine, so the S3 layout is keyed by job and attempt, never by run number. The app will later list attempts from
 this prefix and fetch files on demand. The EC2 role needs `s3:PutObject` on `catalogue/reviews/*` (worker README).
 
+## Postgres ledger
+
+The ledger moved from `data/catalogue/tracker.db` to the `processing` schema of the control-host Postgres (schema in
+`pg.py`; setup in `deploy/postgres/README.md`). Redis stays the task queue; every container gets `STS_DATABASE_URL`
+from the same `.env`.
+- One controller at a time is a session-level advisory lock (`catalogue.controller_lock`, one fixed key) on the
+  connection that does the work; a second holder gets `BlockingIOError` at once, and a dropped connection frees the
+  lock. This replaces the old file lock; `worker_host.manager_json` retries on that message.
+- `catalogue.connect()` returns an autocommit connection and writes go through `catalogue.tx`, so each ledger
+  change is one transaction. Timestamps are `timestamptz` (aware datetimes in, ISO strings out of `ledger`,
+  `job_status` and `status`, so the JSON shapes the app and CLI print did not change).
+- Manifests are `jsonb`. A job id is the digest of the canonical manifest, and jsonb reorders keys and normalises
+  whitespace, so only canonical bytes of the value read back matter: all 107 real manifests round-trip to the same
+  bytes and still match their job id and `manifest_sha256` (`tests/test_pgledger.py`).
+- Event keys (`store.md`, traceability): `scan()` stamps each new observation and each job it creates with its
+  `scan_id`, and writes a `job_scenes` row for every scene of the manifest in the job's own transaction. A repeat sighting
+  keeps the scan that first found the observation.
+- The manager handles the Redis `claimed` event with `ledger.ensure_attempt`, the same call the worker makes right
+  after claiming. Whichever runs second finds the attempt and changes nothing; the manager does not pre-check for an attempt itself, because `ensure_attempt` decides under a row lock on the job.
+
+### Import of the old tracker.db
+`python -m maritime_tip_cue.pgledger import --tracker-db <file> [--dry-run]` copies the six tables in one transaction
+(source read from an in-memory snapshot; existing keys are skipped, so it is idempotent) and checks that every
+source key is present before commit, then derives the event keys and reports each as contained, preceding,
+ambiguous or unmatched. `verify` re-checks presence, manifest bytes, `job_scenes` and counts what is unresolved.
+- `scan_id` comes from the scan whose [started, ended] holds `first_discovered_utc` / `created_utc`; failing that, the
+  latest earlier scan, only if it has no end or the gap is under its own duration. Never a guess: otherwise it stays
+  null. On the 2026-10-25 copy 158 of 158 observations and 105 of 107 jobs fall inside a scan. The other two (fujairah_outer
+  s1 and off_sohar s1, created 2026-10-20 17:52:44) are the explicit Gulf catch-up jobs adopted by hand between the
+  13:20 and 18:05 scans, so no scan made them and the import leaves them null (`pg check` lists them). They are
+  recorded as an event of their own: `python -m maritime_tip_cue.pgledger adopt --job <id> --job <id> --note <why>`
+  creates one scan row `adopted-<UTC time of the earliest job>` (status `adopted`, `summary_json` kind `manual
+  adoption` with the note and the jobs) and sets it as their `scan_id`. It refuses unknown jobs and jobs a scan
+  already made, and repeating it changes nothing. Adoption is always named explicitly, never inferred from a gap.
+- `review.runs.attempt_id` is set where the run folder `<job_id[:12]>-<attempt_id[:8]>` names exactly one attempt;
+  none or several is reported and left null; legacy runs stay null. Run it again after the runs are imported.
+  On 2026-10-25 all 54 job runs in the live review store match one attempt each (9 legacy); one succeeded attempt has
+  no run yet.

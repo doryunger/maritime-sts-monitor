@@ -72,7 +72,9 @@ def settle(queue_counts, cfg, sleep=time.sleep):
     return counts
 
 
-def run_session(directory, queue_counts, run_worker, cfg, clock=time.time, paused=False, dry_run=False, sleep=time.sleep):
+def run_session(
+    directory, queue_counts, run_worker, cfg, clock=time.time, paused=False, dry_run=False, sleep=time.sleep
+):
     directory.mkdir(parents=True, exist_ok=True)
     with (directory / "dispatcher.lock").open("a+") as lock:
         try:

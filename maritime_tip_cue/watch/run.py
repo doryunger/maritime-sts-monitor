@@ -5,13 +5,14 @@ import shutil
 import subprocess
 import sys
 import traceback
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from maritime_tip_cue import structures as structures_mod, hotspots, passes
+from maritime_tip_cue import hotspots, passes
+from maritime_tip_cue import structures as structures_mod
 from maritime_tip_cue.config import ROOT, settings
 from maritime_tip_cue.sts import rules as rules_mod
-from maritime_tip_cue.watch import common, detector, registry, review, s1, s2
+from maritime_tip_cue.watch import common, detector, review, s1, s2
 from maritime_tip_cue.watch.geo import Shore, Structures
 from maritime_tip_cue.watch.state import VERDICTS, Store
 
@@ -225,8 +226,6 @@ def main() -> int:
     parser.add_argument("--end", required=True)
     parser.add_argument("--days", type=float, default=7)
     parser.add_argument("--run", type=int)
-    parser.add_argument("--out")
-    parser.add_argument("--db")
     parser.add_argument("--sources", default="s1,s2")
     parser.add_argument("--reanalyse", action="store_true")
     parser.add_argument("--unledgered", action="store_true")
@@ -236,19 +235,12 @@ def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8")
     rules = rules_mod.load()
     site = next(s for s in hotspots.load() if s["name"] == args.site)
-    end = datetime.fromisoformat(args.end.replace("Z", "+00:00")).astimezone(timezone.utc)
+    end = datetime.fromisoformat(args.end.replace("Z", "+00:00")).astimezone(UTC)
     start = end - timedelta(days=args.days)
-    if args.out:
-        out = Path(args.out)
-        out = out if out.is_absolute() else ROOT / out
-        out.mkdir(parents=True, exist_ok=True)
-        number = registry.register(out)
-    elif args.run:
-        number, out = args.run, registry.folder_of(args.run)
-    else:
-        number, out = registry.new_run()
-    print(f"run {number}: {out}", flush=True)
-    store = Store(Path(args.db) if args.db else out / "state.db", out)
+    store = Store.open(args.run) if args.run else Store.create("legacy")
+    out = store.path
+    out.mkdir(parents=True, exist_ok=True)
+    print(f"run {store.run_no}: {out}", flush=True)
     rules_sha1 = hashlib.sha1(rules_mod.RULES_PATH.read_bytes()).hexdigest()
     run_id = store.start_run(vars(args) | {"hot_spot_settings": site}, args.site, (start.isoformat(), end.isoformat()), args.sources, rules_sha1, git_head())
     SINK.update(store=store, run_id=run_id)

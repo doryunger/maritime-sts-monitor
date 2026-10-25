@@ -8,13 +8,15 @@ Conventions are in AGENTS.md (loaded via CLAUDE.md for Claude). Read docs by sec
   `s1pair.py` (Sentinel-1 outline pair), `s1shape.py` (intensity-derived parallel single-box veto with a weaker-return guard), `confidence.py` (pair confidence score: S1 decides the verdict, S2 display-only), `ai2point.py` (Ai2 point half-pixel shift), `rules.py` (reads
   `rules/sts_graph.json`), `fixtures.py` (fixture loaders and tallies), `score.py` (CLI summary).
   Why notes: `maritime_tip_cue/context/sts.md`.
-- `maritime_tip_cue/watch/`: hot-spot run. `run.py` (CLI: passes -> detector -> shore filter -> pair check), `detector.py` + `ai2_runner.py` (Ai2 in the ai2-detectors venv; ai2_runner is re-read per scene), `s1.py`, `s2.py` (chips / windows from the detector scratch), `state.py` (SQLite run state, `findings` view, `import`, `summary`), `registry.py` (run numbers), `report.py` (run document and tiles for the app). Why notes: `maritime_tip_cue/context/watch.md`.
+- `maritime_tip_cue/watch/`: hot-spot run. `run.py` (CLI: passes -> detector -> shore filter -> pair check), `detector.py` + `ai2_runner.py` (Ai2 in the ai2-detectors venv; ai2_runner is re-read per scene), `s1.py`, `s2.py` (chips / windows from the detector scratch), `state.py` (`Store`: Postgres run state bound to one run, `summary`, `qa-import`), `registry.py` (run rows and folders in `review.runs`), `pgutil.py` (jsonb and timestamp helpers), `report.py` (run document and tiles for the app). Why notes: `maritime_tip_cue/context/watch.md`.
+- `tests/pgstore.py`: helpers that build a run with scenes, hulls and AIS rows in the `pgdb` database (`new_store`, `add_scene`, `add_match`).
 - `app/`: runs app, FastAPI `backend/` + React `frontend/`. `runs.scene_rows` uses a lightweight per-run
   index; full reports load only on opening a run. Cache and refresh rationale: `app/context/app.md`.
 - `maritime_tip_cue/structures.py`: charted offshore structures from OSM (`fetch` writes `data/structures/osm_structures.geojson`); detections within `fixed_structures.exclusion_m` are dropped.
 - `maritime_tip_cue/passes.py`: S1/S2 passes over a hot spot (`--map` burns footprints). `maritime_tip_cue/land.py`: coastline from `data/land/`.
-- `maritime_tip_cue/catalogue.py`: Lightsail catalogue scans, SQLite baseline/outbox, JSONL discovery logs and
-  immutable S3 jobs. `worker.py` and `watch/jobs.py`: explicit processing on EC2, claims, pinned manifests/rules,
+- `maritime_tip_cue/catalogue.py`: Lightsail catalogue scans, Postgres ledger (`processing` schema: baseline,
+  job outbox, attempts), JSONL discovery logs and immutable S3 jobs. `pgledger.py` is the one-time import of the old
+  `tracker.db` (`import|verify --tracker-db <file>`; copy of the live file in `data/test_inputs/`, never committed). `worker.py` and `watch/jobs.py`: explicit processing on EC2, claims, pinned manifests/rules,
   detection Parquets and completion receipts. See `maritime_tip_cue/context/catalogue.md` and
   `deploy/catalogue/README.md` for the deployed timer, commands and recovery behavior.
 - `maritime_tip_cue/local_runner.py`: shared-queue terminal selection and resumable local worker processing;
@@ -30,7 +32,7 @@ Conventions are in AGENTS.md (loaded via CLAUDE.md for Claude). Read docs by sec
 
 ## Data (gitignored `data/`)
 - `data/sts_fixtures/s1`, `data/sts_fixtures/s2`: labelled hulls and passes with their expected verdicts.
-- `data/runs/<number>/`: one folder per run (`state.db`, scene windows/chips, image `cache/`); `data/runs/registry.db` numbers them. The QA review is mirrored to the tracked `reviews/<number>.json`.
+- `data/runs/<folder>/`: scene windows/chips and image `cache/` of a run; folder names are in `review.runs` (`<job_id[:12]>-<attempt_id[:8]>` or `legacy-run-<n>`); run state, QA flags and AIS rows are in Postgres.
 - `data/earlier_runs/`: outputs of earlier runs of this method, reference only.
 - Stage 0 detector bench (outside the repo): `C:\Users\Shadow\projects\ai2-detectors\` (README there).
 
@@ -42,14 +44,14 @@ Conventions are in AGENTS.md (loaded via CLAUDE.md for Claude). Read docs by sec
 - `.venv/Scripts/python -m pytest tests/test_sts_fixtures.py -q` fixture tests (need the PC-only `data/sts_fixtures`): verdicts to 1e-6 on the frozen rules (`tests/sts_graph_frozen.json`), label scores on the live rules.
 - Tests that need Postgres (the `pgdb` fixture in `tests/conftest.py`) run in Docker on the Ubuntu host against a throwaway Postgres, never against the live database: `.venv\Scripts\python C:\Users\Shadow\projects\maritime-sts-analysis\2026-10-25-host-tests\run_on_host.py [pytest args]` (default `tests -q` without the fixture file; runs are serialised; details in the README there). A plain local `pytest` skips them.
 - `.venv/Scripts/python -m maritime_tip_cue.sts.score` per-set STS tallies.
-- `.venv/Scripts/python -m maritime_tip_cue.watch.run --site <hot spot> --end <ISO> --days 7 [--run N] [--reanalyse]` an experiment run (needs `--unledgered`; real work goes through the queue so the job ledger records it); a new one gets the next run number (long: launch detached with a log file; resumes from `state.db` with `--run N`). `watch.registry list|adopt` lists runs / renames finished legacy folders to their number.
-- `.venv/Scripts/python -m maritime_tip_cue.ais.match <run folder>` match AIS to the after-QA pair hulls (`--all-checked --stats` for limit measurements).
+- `.venv/Scripts/python -m maritime_tip_cue.watch.run --site <hot spot> --end <ISO> --days 7 [--run N] [--reanalyse]` an experiment run (needs `--unledgered`; real work goes through the queue so the job ledger records it); a new one gets the next run number (long: launch detached with a log file; resumes from Postgres with `--run N`). `watch.registry list` lists runs.
+- `.venv/Scripts/python -m maritime_tip_cue.ais.match <run no>` match AIS to the after-QA pair hulls (`--all-checked --stats` for limit measurements).
 - `.venv/Scripts/python -m maritime_tip_cue.watch.recheck <run numbers>` re-runs the S2 pair check of runs from their stored windows (after a rule change; no detector).
 - `.venv/Scripts/python -m maritime_tip_cue.publish <runs> [--upload]` builds the GeoParquet and captures from the runs' after-QA pairs (dedupe across tiles and hot spots) into `data/publish/`, and uploads with `--upload`. Why notes: `maritime_tip_cue/context/publish.md`.
-- `app\start.cmd` runs app at http://127.0.0.1:8765/ (runs table, run pages, QA saved to `qa_flags`).
+- `app\start.cmd` runs app at http://127.0.0.1:8765/ (runs table, run pages, QA saved to `review.qa_flags`).
 - `run-scenes.cmd` lists numbered shared queue jobs; `python -m maritime_tip_cue.local_runner --all` consumes ready
   jobs, `--resume` recovers the saved session, and `--status` reads local/shared state without processing.
-- `.venv/Scripts/python -m maritime_tip_cue.watch.state summary <run folder>` per-scene counts.
+- `.venv/Scripts/python -m maritime_tip_cue.watch.state summary <run no>` per-scene counts.
 - `.venv/Scripts/python -m maritime_tip_cue.hotspots [publish <file>]` print (or replace) the S3 hot-spot list.
 - `python -m maritime_tip_cue.catalogue scan|status`: discovery/logging on Lightsail; baseline is already set.
 - `python -m maritime_tip_cue.worker list|drain`: inspect or process ready S3 jobs on an already-running EC2;

@@ -15,27 +15,34 @@ The SQLite ledger there is the only source of truth; local runs, Redis and this 
 job state, so a local run never makes a job look done. An unreachable control host returns an error, never an
 empty list. SSH details come from the ignored `data/secrets/control_host.json` (optional `project_dir`).
 
+Image files stay on disk under `data/runs/<folder>/`; the `s3runs` sync fetches a run's review folder (scene chips and
+windows, listed with sizes and sha256 in `index.json`; no database file) for each `review.runs` row that has no local
+folder, from `catalogue/reviews/<job_id>/<attempt_id>/` (job through `review.run_lineage`) or
+`catalogue/reviews/legacy/run-<n>/`, and never replaces a folder that exists. Nothing is registered anywhere: the run row
+is already in Postgres.
+
 QA saves resolve IDs against the complete persisted hull table, including hulls outside the sampled review cards.
 The single-hull sample changes as processing adds detections or flags reserve sample slots; validating against
 only the current card list rejected valid cards from an already-open page as `unknown hull`. Saving invalidates
 the report cache so the corrected hull stays in the review list through its persisted flag.
 
-FastAPI (`server.py`) over `runs.py` reads `data/runs/registry.db` for the run list. Scene summaries use a separate
-per-run cache of minimal SQLite rows, invalidated by the main database and WAL file's path, modification time and
-size. Unchanged runs require only file metadata checks. Changed runs are read in a single read-only transaction;
-record JSON, AIS candidates, chips and fixtures are not loaded. The shared `report.select_review_hulls` function
+FastAPI (`server.py`) over `runs.py` reads the run list from `review.runs` in Postgres (`STS_DATABASE_URL`). Scene
+summaries use a separate per-run cache of minimal rows, invalidated by a Postgres stamp: one grouped query returns, per
+run, the row counts and latest update times of its scenes, hulls, flags, AIS tables, invocations and events. An unchanged
+run costs that one query for all runs; a changed run is re-read; record JSON, AIS candidates, chips and fixtures are not
+loaded. `/api/runs` computes every run's summary with a handful of grouped queries rather than one set per run. The shared `report.select_review_hulls` function
 preserves exactly the full report's review sample, including flagged singles; the index skips the same
 duplicate and hull-B-box roles as the report, otherwise the two samples differ. Running/stopped status is
 derived on every request so a quiet run can age into stopped without a database write.
 
 `/api/scenes` returns an ETag and a 304 response when the visible rows have not changed. A run's detailed document
-comes from `maritime_tip_cue.watch.report.collect` only when opened, cached in memory per run and keyed by hull
-count, last scene update, AIS match and candidate counts, and invocation count; a QA save invalidates that run's
-document so its flagged sample stays current. Startup does not preload detailed reports. Flags and after-QA
+comes from `maritime_tip_cue.watch.report.collect` only when opened, cached in memory per run and keyed by the same
+stamp (flag count and last flag update included), so a QA save changes the key and the flagged sample stays current. Startup does not preload detailed reports. Flags and after-QA
 verdicts are read fresh on every run request. Images are rendered on first request and cached as PNG in
 `<run>/cache/`, named by a hash of the hull id and the cache key. A Save is validated against the hull's run
 verdict (flags for measured hulls, single / pair labels for unmeasured; a correct verdict other than the
-current one), then upserted into `qa_flags` and mirrored to `reviews/<run>.json`. Status: an invocation with an end
+current one), then upserted into `review.qa_flags` (with `site` and `hull`) in one transaction; the response is the row
+read back after commit, with the after-QA verdict. There is no `reviews/<run>.json` mirror any more. Status: an invocation with an end
 time shows its status; without one it is `running`, or `stopped` once the last event is over an hour old (a run
 killed when the PC shut down).
 
@@ -70,6 +77,6 @@ Each card shows the pair confidence next to the verdict badge; its tooltip gives
 ## Deployment on the control host
 
 `deploy/app/` holds the image (a Node stage builds the frontend, a Python stage runs `app.backend.server`), the systemd
-unit and the install steps. On the host the ledger is read straight from the SQLite file (`STS_LEDGER_LOCAL=1`), the
-port stays on loopback and is reached through an SSH tunnel, and the Runs page is empty until run folders can be
-loaded from the S3 review data. The development PC keeps its own copy, which reads the ledger over SSH.
+unit and the install steps. The app reads the ledger and every run from Postgres (`STS_DATABASE_URL` from the host `.env`); only the scene
+chips come from the S3 review folders. The port stays on loopback behind Caddy, or an SSH tunnel. The development
+PC reaches the same database remotely over TLS.

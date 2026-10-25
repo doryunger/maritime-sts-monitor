@@ -27,7 +27,6 @@ runs:
   path: data/runs
 
 catalogue:
-  database: data/catalogue/tracker.db
   log_path: data/catalogue/scans.jsonl
   jobs_prefix: catalogue/jobs/
   results_prefix: catalogue/results/
@@ -37,6 +36,8 @@ catalogue:
 
 worker:
   path: data/worker
+  attempt_wait_seconds: 120
+  attempt_poll_seconds: 2
   queue:
     heartbeat_seconds: 60
     lease_seconds: 900
@@ -47,7 +48,6 @@ worker:
 app:
   host: 127.0.0.1
   port: 8765
-  reviews: reviews
 
 equasis:
   cache: data/equasis/cache.json

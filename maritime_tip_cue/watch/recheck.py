@@ -4,15 +4,15 @@ import sys
 from collections import Counter
 
 from maritime_tip_cue.sts import rules as rules_mod
-from maritime_tip_cue.watch import registry, s1
+from maritime_tip_cue.watch import s1
 from maritime_tip_cue.watch.run import stage_two_s1, stage_two_s2
 from maritime_tip_cue.watch.state import Store
 
 
 def recheck(no: int, sources: tuple[str, ...] = ("s1", "s2")) -> dict:
-    path = registry.folder_of(no)
+    store = Store.open(no)
+    path = store.path
     rules = rules_mod.load()
-    store = Store(path / "state.db", path)
     before, after = Counter(), Counter()
     try:
         scenes = [sc for sc in store.scenes() if sc["source"] in sources and sc["status"] in ("detected", "checked") and sc["data"]]

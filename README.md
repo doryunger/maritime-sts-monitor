@@ -143,13 +143,13 @@ the last finished scene and never leaves a half-saved one.
 | `ais_candidates` | Per-slot AIS evidence for QA: named terrestrial candidates, rejected candidates, and satellite or unnamed exclusions with report timing, projection, distance, and comparison measures |
 | `outputs` | One row per parquet written: path and S3 URI, created time, date, hot spot, source, rows, pairs, possible pairs, scene ids, checksum, upload time, run id |
 | `captures` | One row per capture file: finding, local path, S3 URI, format |
-| `qa_flags` | The QA review: per hull, flag, correct verdict, note, reviewer (mirrored to the committed `reviews/<run>.json`) |
+| `qa_flags` | The QA review: per hull, flag, correct verdict, note, reviewer (stored in Postgres) |
 | `findings` (view) | Each hull's verdict after QA, next to the run's own; what AIS matching and publishing use |
 | `events` | The run log |
 
 Only image data stays as files next to it (pair-check windows, radar chips, captures, review
-sheets), with paths stored relative to the working folder. Runs are numbered: `data/runs/registry.db`
-maps each run number to its folder `data/runs/<number>`.
+sheets), with paths stored relative to the working folder. Runs are numbered: `review.runs` in Postgres maps each run number to
+its folder under `data/runs`.
 
 ### Runs app
 

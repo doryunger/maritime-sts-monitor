@@ -22,7 +22,6 @@ RUN mkdir -p /app/data/runs /app/reviews && chown -R 1000:1000 /app/data /app/re
 ARG GIT_COMMIT=
 ENV STS_GIT_COMMIT=${GIT_COMMIT}
 ENV STS_CONFIG_PATH=/app/config.yaml
-ENV STS_LEDGER_LOCAL=1
 USER 1000:1000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('STS_APP_PORT', '8765') + '/', timeout=4)"
 CMD ["python", "-m", "app.backend.server"]

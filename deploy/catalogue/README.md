@@ -24,25 +24,28 @@ Copy this checkout to `/home/ubuntu/maritime-sts-monitor` and create the ignored
 credentials used for S3, `S3_BUCKET_NAME` and `STS_REDIS_URL`; keep it outside Git. Rebuild the image when code,
 rules or deployment config changes. Follow the [Redis host deployment](redis/README.md) before enabling queue writes.
 
-The bundled config keeps the catalogue database and scan log under `/app/data`, which maps to the host's
-persistent `data/` directory. Queue lease, heartbeat and retry settings are in that same config.
+The ledger is the `processing` schema of the control-host Postgres database; every container reads
+`STS_DATABASE_URL` from the same `.env` through `--env-file` (on the host it points at `127.0.0.1`; setup in
+[../postgres/README.md](../postgres/README.md)). The bundled config keeps only the scan log under `/app/data`, which
+maps to the host's persistent `data/` directory. Queue lease, heartbeat and retry settings are in that same config.
 
 Establish the baseline by running `sudo docker run --rm --network host --user 1000:1000 --env-file .env -e STS_CONFIG_PATH=/app/config.yaml -v "$PWD/data:/app/data" maritime-sts-manager -m maritime_tip_cue.catalogue scan`.
 Verify every site/sensor succeeded, then enable the systemd timer and manager service. Existing scenes are not
 queued; `--backfill` is available only as an explicit alternative for an uninitialized channel. Do not delete
-the tracker database: it holds the baseline, discovery history and completed job history.
+the ledger tables: they hold the baseline, discovery history and completed job history. A scan, the manager and
+the one-scene runner share one session-level Postgres advisory lock, so only one of them touches the ledger at a time.
 
 Install `sts-catalogue.service`, `sts-catalogue.timer` and `sts-job-manager.service` from this directory into
 `/etc/systemd/system/`, run `systemctl daemon-reload`, then enable both the timer and manager service. The units
 invoke Docker as root because the `ubuntu` account has no Docker socket access; each application container runs
-as UID 1000 to preserve ownership of the persistent database. They use host networking to reach the Redis service
+as UID 1000 to preserve ownership of the persistent `data/` files. They use host networking to reach the Redis service
 on localhost. The timer checks four times daily in UTC. The manager service runs in the foreground and restarts
 on failure or host reboot. The manager does not start or stop EC2.
 
 ## One-scene end-to-end run
 
 This command scans configured hot spots for new Sentinel-2 scenes, stops after the first eligible scene,
-stores one single-scene job in SQLite, dispatches it to Redis, polls the configured wake status handler until
+stores one single-scene job in the ledger, dispatches it to Redis, polls the configured wake status handler until
 EC2 and private SSH are ready, then runs that exact job over SSH while polling the handler to refresh its idle
 timer. If no new scene is found, it leaves EC2 untouched.
 
@@ -125,18 +128,18 @@ failure. None of steps 1-3 wakes EC2.
    `sts-worker-drain` container left on EC2 (`docker ps`), the attempt recorded as `stopped` in `catalogue job-status`,
    the job back to `retry_wait`, and EC2 stopping by the wake service's idle policy. This spends one retry.
 6. Live drain with defaults over one S2 and one S1 job from different hot spots: both `succeeded`, five artifacts
-   plus `state.db` and `events.jsonl` under each attempt prefix, `progress` equal to the jobs finished, and
+   under each attempt prefix and the attempt's run rows in Postgres, `progress` equal to the jobs finished, and
    `catalogue audit` clean afterwards. Repeat until every hot spot and both sensors have succeeded once.
 7. Only then `systemctl enable --now sts-worker-dispatcher.timer`, and pause the dispatcher whenever the local
    runner is processing (it also skips while any job is claimed).
 
 ## Queue operation
 
-The manager records every attempt in SQLite. Workers heartbeat every configured interval while holding a
+The manager records every attempt in the Postgres ledger. Workers heartbeat every configured interval while holding a
 lease; expired leases generate manager events. Result writes are fenced by the current owner and attempt ID,
 and each attempt writes under its own S3 artifact prefix. A failed or timed-out attempt receives one delayed
-retry. A second unsuccessful attempt becomes terminal in SQLite and Redis. Queue recovery rebuilds pending,
-retry-waiting and terminal Redis state from the SQLite ledger without re-enqueueing jobs already running.
+retry. A second unsuccessful attempt becomes terminal in the ledger and Redis. Queue recovery rebuilds pending,
+retry-waiting and terminal Redis state from the ledger without re-enqueueing jobs already running.
 
 To scan and hand off only the first new single-scene job to Redis without starting EC2, run on Ubuntu:
 
@@ -170,7 +173,7 @@ private address or narrowest shared private subnet.
 The worker uploads all-hull detection and raw-detection Parquets, run state, manifest and rules under
 `catalogue/artifacts/<job_id>/<attempt>/`. For Redis-queued work, its result receipt is stored at the Redis
 result key and announced on the result stream; the job manager verifies successful artifact metadata and
-records success or failure in SQLite. Direct manifest runs retain the S3 result receipt path at
+records success or failure in the ledger. Direct manifest runs retain the S3 result receipt path at
 `catalogue/results/<job_id>.json`. Existing reviewed `sts/`
 products are not overwritten.
 
