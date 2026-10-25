@@ -262,9 +262,8 @@ def axis_gap(a: float, b: float) -> float:
 def vessel_headings(f: dict) -> tuple[list, str | None]:
     rec = f["record"]
     if f["source"] == "s1":
-        fitted = (rec.get("single_box") or {}).get("angle_deg")
-        heading, source = (compass(fitted), "fitted_box") if fitted is not None else (compass(rec.get("rect_angle_deg")), "pixel_rect")
-        return [heading, heading], source if heading is not None else None
+        heading = compass(rec.get("rect_angle_deg"))
+        return [heading, heading], "pixel_rect" if heading is not None else None
     fix, prior = (rec.get("check") or {}).get("fix_heading"), rec.get("ai2_heading")
     if fix is None or (prior is not None and axis_gap(fix, prior) <= 0.01):
         return [None, None], None

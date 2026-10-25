@@ -29,16 +29,19 @@ row has one S3 path, `capture_png`. File names carry the finding id and the AIS 
 
 Pair heading (`heading_deg`, `heading_source`): one axis angle per pair for rotating the viewer icon, degrees clockwise
 from north in [0, 180), so it carries no bow/stern direction. It replaces the bearing between the two markers, which
-changes with where each marker is placed. The Ai2 box heading is never used: on Sentinel-1 it disagreed with the fitted
-outline by more than 20 degrees on 23 of 39 pairs (pair w0_38514_14173: Ai2 0.6, fitted 64.7). Sentinel-1 takes the
-angle of the pair's fitted outline: the edge-fitted box `single_box.angle_deg` (`fitted_box`) when that fit ran, else the
-minimum-area rectangle of the object pixels `rect_angle_deg` (`pixel_rect`, mean 7.5 and at most 31 degrees away from the
-fitted box on 39 pairs). Both angles are map angles counter-clockwise from east in the scene's projected grid, converted
-as 90 minus the angle. The two bright lines of a pair are built parallel to that axis, so both vessels share it and the
-axis mean equals it. Sentinel-2 takes `check.fix_heading` (`fitted`) only when the pixel fit moved it away from the Ai2
-heading by more than 0.01 degrees; a fit that left it at the Ai2 value is treated as no fit. Hull B reuses hull A's
-heading because no separate B heading is measured. A pair with no heading of ours gets null. `rect_angle_deg` is stored
-in every Sentinel-1 record from this version on; older records get it recomputed from their saved chips when backfilled.
+changes with where each marker is placed. The Ai2 box heading is never used: on Sentinel-1 it disagreed with our own
+outline by more than 20 degrees on 23 of 39 pairs (pair w0_38514_14173: Ai2 0.6, outline 54). Sentinel-1 takes the
+angle of the minimum-area rectangle of the object pixels, `rect_angle_deg` (`pixel_rect`), for every pair, a map angle
+counter-clockwise from east in the scene's projected grid converted as 90 minus the angle. The two bright vessel lines
+of a pair are built parallel to that axis, so both vessels share it and the axis mean equals it. The edge-fitted
+`single_box.angle_deg` is not used: rendered over the radar crops (2026-10-25) it sat 31 and 11 degrees off a visibly
+vertical blob on w0_45305_278721 and w0_44824_278642 where the rectangle followed it, and it exists for only 39 of 85
+pairs, so using it would mix two methods. Sentinel-2 takes `check.fix_heading` (`fitted`) only when the pixel fit moved
+it away from the Ai2 heading by more than 0.01 degrees; a fit that left it at the Ai2 value is treated as no fit. Hull B
+reuses hull A's heading because no separate B heading is measured. Check on 47 local Sentinel-2 pairs: the line from
+hull A to hull B is 76 to 90 degrees from the heading on 44 of them; hulls 45364_-278058 (20.5), 45544_-278613
+(62.9) and 45054_-279186 (76.6) deviate. A pair with no heading of ours gets null. `rect_angle_deg` is stored in every
+Sentinel-1 record from this version on; older records get it recomputed from their saved chips when backfilled.
 Both vessels' angles are doubled before averaging, so 179 and 1 give 0.
 
 ## Publishing from the worker

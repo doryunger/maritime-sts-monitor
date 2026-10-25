@@ -22,13 +22,8 @@ def test_map_angle_becomes_a_compass_heading():
     assert abs(publish.compass(25.262449) - 64.737551) < 1e-6
 
 
-def test_sentinel1_uses_the_fitted_box_and_ignores_the_ai2_box():
-    record = {"single_box": {"angle_deg": 25.262449}, "rect_angle_deg": 36.0, "ai2_boxes": [{"heading": 0.6}]}
-    assert publish.pair_heading({"source": "s1", "record": record}) == (64.7, "fitted_box")
-
-
-def test_sentinel1_falls_back_to_the_pixel_rectangle_not_the_ai2_box():
-    record = {"single_box": None, "rect_angle_deg": 36.0, "ai2_boxes": [{"heading": 0.6}]}
+def test_sentinel1_uses_the_pixel_rectangle_and_ignores_the_ai2_box_and_the_edge_fit():
+    record = {"single_box": {"angle_deg": 61.8}, "rect_angle_deg": 36.0, "ai2_boxes": [{"heading": 0.6}]}
     assert publish.pair_heading({"source": "s1", "record": record}) == (54.0, "pixel_rect")
 
 
