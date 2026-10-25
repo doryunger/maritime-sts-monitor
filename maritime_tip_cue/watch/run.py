@@ -119,6 +119,7 @@ def stage_two_s1(store: Store, pass_id: str, members: list[tuple[dict, Path, lis
                 "weak_evidence": r["weak_evidence"],
                 "vessels": r["vessels"],
                 "blur_m": r["blur_m"],
+                "rect_angle_deg": r.get("rect_angle_deg"),
                 "single_box": r.get("single_box"),
                 "single_box_veto": r.get("single_box_veto", False),
                 "object": o,

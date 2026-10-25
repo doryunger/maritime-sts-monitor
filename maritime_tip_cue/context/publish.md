@@ -29,13 +29,17 @@ row has one S3 path, `capture_png`. File names carry the finding id and the AIS 
 
 Pair heading (`heading_deg`, `heading_source`): one axis angle per pair for rotating the viewer icon, degrees clockwise
 from north in [0, 180), so it carries no bow/stern direction. It replaces the bearing between the two markers, which
-changes with where each marker is placed. Both vessels of a pair get their heading from the same place and the column is
-their mean on the axis (angles doubled before averaging, so 179 and 1 give 0). Sentinel-2: the heading fitted to hull A's
-pixels (`check.fix_heading`, source `fitted`), which hull B reuses because no separate B heading is measured; without a
-fit the Ai2 prior (`ai2`). Sentinel-1: the mean of the pair's own Ai2 boxes (`ai2`); the fitted outline angle is not
-stored per record. So the mean currently equals the one shared heading; a measured per-vessel heading would change only
-`vessel_headings`. Local check on 35 pairs from runs 3 and 9: all 35 get a heading (26 Sentinel-1 `ai2`, 9 Sentinel-2
-`fitted`). Rows already on S3 have null until their scene is reprocessed.
+changes with where each marker is placed. The Ai2 box heading is never used: on Sentinel-1 it disagreed with the fitted
+outline by more than 20 degrees on 23 of 39 pairs (pair w0_38514_14173: Ai2 0.6, fitted 64.7). Sentinel-1 takes the
+angle of the pair's fitted outline: the edge-fitted box `single_box.angle_deg` (`fitted_box`) when that fit ran, else the
+minimum-area rectangle of the object pixels `rect_angle_deg` (`pixel_rect`, mean 7.5 and at most 31 degrees away from the
+fitted box on 39 pairs). Both angles are map angles counter-clockwise from east in the scene's projected grid, converted
+as 90 minus the angle. The two bright lines of a pair are built parallel to that axis, so both vessels share it and the
+axis mean equals it. Sentinel-2 takes `check.fix_heading` (`fitted`) only when the pixel fit moved it away from the Ai2
+heading by more than 0.01 degrees; a fit that left it at the Ai2 value is treated as no fit. Hull B reuses hull A's
+heading because no separate B heading is measured. A pair with no heading of ours gets null. `rect_angle_deg` is stored
+in every Sentinel-1 record from this version on; older records get it recomputed from their saved chips when backfilled.
+Both vessels' angles are doubled before averaging, so 179 and 1 give 0.
 
 ## Publishing from the worker
 

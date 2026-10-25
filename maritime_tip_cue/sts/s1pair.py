@@ -92,8 +92,10 @@ def evaluate(objects: list[dict], rules: dict) -> list[dict]:
     bl = blur(objects, c)
     rows = []
     for obj in objects:
-        rec = {"length_m": None, "width_beams": None, "light_separation": None, "overlap": None, "fill": None, "blur_m": bl, "vessels": None}
+        rec = {"length_m": None, "width_beams": None, "light_separation": None, "overlap": None, "fill": None, "blur_m": bl, "vessels": None, "rect_angle_deg": None}
         d = obj["d"]
+        if d is not None:
+            rec["rect_angle_deg"] = float(d["rect"][0])
         if d is not None and obj["straight"]:
             _, length, width = d["rect"]
             rec.update(

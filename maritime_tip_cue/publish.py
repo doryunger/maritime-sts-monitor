@@ -250,16 +250,25 @@ def axial_mean(angles: list) -> float | None:
     return (math.degrees(math.atan2(s, c)) / 2) % 180
 
 
+def compass(map_angle: float | None) -> float | None:
+    return None if map_angle is None else (90 - map_angle) % 180
+
+
+def axis_gap(a: float, b: float) -> float:
+    d = abs(a - b) % 180
+    return min(d, 180 - d)
+
+
 def vessel_headings(f: dict) -> tuple[list, str | None]:
     rec = f["record"]
     if f["source"] == "s1":
-        own = axial_mean([box.get("heading") for box in rec.get("ai2_boxes") or []])
-        return [own, own], "ai2" if own is not None else None
-    check = rec.get("check") or {}
-    if check.get("fix_heading") is not None:
-        return [check["fix_heading"]] * 2, "fitted"
-    prior = rec.get("ai2_heading")
-    return [prior, prior], "ai2" if prior is not None else None
+        fitted = (rec.get("single_box") or {}).get("angle_deg")
+        heading, source = (compass(fitted), "fitted_box") if fitted is not None else (compass(rec.get("rect_angle_deg")), "pixel_rect")
+        return [heading, heading], source if heading is not None else None
+    fix, prior = (rec.get("check") or {}).get("fix_heading"), rec.get("ai2_heading")
+    if fix is None or (prior is not None and axis_gap(fix, prior) <= 0.01):
+        return [None, None], None
+    return [fix, fix], "fitted"
 
 
 def pair_heading(f: dict) -> tuple[float | None, str | None]:
