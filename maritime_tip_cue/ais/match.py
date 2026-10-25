@@ -253,14 +253,42 @@ def load_identities(ship_ids: list[str]) -> dict:
     if not ship_ids:
         return {}
     ids = ",".join("'" + s.replace("'", "''") + "'" for s in ship_ids)
-    rows = archive.fetch(f"select ship_id, name, imo, mmsi, flag from identities where ship_id in ({ids})").to_pylist()
+    rows = archive.fetch(f"select ship_id, name, imo, mmsi, flag, confidence, reasons, equasis_name, equasis_flag, false_flag, equasis_type, gross_tonnage, equasis_dwt, year_built, call_sign, status, candidates, resolved_utc from identities where ship_id in ({ids})").to_pylist()
     return {r["ship_id"]: r for r in rows}
 
 
+ARCHIVE_IDENTITY_FIELDS = {
+    "imo": "imo",
+    "mmsi": "mmsi",
+    "call_sign": "call_sign",
+    "gross_tonnage": "gross_tonnage",
+    "equasis_dwt": "dwt",
+    "year_built": "year_built",
+    "equasis_type": "vessel_type",
+    "status": "status",
+    "equasis_name": "equasis_name",
+    "equasis_flag": "equasis_flag",
+    "confidence": "confidence",
+    "reasons": "reasons",
+    "candidates": "candidates",
+}
+
+
+def archive_identity(ident: dict) -> dict:
+    record = {target: (str(ident[source]) if ident.get(source) not in (None, "") else None) for source, target in ARCHIVE_IDENTITY_FIELDS.items()}
+    record["false_flag"] = int(str(ident.get("false_flag")).lower() == "true")
+    record["source"] = "archive"
+    record["resolved_utc"] = ident.get("resolved_utc")
+    return record
+
+
 def refresh_identities(store: Store, loader=load_identities) -> int:
+    from maritime_tip_cue.equasis.resolve import FIELDS
+
     rows = store.db.execute(
-        "select rowid as id, ship_id, imo, mmsi, flag from ais_matches "
-        "where chosen = 1 and ship_id is not null and (imo is null or mmsi is null or flag is null)"
+        "select m.rowid as id, m.ship_id, m.imo, m.mmsi, m.flag from ais_matches m "
+        "left join vessel_identities v on v.ship_id = m.ship_id "
+        "where m.chosen = 1 and m.ship_id is not null and (v.ship_id is null or m.imo is null or m.mmsi is null or m.flag is null)"
     ).fetchall()
     if not rows:
         return 0
@@ -275,6 +303,12 @@ def refresh_identities(store: Store, loader=load_identities) -> int:
             if values != (r["imo"], r["mmsi"], r["flag"]):
                 store.db.execute("update ais_matches set imo = ?, mmsi = ?, flag = ? where rowid = ?", (*values, r["id"]))
                 changed += 1
+            if ident.get("imo") not in (None, ""):
+                record = archive_identity(ident)
+                store.db.execute(
+                    f"insert or ignore into vessel_identities (ship_id, {', '.join(FIELDS)}) values (?{', ?' * len(FIELDS)})",
+                    (r["ship_id"], *(record.get(field) for field in FIELDS)),
+                )
     return changed
 
 

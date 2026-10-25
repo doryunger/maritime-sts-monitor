@@ -1021,5 +1021,75 @@
       "value": 0.5,
       "basis": "Two findings of one capture are the same vessel when their centres are within this share of the longer hull's length."
     }
+  },
+  "identity": {
+    "scores": {
+      "value": {
+        "flag": 2,
+        "type": 1,
+        "size": 2
+      },
+      "basis": "decision (vessels aggregator): flag and size each outweigh type"
+    },
+    "levels": {
+      "value": {
+        "strong": 5,
+        "medium": 3
+      },
+      "basis": "decision (vessels aggregator): strong = flag + size + type, medium = two of them; weaker candidates stay unresolved"
+    },
+    "gt_per_dwt": {
+      "value": {
+        "min": 0.3,
+        "max": 1.6
+      },
+      "basis": "guess: tankers and bulk carriers ~0.5-0.6 GT per DWT, container ships ~0.8-1.1"
+    },
+    "dwt_tolerance": {
+      "value": 0.1,
+      "basis": "guess"
+    },
+    "tanker_words": {
+      "value": [
+        "TANKER",
+        "GAS",
+        "LNG",
+        "LPG",
+        "CHEMICAL",
+        "OIL",
+        "CRUDE",
+        "PRODUCT",
+        "BITUMEN",
+        "FSO",
+        "FPSO"
+      ],
+      "basis": "Equasis ship types read as tanker (AIS type code 8)"
+    },
+    "cargo_words": {
+      "value": [
+        "CARGO",
+        "BULK",
+        "CONTAINER",
+        "VEHICLE",
+        "RO-RO",
+        "RORO",
+        "REEFER",
+        "ORE",
+        "CEMENT",
+        "LIVESTOCK",
+        "WOOD",
+        "HEAVY LOAD"
+      ],
+      "basis": "Equasis ship types read as cargo (AIS type code 7)"
+    },
+    "request_delay_s": {
+      "value": 2,
+      "unit": "s",
+      "basis": "decision, user 2026-10-25: lookups are triggered per pair, a handful per day, so 2 s between Equasis requests replaces the aggregator's 5 s"
+    },
+    "max_lookups_per_run": {
+      "value": 40,
+      "basis": "guess: two known vessels on up to 20 pairs in one job; one vessel at a time, never a loop over all vessels (Equasis forbids bulk retrieval)"
+    }
   }
 }

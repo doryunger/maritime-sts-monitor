@@ -109,7 +109,7 @@ def collect(no: int) -> list[dict]:
     return collect_at(registry.folder_of(no), no)
 
 
-def collect_at(path: Path, no: int, job_id: str | None = None) -> list[dict]:
+def collect_at(path: Path, no: int, job_id: str | None = None, rules: dict | None = None) -> list[dict]:
     store = Store(path / "state.db", path)
     try:
         site = site_settings(store)
@@ -120,6 +120,13 @@ def collect_at(path: Path, no: int, job_id: str | None = None) -> list[dict]:
             match.refresh_identities(store)
         except Exception as error:
             print(f"identity refresh skipped: {type(error).__name__}: {error}", file=sys.stderr)
+        try:
+            from maritime_tip_cue.equasis import resolve as equasis
+
+            summary = equasis.enrich(store, (rules or rules_mod.load())["identity"])
+            print(f"equasis: {summary}", file=sys.stderr)
+        except Exception as error:
+            print(f"equasis enrichment skipped: {type(error).__name__}: {error}", file=sys.stderr)
         floor = rules_mod.load()["ais_match"]["min_coverage_ships"]
         coverage = {(r["scene_id"], r["site"]): r["ships"] for r in store.db.execute("select scene_id, site, ships from ais_coverage")}
         rows = store.db.execute(
@@ -133,8 +140,11 @@ def collect_at(path: Path, no: int, job_id: str | None = None) -> list[dict]:
             parties = {
                 p["slot"]: dict(p)
                 for p in store.db.execute(
-                    "select slot, name, imo, mmsi, flag, dist_a_m, dist_b_m, report_age_min, ship_id, is_sanctioned from ais_matches "
-                    "where scene_id=? and site=? and hull_id=? and chosen=1",
+                    "select m.slot, m.name, coalesce(m.imo, v.imo) as imo, coalesce(m.mmsi, v.mmsi) as mmsi, m.flag, m.dist_a_m, m.dist_b_m, "
+                    "m.report_age_min, m.ship_id, m.is_sanctioned, v.call_sign, v.gross_tonnage, v.dwt as equasis_dwt, v.year_built, "
+                    "v.vessel_type, v.status as equasis_status, v.confidence as identity_confidence, v.source as identity_source "
+                    "from ais_matches m left join vessel_identities v on v.ship_id = m.ship_id "
+                    "where m.scene_id=? and m.site=? and m.hull_id=? and m.chosen=1",
                     (r["scene_id"], r["site"], r["hull_id"]),
                 )
             }
@@ -237,6 +247,14 @@ def party_cols(f: dict, n: int, slot: str, pos) -> dict:
         f"vessel_{n}_imo": p.get("imo"),
         f"vessel_{n}_mmsi": p.get("mmsi"),
         f"vessel_{n}_flag": p.get("flag"),
+        f"vessel_{n}_call_sign": p.get("call_sign"),
+        f"vessel_{n}_gross_tonnage": p.get("gross_tonnage"),
+        f"vessel_{n}_dwt": p.get("equasis_dwt"),
+        f"vessel_{n}_year_built": p.get("year_built"),
+        f"vessel_{n}_vessel_type": p.get("vessel_type"),
+        f"vessel_{n}_status": p.get("equasis_status"),
+        f"vessel_{n}_identity_confidence": p.get("identity_confidence"),
+        f"vessel_{n}_identity_source": p.get("identity_source"),
         f"vessel_{n}_is_sanctioned": bool(p.get("is_sanctioned")),
         f"vessel_{n}_ais_distance_m": dist,
         f"vessel_{n}_ais_report_age_min": p.get("report_age_min"),
@@ -394,7 +412,7 @@ def publish_run(client, bucket: str, out: Path, run_no: int, job_id: str, rules:
     import shutil
     import tempfile
 
-    found = complete(collect_at(out, run_no, job_id))
+    found = complete(collect_at(out, run_no, job_id, rules))
     root = Path(tempfile.mkdtemp(prefix="publish-"))
     try:
         kept, tables = assemble(found, rules, root, provenance)

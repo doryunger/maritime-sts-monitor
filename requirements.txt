@@ -22,3 +22,5 @@ pandas
 fakeredis[lua]
 tzdata
 httpx
+beautifulsoup4
+pycountry

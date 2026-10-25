@@ -16,6 +16,14 @@ create table if not exists ais_matches (
 );
 """
 
+VESSEL_IDENTITIES = """
+create table if not exists vessel_identities (
+    ship_id text primary key, imo text, mmsi text, call_sign text, gross_tonnage text, dwt text, year_built text,
+    vessel_type text, status text, equasis_name text, equasis_flag text, false_flag integer, confidence text,
+    reasons text, candidates integer, source text, resolved_utc text
+);
+"""
+
 AIS_CANDIDATES = """
 create table if not exists ais_candidates (
     scene_id text, site text, hull_id text, slot text, ship_id text, is_sat integer, name text,
@@ -117,7 +125,7 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self.db.execute("pragma journal_mode=wal")
         self.db.execute("pragma busy_timeout=60000")
-        self.db.executescript(SCHEMA + AIS_MATCHES + AIS_CANDIDATES)
+        self.db.executescript(SCHEMA + AIS_MATCHES + AIS_CANDIDATES + VESSEL_IDENTITIES)
         for table in ("ais_matches", "ais_candidates"):
             columns = {r["name"] for r in self.db.execute(f"pragma table_info({table})")}
             if "is_sanctioned" not in columns:

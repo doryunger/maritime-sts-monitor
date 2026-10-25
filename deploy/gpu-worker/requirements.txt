@@ -14,3 +14,5 @@ pandas
 matplotlib
 adbc-driver-gizmosql
 psycopg[binary]
+beautifulsoup4
+pycountry

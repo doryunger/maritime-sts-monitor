@@ -67,7 +67,10 @@ def list_keys(client, bucket: str, prefix: str) -> list[str]:
         token = page["NextContinuationToken"]
 
 
-IDENTITY_FIELDS = ("imo", "mmsi", "flag")
+IDENTITY_FIELDS = (
+    "imo", "mmsi", "flag", "call_sign", "gross_tonnage", "dwt", "year_built", "vessel_type", "status",
+    "identity_confidence", "identity_source",
+)
 
 
 def keep_identity(row: dict, old: dict | None) -> dict:
