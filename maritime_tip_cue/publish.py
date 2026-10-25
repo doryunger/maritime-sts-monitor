@@ -239,6 +239,35 @@ def write_captures(f: dict, base: str, rules: dict, root: Path) -> dict:
     return out
 
 
+def axial_mean(angles: list) -> float | None:
+    angles = [a for a in angles if a is not None]
+    if not angles:
+        return None
+    s = sum(math.sin(math.radians(2 * a)) for a in angles)
+    c = sum(math.cos(math.radians(2 * a)) for a in angles)
+    if math.hypot(s, c) < 1e-9:
+        return None
+    return (math.degrees(math.atan2(s, c)) / 2) % 180
+
+
+def vessel_headings(f: dict) -> tuple[list, str | None]:
+    rec = f["record"]
+    if f["source"] == "s1":
+        own = axial_mean([box.get("heading") for box in rec.get("ai2_boxes") or []])
+        return [own, own], "ai2" if own is not None else None
+    check = rec.get("check") or {}
+    if check.get("fix_heading") is not None:
+        return [check["fix_heading"]] * 2, "fitted"
+    prior = rec.get("ai2_heading")
+    return [prior, prior], "ai2" if prior is not None else None
+
+
+def pair_heading(f: dict) -> tuple[float | None, str | None]:
+    headings, source = vessel_headings(f)
+    mean = axial_mean(headings)
+    return (round(mean, 1), source) if mean is not None else (None, None)
+
+
 def party_cols(f: dict, n: int, slot: str, pos) -> dict:
     p = f["parties"].get(slot) or {}
     dist = p.get("dist_b_m") if slot == "b" and p.get("dist_b_m") is not None else p.get("dist_a_m")
@@ -314,7 +343,8 @@ def assemble(findings: list[dict], rules: dict, root: Path | None = None, proven
         rows = []
         for f in sorted(items, key=lambda f: (f["capture_utc"], f["hull_id"])):
             pos = vessel_positions(f["source"], f["record"], f["lat"], f["lon"])
-            rel = {k: p.relative_to(root / "captures").as_posix() for k, p in f["files"].items()}
+            heading, heading_source = pair_heading(f)
+            rel ={k: p.relative_to(root / "captures").as_posix() for k, p in f["files"].items()}
             rows.append(
                 {
                     "finding_id": f["finding_id"],
@@ -335,6 +365,8 @@ def assemble(findings: list[dict], rules: dict, root: Path | None = None, proven
                     "qa_status": f["qa"],
                     "qa_note": f["qa_note"] or None,
                     "measures": json.dumps(measures(f)),
+                    "heading_deg": heading,
+                    "heading_source": heading_source,
                     **party_cols(f, 1, "a", pos[0]),
                     **party_cols(f, 2, "b", pos[1]),
                     "ais_covered": f["ais_covered"],

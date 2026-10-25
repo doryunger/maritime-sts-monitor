@@ -27,6 +27,16 @@ dot on the vessel and a numbered pill 16 px away from the other vessel, yellow w
 when it has none; otherwise the plain crop is published. There is no separate unmarked copy and no GeoTIFF. The Parquet
 row has one S3 path, `capture_png`. File names carry the finding id and the AIS names.
 
+Pair heading (`heading_deg`, `heading_source`): one axis angle per pair for rotating the viewer icon, degrees clockwise
+from north in [0, 180), so it carries no bow/stern direction. It replaces the bearing between the two markers, which
+changes with where each marker is placed. Both vessels of a pair get their heading from the same place and the column is
+their mean on the axis (angles doubled before averaging, so 179 and 1 give 0). Sentinel-2: the heading fitted to hull A's
+pixels (`check.fix_heading`, source `fitted`), which hull B reuses because no separate B heading is measured; without a
+fit the Ai2 prior (`ai2`). Sentinel-1: the mean of the pair's own Ai2 boxes (`ai2`); the fitted outline angle is not
+stored per record. So the mean currently equals the one shared heading; a measured per-vessel heading would change only
+`vessel_headings`. Local check on 35 pairs from runs 3 and 9: all 35 get a heading (26 Sentinel-1 `ai2`, 9 Sentinel-2
+`fitted`). Rows already on S3 have null until their scene is reprocessed.
+
 ## Publishing from the worker
 
 Every queue job now publishes its own pairs at the end of the run, after its review data is on S3
