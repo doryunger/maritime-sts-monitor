@@ -83,6 +83,9 @@ def keep_identity(row: dict, old: dict | None) -> dict:
         )
         if not same:
             continue
+        if old.get(f"vessel_{n}_is_sanctioned") and not row.get(f"vessel_{n}_is_sanctioned"):
+            row[f"vessel_{n}_is_sanctioned"] = True
+            row[f"vessel_{n}_sanctions_lists"] = row.get(f"vessel_{n}_sanctions_lists") or old.get(f"vessel_{n}_sanctions_lists")
         for field in IDENTITY_FIELDS:
             key = f"vessel_{n}_{field}"
             if row.get(key) is None and old.get(key) is not None:

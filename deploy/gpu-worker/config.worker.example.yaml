@@ -51,3 +51,6 @@ app:
 
 equasis:
   cache: data/equasis/cache.json
+
+sanctions:
+  path: data/sanctions/sanctioned_vessels.csv

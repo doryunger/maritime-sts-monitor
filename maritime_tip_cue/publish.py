@@ -124,6 +124,9 @@ def collect_at(path: Path, no: int, job_id: str | None = None, rules: dict | Non
             from maritime_tip_cue.equasis import resolve as equasis
 
             summary = equasis.enrich(store, (rules or rules_mod.load())["identity"])
+            from maritime_tip_cue import sanctions
+
+            summary["sanctioned_ships"] = sanctions.apply(store)
             print(f"equasis: {summary}", file=sys.stderr)
         except Exception as error:
             print(f"equasis enrichment skipped: {type(error).__name__}: {error}", file=sys.stderr)
@@ -141,7 +144,7 @@ def collect_at(path: Path, no: int, job_id: str | None = None, rules: dict | Non
                 p["slot"]: dict(p)
                 for p in store.db.execute(
                     "select m.slot, m.name, coalesce(m.imo, v.imo) as imo, coalesce(m.mmsi, v.mmsi) as mmsi, m.flag, m.dist_a_m, m.dist_b_m, "
-                    "m.report_age_min, m.ship_id, m.is_sanctioned, v.call_sign, v.gross_tonnage, v.dwt as equasis_dwt, v.year_built, "
+                    "m.report_age_min, m.ship_id, (m.is_sanctioned or coalesce(v.sanctions_lists, '') <> '') as is_sanctioned, v.sanctions_lists, v.call_sign, v.gross_tonnage, v.dwt as equasis_dwt, v.year_built, "
                     "v.vessel_type, v.status as equasis_status, v.confidence as identity_confidence, v.source as identity_source "
                     "from ais_matches m left join vessel_identities v on v.ship_id = m.ship_id "
                     "where m.scene_id=? and m.site=? and m.hull_id=? and m.chosen=1",
@@ -256,6 +259,7 @@ def party_cols(f: dict, n: int, slot: str, pos) -> dict:
         f"vessel_{n}_identity_confidence": p.get("identity_confidence"),
         f"vessel_{n}_identity_source": p.get("identity_source"),
         f"vessel_{n}_is_sanctioned": bool(p.get("is_sanctioned")),
+        f"vessel_{n}_sanctions_lists": p.get("sanctions_lists") or None,
         f"vessel_{n}_ais_distance_m": dist,
         f"vessel_{n}_ais_report_age_min": p.get("report_age_min"),
     }

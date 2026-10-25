@@ -20,7 +20,7 @@ VESSEL_IDENTITIES = """
 create table if not exists vessel_identities (
     ship_id text primary key, imo text, mmsi text, call_sign text, gross_tonnage text, dwt text, year_built text,
     vessel_type text, status text, equasis_name text, equasis_flag text, false_flag integer, confidence text,
-    reasons text, candidates integer, search_name text, source text, resolved_utc text
+    reasons text, candidates integer, search_name text, source text, resolved_utc text, sanctions_lists text
 );
 """
 
@@ -133,6 +133,8 @@ class Store:
         columns = {r["name"] for r in self.db.execute("pragma table_info(vessel_identities)")}
         if "search_name" not in columns:
             self.db.execute("alter table vessel_identities add column search_name text")
+        if "sanctions_lists" not in columns:
+            self.db.execute("alter table vessel_identities add column sanctions_lists text")
         current = self.db.execute("select sql from sqlite_master where type = 'view' and name = 'findings'").fetchone()
         if current is None or current[0].split(" as", 1)[1].strip() != FINDINGS.strip():
             self.db.executescript("drop view if exists findings; create view findings as " + FINDINGS)

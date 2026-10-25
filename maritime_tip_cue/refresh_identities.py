@@ -6,6 +6,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from maritime_tip_cue import publish_merge as merge
+from maritime_tip_cue import sanctions
 from maritime_tip_cue.ais import match
 from maritime_tip_cue.config import env, settings
 
@@ -31,19 +32,18 @@ def fill(rows: list[dict], identities: dict) -> int:
     return changed
 
 
-def refresh(client, bucket: str, loader=match.load_identities, upload: bool = True) -> dict:
+def refresh(client, bucket: str, loader=match.load_identities, upload: bool = True, listed: dict | None = None) -> dict:
     prefix = settings()["s3"]["findings_prefix"]
-    summary = {"files": 0, "rows": 0, "slots_filled": 0, "slots_still_missing": 0}
+    summary = {"files": 0, "rows": 0, "slots_filled": 0, "slots_still_missing": 0, "sanctioned_slots": 0}
     for key in merge.list_keys(client, bucket, prefix):
         if not key.endswith(".parquet"):
             continue
         for _ in range(merge.ATTEMPTS):
             rows, etag = merge.read_rows(client, bucket, key)
             wanted = sorted({r[f"vessel_{n}_ship_id"] for r in rows for n in (1, 2) if missing(r, n)})
-            if not wanted:
-                break
-            changed = fill(rows, loader(wanted))
-            if not changed:
+            filled = fill(rows, loader(wanted)) if wanted else 0
+            flagged = sanctions.apply_rows(rows, listed)
+            if not (filled or flagged):
                 summary["slots_still_missing"] += sum(missing(r, n) for r in rows for n in (1, 2))
                 break
             try:
@@ -54,7 +54,8 @@ def refresh(client, bucket: str, loader=match.load_identities, upload: bool = Tr
                     raise
                 continue
             summary["files"] += 1
-            summary["slots_filled"] += changed
+            summary["slots_filled"] += filled
+            summary["sanctioned_slots"] += flagged
             summary["slots_still_missing"] += sum(missing(r, n) for r in rows for n in (1, 2))
             break
         summary["rows"] += len(rows)
