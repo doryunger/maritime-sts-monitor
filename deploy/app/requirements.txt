@@ -10,3 +10,8 @@ boto3
 requests
 redis
 psycopg[binary]
+pyarrow
+adbc-driver-gizmosql
+beautifulsoup4
+pycountry
+pandas

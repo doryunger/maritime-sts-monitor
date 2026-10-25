@@ -190,6 +190,19 @@ join review.scenes s on s.run_key = h.run_key and s.scene_id = h.scene_id and s.
 left join review.qa_flags f on f.run_key = h.run_key and f.hull_id = h.scene_id || '__' || h.hull_id
 where coalesce(h.role, '') not in ('duplicate', 'hull_b_box');
 
+create table if not exists review.sync_runs (
+    sync_id bigserial primary key,
+    requested_utc timestamptz not null default now(),
+    requested_by text,
+    status text not null default 'pending',
+    dry_run boolean not null default false,
+    started_utc timestamptz,
+    finished_utc timestamptz,
+    summary jsonb,
+    error text
+);
+alter table review.outputs add column if not exists sync_id bigint;
+alter table review.captures add column if not exists sync_id bigint;
 alter table review.qa_flags add column if not exists site text;
 alter table review.qa_flags add column if not exists hull text;
 alter table review.captures add column if not exists scene_id text;
@@ -235,7 +248,9 @@ begin
         ('observations_scan_fk', 'processing.observations', 'foreign key (scan_id) references processing.scans (scan_id)'),
         ('jobs_scan_fk', 'processing.jobs', 'foreign key (scan_id) references processing.scans (scan_id)'),
         ('scan_sources_scan_fk', 'processing.scan_sources', 'foreign key (scan_id) references processing.scans (scan_id)'),
-        ('runs_attempt_fk', 'review.runs', 'foreign key (attempt_id) references processing.job_attempts (attempt_id)')
+        ('runs_attempt_fk', 'review.runs', 'foreign key (attempt_id) references processing.job_attempts (attempt_id)'),
+        ('outputs_sync_fk', 'review.outputs', 'foreign key (sync_id) references review.sync_runs (sync_id)'),
+        ('captures_sync_fk', 'review.captures', 'foreign key (sync_id) references review.sync_runs (sync_id)')
     ) as t(name, tbl, ddl)
     loop
         if not exists (select 1 from pg_constraint where conname = c.name) then
@@ -300,6 +315,7 @@ EVENT_KEYS = {
     "job_scenes": "job_id",
 }
 EVENT_ROOTS = ("scans", "channels")
+EVENT_TABLES = ("runs", "sync_runs")
 
 
 def base_tables(conn: psycopg.Connection, schema: str) -> list[str]:
@@ -368,9 +384,11 @@ def check(conn: psycopg.Connection) -> list[str]:
     problems = []
     for table in base_tables(conn, "review"):
         cols = columns(conn, "review", table)
-        if table != "runs" and "run_key" not in cols and "first_run_key" not in cols:
+        if table in EVENT_TABLES:
+            continue
+        if "run_key" not in cols and "first_run_key" not in cols:
             problems.append(f"review.{table} has no run_key, so its rows cannot be traced to the run that produced them")
-        elif table != "runs":
+        else:
             links = conn.execute("select count(*) from pg_constraint where contype = 'f' and conrelid = %s::regclass", (f"review.{table}",)).fetchone()[0]
             if not links:
                 problems.append(f"review.{table} has a run key but no foreign key to enforce it")
