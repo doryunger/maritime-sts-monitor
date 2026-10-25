@@ -1,0 +1,16 @@
+[Unit]
+Description=STS Postgres, the review and processing database
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/docker rm -f sts-postgres
+ExecStart=/usr/bin/docker run --rm --name sts-postgres --network host --memory 300m --shm-size 64m --env-file /home/ubuntu/maritime-sts-monitor/data/postgres/postgres.env -v /home/ubuntu/maritime-sts-monitor/data/postgres/data:/var/lib/postgresql/data -v /home/ubuntu/maritime-sts-monitor/data/postgres/tls:/tls:ro -v /home/ubuntu/maritime-sts-monitor/deploy/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro postgres:16-alpine -c listen_addresses=* -c ssl=on -c ssl_cert_file=/tls/server.crt -c ssl_key_file=/tls/server.key -c hba_file=/etc/postgresql/pg_hba.conf -c password_encryption=scram-sha-256 -c log_connections=on -c shared_buffers=64MB -c max_connections=30 -c work_mem=4MB -c maintenance_work_mem=32MB -c wal_compression=on
+ExecStop=/usr/bin/docker stop --time 30 sts-postgres
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

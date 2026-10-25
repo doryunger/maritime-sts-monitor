@@ -22,6 +22,7 @@ Conventions are in AGENTS.md (loaded via CLAUDE.md for Claude). Read docs by sec
 - `maritime_tip_cue/ais/match.py`: AIS parties per hull from the archive into selected `ais_matches` and per-slot `ais_candidates`, including boolean `is_sanctioned` (null becomes false) (`<run>` [--all-checked] [--stats]). Why notes: `maritime_tip_cue/context/ais.md`.
 - `maritime_tip_cue/ais/archive.py`: AIS archive client (GizmoSQL; `GIZMOSQL_*` in `.env`, cert path in `config.yaml`).
 - `maritime_tip_cue/hotspots.py`: loads the shared hot-spot list from S3 (`config.yaml` `s3`, bucket and keys in `.env`).
+- `maritime_tip_cue/pg.py`, `pgimport.py`: the Postgres review store on the control host (`review` schema, one `runs` table plus run-keyed tables). `pg init|counts`; `pgimport import|verify --runs-root <dir>` loads the per-run SQLite files. Why notes: `maritime_tip_cue/context/store.md`; setup: `deploy/postgres/README.md`.
 - `maritime_tip_cue/config.py`: `.env` and `config.yaml`. `db/`, `__main__.py initdb`: AIS-era scaffold, removed in stage 2.
 
 ## Rules
