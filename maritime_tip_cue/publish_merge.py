@@ -37,8 +37,11 @@ def read_rows(client, bucket: str, key: str) -> tuple[list[dict], str | None]:
     return table.to_pylist(), response.get("ETag")
 
 
+OBSOLETE = {"capture_tif", "capture_markers_png"}
+
+
 def encode_rows(rows: list[dict]) -> bytes:
-    names = list(dict.fromkeys(name for row in rows for name in row))
+    names = [n for n in dict.fromkeys(name for row in rows for name in row) if n not in OBSOLETE]
     table = pa.Table.from_pylist([{name: row.get(name) for name in names} for row in rows])
     table = table.replace_schema_metadata({**(table.schema.metadata or {}), b"geo": json.dumps(GEO).encode()})
     sink = io.BytesIO()

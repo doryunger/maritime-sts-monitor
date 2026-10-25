@@ -21,12 +21,11 @@ measurements as JSON, and vessel 1 and 2 (the same numbering as the app: S2 hull
 shorter light line), each with position and AIS name, IMO, MMSI, flag, match distance and report age, null when
 unmatched. `vessel_1_is_sanctioned` and `vessel_2_is_sanctioned` are always boolean; missing or null archive values, including unmatched slots, are false; `ais_covered` false means the archive had no ships at that time, so "no name" is not evidence.
 
-Captures: the same crop as the QA card (`review.crop_half_m`) as a GeoTIFF of the stored pixel values (S2 L1C bands
-as uint16 digital numbers, S1 VV and VH linear power as float32) and a PNG with the card's fixed stretch and nothing
-drawn. When two pair positions project into the crop, a separate display PNG copies the plain PNG and adds only
-numbered 1 and 2 markers; it draws no detector geometry or other annotation. The Parquet row has separate S3 paths
-for the GeoTIFF, plain PNG and optional marker PNG. The source images remain unchanged. File names carry the finding
-id and the AIS names.
+Captures: one PNG per pair, the same crop as the QA card (`review.crop_half_m`) with the card's fixed stretch. When both
+vessel positions project into the crop, the numbered markers are drawn on it exactly as the review app shows them: a small
+dot on the vessel and a numbered pill 16 px away from the other vessel, yellow when that vessel has an AIS match and white
+when it has none; otherwise the plain crop is published. There is no separate unmarked copy and no GeoTIFF. The Parquet
+row has one S3 path, `capture_png`. File names carry the finding id and the AIS names.
 
 ## Publishing from the worker
 

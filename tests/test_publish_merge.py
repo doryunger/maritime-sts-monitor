@@ -105,3 +105,11 @@ def test_other_dates_and_sources_are_not_treated_as_duplicates():
     publish(s3, [row("a")], job="J1")
     far = row("b", seconds=3600)
     assert publish(s3, [far], job="J2")["kept"] == ["b"]
+
+
+def test_obsolete_image_columns_are_dropped_when_a_file_is_rewritten():
+    s3 = S3()
+    legacy = dict(row("a"), capture_tif="captures/x.tif", capture_markers_png="captures/x_markers.png", capture_png="captures/x.png")
+    publish(s3, [legacy], job="J1")
+    names = {n for r in stored(s3) for n in r}
+    assert "capture_png" in names and not names & {"capture_tif", "capture_markers_png"}
