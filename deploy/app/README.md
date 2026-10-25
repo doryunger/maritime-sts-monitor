@@ -46,7 +46,8 @@ runs a short-lived container from the same image (`python -m maritime_tip_cue.pu
 cap), which claims the oldest pending row, runs publish sync with upload on and stores the result in the row. With
 nothing pending it exits at once. It needs the same `.env` (S3, `GIZMOSQL_*`, `EQUASIS_*`, `STS_DATABASE_URL`, Redis),
 the AIS certificate under `data/secrets/` and the run folders in `data/app/runs` (the captures of newly added pairs
-are built from them). Install after the image is built:
+are built from them), and `data/equasis` (the Equasis lookup cache, so a vessel is never asked twice across syncs;
+create it first: `mkdir -p data/equasis && sudo chown 1000:1000 data/equasis`). Install after the image is built:
 
 ```bash
 sudo cp deploy/app/sts-sync.service deploy/app/sts-sync.timer /etc/systemd/system/

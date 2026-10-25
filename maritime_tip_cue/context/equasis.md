@@ -9,8 +9,8 @@ read; a ship with a `vessel_identities` row is never looked up again, whether it
 
 ## Rules of use
 Equasis forbids bulk retrieval and the account owner accepted per-suspect use only. So: one vessel at a time, no loop
-over AIS vessels, a delay between requests (`identity.request_delay_s`, 2 s, down from the aggregator's 5 s because a
-pair run is a handful of lookups), a cap per run (`identity.max_lookups_per_run`) and a JSON cache
+over AIS vessels, a delay between requests (`identity.request_delay_s`, 10 s: at 2 s a publish sync that looked up many vessels at
+once made Equasis answer 404, its limit, on 2026-10-25), a cap per run (`identity.max_lookups_per_run`) and a JSON cache
 (`equasis.cache` in `config.yaml`, under ignored `data/`) so a name or IMO is never asked twice. A lost session stops
 the run and is reported; it never stops publication. Without `EQUASIS_EMAIL` and `EQUASIS_PASSWORD` in `.env` the
 step is skipped.

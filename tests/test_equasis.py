@@ -169,8 +169,8 @@ def test_cached_answers_never_reach_equasis(tmp_path, monkeypatch):
     assert eq.search(" ava 6 ")[0]["imo"] == "9226140" and eq.details("9226140")["mmsi"] == "1"
 
 
-def test_the_rules_carry_the_two_second_delay():
-    assert RULES["request_delay_s"] == 2
+def test_the_rules_carry_the_ten_second_delay():
+    assert RULES["request_delay_s"] == 10
 
 
 def stored(name, **extra):

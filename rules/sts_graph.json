@@ -1206,9 +1206,9 @@
       "basis": "Equasis ship types read as cargo (AIS type code 7)"
     },
     "request_delay_s": {
-      "value": 2,
+      "value": 10,
       "unit": "s",
-      "basis": "decision, user 2026-10-25: lookups are triggered per pair, a handful per day, so 2 s between Equasis requests replaces the aggregator's 5 s"
+      "basis": "decision, user 2026-10-25: a publish sync looked up many vessels in one go with 2 s between requests and Equasis answered 404 (its limit); 10 s between requests, and the sync container keeps the lookup cache so a vessel is never asked twice"
     },
     "max_lookups_per_run": {
       "value": 40,

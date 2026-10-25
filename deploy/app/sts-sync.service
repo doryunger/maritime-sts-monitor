@@ -5,7 +5,7 @@ After=network-online.target docker.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/docker run --rm --network host --user 1000:1000 --memory 700m --env-file /home/ubuntu/maritime-sts-monitor/.env -v /home/ubuntu/maritime-sts-monitor/data/app/runs:/app/data/runs -v /home/ubuntu/maritime-sts-monitor/data/secrets:/app/data/secrets:ro --entrypoint python maritime-sts-app -m maritime_tip_cue.publish_service run-pending
+ExecStart=/usr/bin/docker run --rm --network host --user 1000:1000 --memory 700m --env-file /home/ubuntu/maritime-sts-monitor/.env -v /home/ubuntu/maritime-sts-monitor/data/app/runs:/app/data/runs -v /home/ubuntu/maritime-sts-monitor/data/secrets:/app/data/secrets:ro -v /home/ubuntu/maritime-sts-monitor/data/equasis:/app/data/equasis --entrypoint python maritime-sts-app -m maritime_tip_cue.publish_service run-pending
 TimeoutStartSec=3h
 NoNewPrivileges=true
 UMask=0077
