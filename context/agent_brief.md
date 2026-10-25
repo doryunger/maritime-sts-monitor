@@ -39,7 +39,8 @@ Conventions are in AGENTS.md (loaded via CLAUDE.md for Claude). Read docs by sec
 - `docs/feasibility.md`: measured research. Tip-era docs and rules: tag `tip-era-final`.
 
 ## Common commands (repo root)
-- `.venv/Scripts/python -m pytest tests -q` fixture tests: verdicts to 1e-6 on the frozen rules (`tests/sts_graph_frozen.json`), label scores on the live rules.
+- `.venv/Scripts/python -m pytest tests/test_sts_fixtures.py -q` fixture tests (need the PC-only `data/sts_fixtures`): verdicts to 1e-6 on the frozen rules (`tests/sts_graph_frozen.json`), label scores on the live rules.
+- Tests that need Postgres (the `pgdb` fixture in `tests/conftest.py`) run in Docker on the Ubuntu host against a throwaway Postgres, never against the live database: `.venv\Scripts\python C:\Users\Shadow\projects\maritime-sts-analysis\2026-10-25-host-tests\run_on_host.py [pytest args]` (default `tests -q` without the fixture file; runs are serialised; details in the README there). A plain local `pytest` skips them.
 - `.venv/Scripts/python -m maritime_tip_cue.sts.score` per-set STS tallies.
 - `.venv/Scripts/python -m maritime_tip_cue.watch.run --site <hot spot> --end <ISO> --days 7 [--run N] [--reanalyse]` an experiment run (needs `--unledgered`; real work goes through the queue so the job ledger records it); a new one gets the next run number (long: launch detached with a log file; resumes from `state.db` with `--run N`). `watch.registry list|adopt` lists runs / renames finished legacy folders to their number.
 - `.venv/Scripts/python -m maritime_tip_cue.ais.match <run folder>` match AIS to the after-QA pair hulls (`--all-checked --stats` for limit measurements).

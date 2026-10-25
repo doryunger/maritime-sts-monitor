@@ -276,7 +276,7 @@ where c.hull is null and c.run_key = m.run_key and c.finding_id = m.finding_id;
 
 
 def connect() -> psycopg.Connection:
-    conn = psycopg.connect(env("STS_DATABASE_URL"))
+    conn = psycopg.connect(env("STS_DATABASE_URL"), connect_timeout=15, keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=5)
     conn.execute("set time zone 'UTC'")
     return conn
 
