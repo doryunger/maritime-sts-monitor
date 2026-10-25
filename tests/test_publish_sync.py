@@ -200,3 +200,31 @@ def test_explicit_run_that_is_not_done_refuses_everything(world):
     world.store.db.execute("update review.run_invocations set status = 'failed' where run_key = %s", (world.store.run_key,))
     with pytest.raises(SystemExit, match="run status is failed"):
         world.sync()
+
+
+def test_rows_published_under_an_old_run_number_are_still_matched_by_scene_and_hull(world):
+    world.hulls([("a", "pair", 25.0), ("b", "pair", 25.1)])
+    world.flag("a", "is_single")
+    world.publish([prow("a", 25.0, run=7), prow("b", 25.1, run=7)])
+    lines = world.sync()
+    rows = stored(world.s3)
+    assert rows["a"]["qa_status"] == "rejected" and rows["b"]["qa_status"] == "unreviewed"
+    assert any("rejected 1" in line and "unchanged 1" in line for line in lines)
+
+
+def held(run_key, folder, attempt=None, job=None):
+    return {"run_key": run_key, "folder": folder, "attempt_id": attempt, "job_id": job}
+
+
+def test_a_published_row_goes_to_the_run_its_attempt_or_job_or_legacy_folder_names():
+    both = [held(1, "j1-a1", "att-1", "job-1"), held(2, "j1-a2", "att-2", "job-1")]
+    assert publish_sync.pick_owner({"attempt_id": "att-2", "job_id": "job-1", "run": 9}, both) == 2
+    assert publish_sync.pick_owner({"attempt_id": None, "job_id": "job-1", "run": 9}, both) is None
+    one_job = [held(1, "j1-a1", "att-1", "job-1"), held(2, "j2-a1", "att-9", "job-2")]
+    assert publish_sync.pick_owner({"attempt_id": None, "job_id": "job-2", "run": 9}, one_job) == 2
+    legacy = [held(5, "legacy-run-3"), held(6, "legacy-run-4"), held(7, "j9-a9", "att-9", "job-9")]
+    assert publish_sync.pick_owner({"attempt_id": None, "job_id": None, "run": 4}, legacy) == 6
+    assert publish_sync.pick_owner({"attempt_id": None, "job_id": None, "run": 8}, legacy) is None
+    assert publish_sync.pick_owner({"attempt_id": "x", "job_id": "y", "run": 1}, [held(3, "f")]) == 3
+    assert publish_sync.pick_owner({"attempt_id": None, "job_id": None, "run": 1}, []) is None
+

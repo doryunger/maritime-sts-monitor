@@ -72,7 +72,49 @@ def finding_length(finding: dict) -> float | None:
     return rec.get("length_m") or (rec.get("check") or {}).get("hull_a_length_m") or finding["ai2_length_m"]
 
 
-def plan_run(run: dict, files: dict, rule: dict, prefix: str) -> dict:
+def pick_owner(row: dict, held: list[dict]) -> int | None:
+    if row.get("attempt_id"):
+        named = [h for h in held if h["attempt_id"] == row["attempt_id"]]
+        if len(named) == 1:
+            return named[0]["run_key"]
+    if row.get("job_id"):
+        named = [h for h in held if h["job_id"] == row["job_id"]]
+        if len(named) == 1:
+            return named[0]["run_key"]
+    else:
+        named = [h for h in held if h["folder"] == f"legacy-run-{row.get('run')}"]
+        if len(named) == 1:
+            return named[0]["run_key"]
+    if len(held) == 1:
+        return held[0]["run_key"]
+    return None
+
+
+def resolve_owners(files: dict) -> tuple[dict, list[dict]]:
+    rows = [r for group in files.values() for r in group]
+    idents = sorted({(r["scene_id"], r["hot_spot"], r["hull_id"]) for r in rows})
+    held: dict = defaultdict(list)
+    if idents:
+        found = registry.fetch(
+            None,
+            "select h.scene_id, h.site, h.hull_id, r.run_key, r.folder, r.attempt_id, a.job_id from review.hulls h "
+            "join review.runs r on r.run_key = h.run_key left join processing.job_attempts a on a.attempt_id = r.attempt_id "
+            "where (h.scene_id, h.site, h.hull_id) in (select * from unnest(%s::text[], %s::text[], %s::text[]))",
+            ([i[0] for i in idents], [i[1] for i in idents], [i[2] for i in idents]),
+        )
+        for f in found:
+            held[(f["scene_id"], f["site"], f["hull_id"])].append(f)
+    owners, unmatched = {}, []
+    for row in rows:
+        owner = pick_owner(row, held.get((row["scene_id"], row["hot_spot"], row["hull_id"]), []))
+        if owner is None:
+            unmatched.append(row)
+        else:
+            owners[row["finding_id"]] = owner
+    return owners, unmatched
+
+
+def plan_run(run: dict, files: dict, rule: dict, prefix: str, owners: dict) -> dict:
     store = Store.open(run["run_no"])
     try:
         findings = store.db.execute(
@@ -87,7 +129,7 @@ def plan_run(run: dict, files: dict, rule: dict, prefix: str) -> dict:
     out = {"edits": defaultdict(dict), "counts": defaultdict(Counter), "adds": {}, "duplicates": 0, "published": set(), "rows": {}}
     for key, rows in files.items():
         for row in rows:
-            if row.get("run") != run["run_no"]:
+            if owners.get(row["finding_id"]) != run["run_key"]:
                 continue
             ident = (row["scene_id"], row["hot_spot"], row["hull_id"])
             out["published"].add(ident)
@@ -189,7 +231,10 @@ def sync(client, bucket: str, requested: list[int], upload: bool, dry_run: bool,
     runs, skipped = gate(choose_runs(requested), bool(requested))
     lines = [f"run {no} skipped: {reason}" for no, reason in sorted(skipped.items())]
     files = read_published(client, bucket, prefix)
-    plans = {r["run_no"]: plan_run(r, files, rules["publish"], prefix) for r in runs}
+    owners, unmatched = resolve_owners(files)
+    if unmatched:
+        lines.append(f"{len(unmatched)} published rows could not be attributed to one run and were left as they are")
+    plans = {r["run_no"]: plan_run(r, files, rules["publish"], prefix, owners) for r in runs}
     totals: dict[str, Counter] = defaultdict(Counter)
     edits: dict[str, dict] = defaultdict(dict)
     for plan in plans.values():
