@@ -1,4 +1,5 @@
 import argparse
+import getpass
 import sys
 
 import psycopg
@@ -201,6 +202,13 @@ create table if not exists review.sync_runs (
     summary jsonb,
     error text
 );
+create table if not exists review.removed_runs (
+    attempt_id text primary key references processing.job_attempts,
+    run_no integer,
+    removed_utc timestamptz not null default now(),
+    removed_by text,
+    reason text not null
+);
 alter table review.outputs add column if not exists sync_id bigint;
 alter table review.captures add column if not exists sync_id bigint;
 alter table review.qa_flags add column if not exists site text;
@@ -315,7 +323,7 @@ EVENT_KEYS = {
     "job_scenes": "job_id",
 }
 EVENT_ROOTS = ("scans", "channels")
-EVENT_TABLES = ("runs", "sync_runs")
+EVENT_TABLES = ("runs", "sync_runs", "removed_runs")
 
 
 def base_tables(conn: psycopg.Connection, schema: str) -> list[str]:
@@ -405,7 +413,7 @@ def check(conn: psycopg.Connection) -> list[str]:
         "observations without the scan that found them": "select count(*) from processing.observations where scan_id is null",
         "jobs without the scan that created them": "select count(*) from processing.jobs where scan_id is null",
         "jobs without their scenes": "select count(*) from processing.jobs j where not exists (select 1 from processing.job_scenes s where s.job_id = j.job_id)",
-        "succeeded attempts without a run": "select count(*) from processing.job_attempts a where a.status = 'succeeded' and not exists (select 1 from review.runs r where r.attempt_id = a.attempt_id)",
+        "succeeded attempts without a run": "select count(*) from processing.job_attempts a where a.status = 'succeeded' and not exists (select 1 from review.runs r where r.attempt_id = a.attempt_id) and not exists (select 1 from review.removed_runs x where x.attempt_id = a.attempt_id)",
     }
     for label, sql in probes.items():
         n = conn.execute(sql).fetchone()[0]
@@ -414,13 +422,48 @@ def check(conn: psycopg.Connection) -> list[str]:
     return problems
 
 
+def remove_run(conn: psycopg.Connection, reason: str, run: int | None = None, attempt: str | None = None, by: str | None = None) -> dict:
+    if (run is None) == (attempt is None):
+        raise ValueError("give exactly one of run or attempt")
+    if run is not None:
+        found = conn.execute("select run_key, run_no, attempt_id from review.runs where run_no = %s", (run,)).fetchone()
+        if found is None:
+            raise ValueError(f"no run {run}")
+        key, run_no, attempt_id = found
+        blockers = {
+            table: n
+            for table in ("qa_flags", "captures", "outputs")
+            if (n := conn.execute(f"select count(*) from review.{table} where run_key = %s", (key,)).fetchone()[0])
+        }
+        if blockers:
+            raise ValueError(f"run {run_no} holds {blockers}; remove it by hand only after deciding what happens to those rows")
+        conn.execute("delete from review.runs where run_key = %s", (key,))
+    else:
+        run_no, attempt_id = None, attempt
+        if conn.execute("select 1 from review.runs where attempt_id = %s", (attempt_id,)).fetchone():
+            raise ValueError("a run still exists for this attempt; remove it with --run")
+        if not conn.execute("select 1 from processing.job_attempts where attempt_id = %s", (attempt_id,)).fetchone():
+            raise ValueError(f"unknown attempt {attempt_id}")
+    recorded = False
+    if attempt_id is not None:
+        recorded = bool(
+            conn.execute(
+                "insert into review.removed_runs (attempt_id, run_no, removed_by, reason) values (%s, %s, %s, %s) on conflict (attempt_id) do nothing",
+                (attempt_id, run_no, by, reason),
+            ).rowcount
+        )
+    return {"run_no": run_no, "attempt_id": attempt_id, "recorded": recorded}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="maritime-sts-monitor pg")
-    parser.add_argument("command", choices=("init", "counts", "trace", "check"))
+    parser.add_argument("command", choices=("init", "counts", "trace", "check", "remove-run"))
     parser.add_argument("--run", type=int)
     parser.add_argument("--attempt")
     parser.add_argument("--job")
     parser.add_argument("--scan")
+    parser.add_argument("--reason")
+    parser.add_argument("--by")
     args = parser.parse_args()
     with connect() as conn:
         if args.command == "check":
@@ -429,6 +472,17 @@ def main() -> int:
                 print("FAIL", line)
             print("check: " + ("every table traces to its event" if not problems else f"{len(problems)} problem(s)"))
             return 1 if problems else 0
+        if args.command == "remove-run":
+            if not args.reason:
+                parser.error("remove-run needs --reason")
+            try:
+                result = remove_run(conn, args.reason, args.run, args.attempt, args.by or getpass.getuser())
+            except ValueError as error:
+                print("refused:", error)
+                return 1
+            conn.commit()
+            print(result)
+            return 0
         if args.command == "trace":
             found = trace(conn, args.run, args.attempt, args.job, args.scan)
             print("event chain:", {k: found[k] for k in ("scans", "jobs", "attempts", "run_nos")})

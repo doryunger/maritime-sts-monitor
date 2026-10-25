@@ -44,5 +44,10 @@ hull). `review.run_lineage` joins the chain for one run. Legacy PC runs have no 
 - Published captures link to their hull by the id rule `<source>_<capture time>_<hull id with _ as -, dashes collapsed>`;
   all 86 findings matched one hull each. `outputs.scene_ids` (comma text) is mirrored in `output_scenes`.
 - `events` carries `run_key` and `scene_id` but no foreign key: it has no `site`, and some events name no scene.
+- A run removed on purpose (for example a worker run whose review folder never reached S3, so its cards have no images) is
+  recorded, not tolerated: `pg remove-run --run N --reason ...` deletes it, refusing a run that holds flags, captures or
+  outputs, and writes its attempt to `review.removed_runs`; `--attempt ID` records a removal made earlier. `pg check`
+  counts a succeeded attempt with a recorded removal as accounted for. Run 64 (2026-10-22 test job) was removed on
+  2026-10-25 for that reason; its scene is in runs 8, 35 and 36.
 - `pg trace --run|--attempt|--job|--scan` lists every row an event produced; `pg check` fails when a table has no
   event key or no foreign key, or when a link is missing. Run it after every import or cutover.
