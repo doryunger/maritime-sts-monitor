@@ -233,6 +233,7 @@ def run_import(root: Path, only: list[int], replace: bool) -> int:
             got = import_run(conn, root, run_no, folder, created)
             conn.commit()
             print(f"run {run_no:3} {folder}: " + ", ".join(f"{k} {v}" for k, v in got.items() if v))
+        pg.init(conn)
     return 0
 
 

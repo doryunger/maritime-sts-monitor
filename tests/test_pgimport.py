@@ -50,3 +50,21 @@ def test_every_sqlite_column_has_a_postgres_column():
         for _, name, *_ in memory.execute(f"pragma table_info({sqlite_table})").fetchall():
             target = pgimport.RENAMES.get(name, name)
             assert f" {target} " in f" {block.replace(',', ' , ').replace(chr(10), ' ')} ".replace(" , ", " "), (sqlite_table, name)
+
+
+def test_the_run_number_sequence_follows_the_numbers_an_import_inserted(pgdb, tmp_path):
+    root = tmp_path
+    registry = sqlite3.connect(root / "registry.db")
+    registry.execute("create table runs (run_no integer primary key, folder text unique, created_utc text)")
+    for number in (1, 2, 7):
+        folder = root / f"f{number}"
+        folder.mkdir()
+        source = sqlite3.connect(folder / "state.db")
+        source.executescript(pgimport.LEGACY_SCHEMA)
+        source.commit()
+        source.close()
+        registry.execute("insert into runs values (?, ?, '2026-10-01T00:00:00Z')", (number, f"f{number}"))
+    registry.commit()
+    registry.close()
+    assert pgimport.run_import(root, [], False) == 0
+    assert pgdb.execute("select nextval('review.run_no_seq')").fetchone()[0] == 8
