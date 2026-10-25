@@ -114,6 +114,12 @@ def collect_at(path: Path, no: int, job_id: str | None = None) -> list[dict]:
     try:
         site = site_settings(store)
         job_id = job_id or run_job_id(store)
+        try:
+            from maritime_tip_cue.ais import match
+
+            match.refresh_identities(store)
+        except Exception as error:
+            print(f"identity refresh skipped: {type(error).__name__}: {error}", file=sys.stderr)
         floor = rules_mod.load()["ais_match"]["min_coverage_ships"]
         coverage = {(r["scene_id"], r["site"]): r["ships"] for r in store.db.execute("select scene_id, site, ships from ais_coverage")}
         rows = store.db.execute(
@@ -226,6 +232,7 @@ def party_cols(f: dict, n: int, slot: str, pos) -> dict:
     return {
         f"vessel_{n}_lat": pos[0] if pos else None,
         f"vessel_{n}_lon": pos[1] if pos else None,
+        f"vessel_{n}_ship_id": p.get("ship_id"),
         f"vessel_{n}_name": p.get("name"),
         f"vessel_{n}_imo": p.get("imo"),
         f"vessel_{n}_mmsi": p.get("mmsi"),

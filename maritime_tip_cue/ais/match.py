@@ -257,6 +257,27 @@ def load_identities(ship_ids: list[str]) -> dict:
     return {r["ship_id"]: r for r in rows}
 
 
+def refresh_identities(store: Store, loader=load_identities) -> int:
+    rows = store.db.execute(
+        "select rowid as id, ship_id, imo, mmsi, flag from ais_matches "
+        "where chosen = 1 and ship_id is not null and (imo is null or mmsi is null or flag is null)"
+    ).fetchall()
+    if not rows:
+        return 0
+    found = loader(sorted({r["ship_id"] for r in rows}))
+    changed = 0
+    with store.tx():
+        for r in rows:
+            ident = found.get(r["ship_id"])
+            if not ident:
+                continue
+            values = tuple(r[k] or (str(ident[k]) if ident.get(k) not in (None, "") else None) for k in ("imo", "mmsi", "flag"))
+            if values != (r["imo"], r["mmsi"], r["flag"]):
+                store.db.execute("update ais_matches set imo = ?, mmsi = ?, flag = ? where rowid = ?", (*values, r["id"]))
+                changed += 1
+    return changed
+
+
 def utc_text(value: datetime | None) -> str | None:
     return value.strftime("%Y-%m-%dT%H:%M:%SZ") if value else None
 

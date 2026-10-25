@@ -67,9 +67,32 @@ def list_keys(client, bucket: str, prefix: str) -> list[str]:
         token = page["NextContinuationToken"]
 
 
+IDENTITY_FIELDS = ("imo", "mmsi", "flag")
+
+
+def keep_identity(row: dict, old: dict | None) -> dict:
+    if old is None:
+        return row
+    for n in (1, 2):
+        ship, old_ship = row.get(f"vessel_{n}_ship_id"), old.get(f"vessel_{n}_ship_id")
+        same = ship == old_ship if ship is not None and old_ship is not None else (
+            old_ship is None and row.get(f"vessel_{n}_name") is not None and row.get(f"vessel_{n}_name") == old.get(f"vessel_{n}_name")
+        )
+        if not same:
+            continue
+        for field in IDENTITY_FIELDS:
+            key = f"vessel_{n}_{field}"
+            if row.get(key) is None and old.get(key) is not None:
+                row[key] = old[key]
+        if row.get(f"vessel_{n}_ship_id") is None and old_ship is not None:
+            row[f"vessel_{n}_ship_id"] = old_ship
+    return row
+
+
 def merge_group(client, bucket: str, prefix: str, date: str, key: str, new_rows: list[dict], job_id: str | None, rule: dict, on_keep=None) -> dict:
     for _ in range(ATTEMPTS):
         here, etag = read_rows(client, bucket, key)
+        previous = {row["finding_id"]: row for row in here}
         if job_id:
             here = [row for row in here if row.get("job_id") != job_id]
         by_id = {row["finding_id"]: row for row in here}
@@ -79,6 +102,7 @@ def merge_group(client, bucket: str, prefix: str, date: str, key: str, new_rows:
                 others[other_key] = read_rows(client, bucket, other_key)
         kept, skipped, notes = [], [], {}
         for row in new_rows:
+            row = keep_identity(row, previous.get(row["finding_id"]))
             if row["finding_id"] in by_id:
                 by_id[row["finding_id"]] = row
                 kept.append(row)
