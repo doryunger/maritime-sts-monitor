@@ -202,7 +202,7 @@ def upload_changes(client, bucket: str, tables: dict, edits: dict, rules: dict) 
     return outcomes
 
 
-def record(bucket: str, outcomes: dict, tables: dict, plans: dict) -> None:
+def record(bucket: str, outcomes: dict, tables: dict, plans: dict, sync_id: int | None = None) -> None:
     prefix_f, prefix_c = settings()["s3"]["findings_prefix"], settings()["s3"]["captures_prefix"]
     root = publish.out_root()
     per_run: dict[int, list] = defaultdict(list)
@@ -222,10 +222,10 @@ def record(bucket: str, outcomes: dict, tables: dict, plans: dict) -> None:
             total = len(existing) + len(mine)
             date = key[len(prefix_f):].split("/")[0]
             per_run[no].append(("output", str(path), f"s3://{bucket}/{key}", date, mine[0]["site"], mine[0]["source"], total, total, scenes, outcomes[key]["sha256"]))
-    publish.record_entries(per_run, now(), True)
+    publish.record_entries(per_run, now(), True, sync_id)
 
 
-def sync(client, bucket: str, requested: list[int], upload: bool, dry_run: bool, rules: dict | None = None) -> list[str]:
+def sync_report(client, bucket: str, requested: list[int], upload: bool, dry_run: bool, rules: dict | None = None, sync_id: int | None = None) -> tuple[list[str], dict]:
     rules = rules or rules_mod.load()
     prefix = settings()["s3"]["findings_prefix"]
     runs, skipped = gate(choose_runs(requested), bool(requested))
@@ -255,13 +255,15 @@ def sync(client, bucket: str, requested: list[int], upload: bool, dry_run: bool,
         for key, outcome in outcomes.items():
             totals[key]["added"] = len(outcome["kept"])
             duplicates += len(outcome["skipped"])
-        record(bucket, outcomes, tables, plans)
+        record(bucket, outcomes, tables, plans, sync_id)
     changed = 0
+    files_changed: dict[str, dict] = {}
     for key in sorted(totals):
         counts = totals[key]
         if not any(counts[a] for a in ACTIONS):
             continue
         changed += 1
+        files_changed[key] = {a: counts[a] for a in (*ACTIONS, "unchanged")}
         lines.append(f"{key}: " + ", ".join(f"{a} {counts[a]}" for a in (*ACTIONS, "unchanged")))
     rows = sum(len(r) for p in plans.values() for r in p["rows"].values())
     if changed:
@@ -269,7 +271,22 @@ def sync(client, bucket: str, requested: list[int], upload: bool, dry_run: bool,
         lines.append(f"{changed} files change ({mode}); {duplicates} pairs skipped as duplicates")
     else:
         lines.append(f"nothing to change: {len(plans)} runs, {rows} published rows checked, {duplicates} pairs skipped as duplicates")
-    return lines
+    summary = {
+        "files": files_changed,
+        "totals": {a: sum(c[a] for c in totals.values()) for a in (*ACTIONS, "unchanged")},
+        "files_changed": changed,
+        "duplicates": duplicates,
+        "runs_checked": len(plans),
+        "rows_checked": rows,
+        "runs_skipped": {str(no): reason for no, reason in sorted(skipped.items())},
+        "unattributed": len(unmatched),
+        "lines": lines,
+    }
+    return lines, summary
+
+
+def sync(client, bucket: str, requested: list[int], upload: bool, dry_run: bool, rules: dict | None = None) -> list[str]:
+    return sync_report(client, bucket, requested, upload, dry_run, rules)[0]
 
 
 def main(argv: list[str]) -> int:

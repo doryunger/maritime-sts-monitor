@@ -5,11 +5,11 @@ import sys
 from pathlib import Path
 
 import uvicorn
-from fastapi import Body, FastAPI, Header, HTTPException
-from fastapi.responses import FileResponse, Response
+from fastapi import Body, FastAPI, Header, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.backend import auth, queue, runs, s3runs
+from app.backend import auth, queue, runs, s3runs, sync
 from maritime_tip_cue.config import settings
 
 DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
@@ -70,6 +70,17 @@ def put_flag(no: int, hull_id: str, body: dict = Body(...)):
     if error:
         raise HTTPException(400, error)
     return row
+
+
+@app.get("/api/sync")
+def get_sync():
+    return sync.current()
+
+
+@app.post("/api/sync")
+def post_sync(request: Request):
+    created, state = sync.request(getattr(request.state, "user", None) or "local")
+    return JSONResponse(state, status_code=202 if created else 409)
 
 
 if DIST.exists():

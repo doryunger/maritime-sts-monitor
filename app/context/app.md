@@ -46,6 +46,12 @@ read back after commit, with the after-QA verdict. There is no `reviews/<run>.js
 time shows its status; without one it is `running`, or `stopped` once the last event is over an hour old (a run
 killed when the PC shut down).
 
+`sync.py` and `/api/sync`: POST inserts a `pending` row in `review.sync_runs` (`requested_by` is the Basic-auth user, set
+by the auth middleware as `request.state.user`; `local` without a password) unless one is pending or running, answering
+409 with the current state; the check and insert share an advisory transaction lock so two clicks cannot both insert. GET returns
+`{latest, active, last_finished}` (with the summary and error). The app only records the request; the work is done by
+`sts-sync.timer` (see `publish.md` `## Syncing reviews`), because the app container is capped at 400 MB.
+
 ## frontend
 The `/jobs` page shows pending shared jobs and local scene matches, with an option to include completed jobs.
 Refresh retrieves current S3 state. Locally running scenes also appear when the shared queue is empty.
@@ -73,6 +79,11 @@ The expandable AIS matching evidence reads `ais_candidates` from SQLite and show
 their decision evidence per slot, plus counts of satellite and unnamed exclusions. This is diagnostic context, not a
 vessel identity QA label; the imagery review flags remain the only user feedback stored by the app.
 Each card shows the pair confidence next to the verdict badge; its tooltip gives the S1 threshold or says the S2 score is review-only.
+
+The Runs page carries `SyncPanel` (button, status, confirm dialog). The dialog says the sync modifies the published
+Parquets; Confirm POSTs and a 409 just shows the request already in flight. The panel polls `/api/sync` every 5 s while
+a request is pending or running and every 60 s otherwise, shows elapsed time while active, and for the last finished
+request its time, requester, counts per kind (added, rejected, restored, status updated, unchanged) or the error.
 
 ## Deployment on the control host
 

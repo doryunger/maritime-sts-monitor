@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import SyncPanel from "../components/SyncPanel";
 import { api, label, SceneRow, sceneTag, when } from "../api";
 
 type Key = "run" | "area" | "source" | "captured" | "created" | "status" | "review";
@@ -155,6 +156,7 @@ export default function Runs() {
     <section>
       <h1>Runs</h1>
       {error && <p className="error">Showing the cached list. Could not refresh: {error}</p>}
+      <SyncPanel />
       <p className="muted">One row per scene. Click a column title to sort, a row to open its QA.</p>
       <div className="table-options">
         <label><input type="checkbox" checked={showEmpty} onChange={(e) => toggleEmpty(e.target.checked)} /> Show scenes with no review cards</label>

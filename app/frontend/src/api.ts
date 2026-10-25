@@ -184,6 +184,24 @@ export interface RunDetail {
   fixtures: { passes: FixturePass[]; totals: { objects: number; agree: number; differ: number; missing: number } | null };
 }
 
+export interface SyncRequest {
+  sync_id: number;
+  requested_utc: string;
+  requested_by: string | null;
+  status: "pending" | "running" | "done" | "failed";
+  dry_run: boolean;
+  started_utc: string | null;
+  finished_utc: string | null;
+  summary: { totals?: Record<string, number>; duplicates?: number } | null;
+  error: string | null;
+}
+
+export interface SyncState {
+  latest: SyncRequest | null;
+  active: SyncRequest | null;
+  last_finished: SyncRequest | null;
+}
+
 async function json<T>(r: Response): Promise<T> {
   if (!r.ok) {
     const body = await r.json().catch(() => ({}));
@@ -201,6 +219,12 @@ export const api = {
       rows: response.status === 304 ? null : await json<SceneRow[]>(response),
       etag: response.headers.get("ETag"),
     };
+  },
+  sync: () => fetch("/api/sync").then((r) => json<SyncState>(r)),
+  requestSync: async () => {
+    const response = await fetch("/api/sync", { method: "POST" });
+    if (response.status === 409) return (await response.json()) as SyncState;
+    return json<SyncState>(response);
   },
   run: (n: number) => fetch(`/api/runs/${n}`).then((r) => json<RunDetail>(r)),
   image: (n: number, id: string, kind: "raw" | "overlay", version = "") => `/api/runs/${n}/hulls/${encodeURIComponent(id)}/${kind}.png${version ? `?v=${version}` : ""}`,

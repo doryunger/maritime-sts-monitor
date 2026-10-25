@@ -37,3 +37,22 @@ sudo systemctl daemon-reload && sudo systemctl enable --now sts-app
 
 The unit sets `STS_APP_PORT=8010` and runs the image as uid 1000 with a 400 MB memory limit and `Restart=always`. It reads the same protected
 `.env` as the job manager (Redis URL, AWS settings). Update with a new `docker build` and `systemctl restart sts-app`.
+
+## Sync results button
+
+The Runs page has a "Sync results" button. The app container (400 MB cap) never runs the sync: `POST /api/sync` writes
+a `pending` row to `review.sync_runs`, and `sts-sync.timer` starts `sts-sync.service` every 30 seconds. That oneshot
+runs a short-lived container from the same image (`python -m maritime_tip_cue.publish_service run-pending`, 700 MB
+cap), which claims the oldest pending row, runs publish sync with upload on and stores the result in the row. With
+nothing pending it exits at once. It needs the same `.env` (S3, `GIZMOSQL_*`, `EQUASIS_*`, `STS_DATABASE_URL`, Redis),
+the AIS certificate under `data/secrets/` and the run folders in `data/app/runs` (the captures of newly added pairs
+are built from them). Install after the image is built:
+
+```bash
+sudo cp deploy/app/sts-sync.service deploy/app/sts-sync.timer /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now sts-sync.timer
+```
+
+Check with `systemctl list-timers sts-sync.timer` and `journalctl -u sts-sync -n 50`. A request left `running` for
+over 3 hours is marked failed (`abandoned`) by the next poll; a failed sync leaves S3 as the per-file merge left it and
+a new click resumes. Rebuilding the image updates both the app and the sync.

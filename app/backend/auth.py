@@ -60,6 +60,7 @@ def install(app: FastAPI) -> None:
         if len(recent_failures(client, now)) >= MAX_FAILURES:
             return Response("Too many failed attempts; try again later.", status_code=429, headers={"Retry-After": str(LOCKOUT_SECONDS)})
         if authorised(request.headers.get("authorization"), expected):
+            request.state.user = expected[0]
             return await call_next(request)
         if request.headers.get("authorization"):
             _failures.setdefault(client, []).append(now)

@@ -107,5 +107,15 @@ Parquets under the findings prefix, matched by run, scene, hot spot and hull, ne
 - Runs: default is every run with an output row or a pair after QA; a run the gate rejects (not done, or a job not in
   the ledger's completed set; legacy runs are exempt from the job requirement) is skipped with a line, while an explicit
   `--runs` list refuses everything, as publish does.
+- Request flow from the app: the Runs page button inserts a `pending` row in `review.sync_runs`; `sts-sync.timer` (every
+  30 s) runs `python -m maritime_tip_cue.publish_service run-pending` in a short-lived container. It first marks any row
+  `running` longer than `publish.sync_abandon_hours` (rules, 3 h) failed with error `abandoned`, then claims the oldest
+  pending row with `for update skip locked` (so overlapping runs cannot take the same one), runs `sync_report` with upload on
+  and the row's `sync_id`, and stores `done` with the summary or `failed` with the error text. The summary is
+  per file (`files`: added, rejected, restored, status_updated, unchanged) plus `totals`, `duplicates`, `runs_checked`,
+  `rows_checked`, `runs_skipped`, `unattributed` and the printed `lines`. `outputs` and `captures` rows recorded by that
+  sync carry its `sync_id`; the CLI leaves it null. A failed sync leaves S3 as the per-file merge left it (each file is an
+  ETag-guarded replace) and a new request resumes. A service run killed mid-sync leaves its row `running` until abandoned,
+  and the button stays disabled until then.
 - Two edits in different files that depend on each other are seen on the next sync (rows in other files are not edited
   in the same pass).

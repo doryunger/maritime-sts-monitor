@@ -1138,6 +1138,11 @@
     "dedupe_length_share": {
       "value": 0.5,
       "basis": "Two findings of one capture are the same vessel when their centres are within this share of the longer hull's length."
+    },
+    "sync_abandon_hours": {
+      "value": 3,
+      "unit": "h",
+      "basis": "A sync request still running this long after it started is marked failed (abandoned) by the next poll; a sync normally takes minutes (decision, user 2026-10-25)."
     }
   },
   "identity": {

@@ -21,6 +21,7 @@ Conventions are in AGENTS.md (loaded via CLAUDE.md for Claude). Read docs by sec
   `deploy/catalogue/README.md` for the deployed timer, commands and recovery behavior.
 - `maritime_tip_cue/local_runner.py`: shared-queue terminal selection and resumable local worker processing;
   session state and logs live under ignored `data/local_runner/`. See `maritime_tip_cue/context/local_runner.md`.
+- `maritime_tip_cue/publish_service.py`: `python -m maritime_tip_cue.publish_service run-pending` claims one pending `review.sync_runs` row (created by the app's Runs-page "Sync results" button, `app/backend/sync.py`, `/api/sync`) and runs `publish_sync.sync_report` with upload; started every 30 s by `deploy/app/sts-sync.timer`. See `publish.md` `## Syncing reviews`.
 - `maritime_tip_cue/ais/match.py`: AIS parties per hull from the archive into selected `ais_matches` and per-slot `ais_candidates`, including boolean `is_sanctioned` (null becomes false) (`<run>` [--all-checked] [--stats]). Why notes: `maritime_tip_cue/context/ais.md`.
 - `maritime_tip_cue/ais/archive.py`: AIS archive client (GizmoSQL; `GIZMOSQL_*` in `.env`, cert path in `config.yaml`).
 - `maritime_tip_cue/hotspots.py`: loads the shared hot-spot list from S3 (`config.yaml` `s3`, bucket and keys in `.env`).

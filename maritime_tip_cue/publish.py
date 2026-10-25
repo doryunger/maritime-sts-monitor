@@ -434,7 +434,7 @@ def record_and_upload(tables: dict, upload: bool, rules: dict) -> None:
     record_entries(per_run, stamp, upload)
 
 
-def record_entries(per_run: dict, stamp: str, upload: bool) -> None:
+def record_entries(per_run: dict, stamp: str, upload: bool, sync_id: int | None = None) -> None:
     for no, entries in per_run.items():
         store = Store.open(no)
         try:
@@ -443,21 +443,21 @@ def record_entries(per_run: dict, stamp: str, upload: bool) -> None:
                 for e in entries:
                     if e[0] == "capture":
                         store.db.execute(
-                            "insert into review.captures (run_key, finding_id, format, local_path, s3_uri, invocation_id, created_utc, uploaded_utc, scene_id, site, hull) "
-                            "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) on conflict (run_key, finding_id, format) do update set "
+                            "insert into review.captures (run_key, finding_id, format, local_path, s3_uri, invocation_id, created_utc, uploaded_utc, scene_id, site, hull, sync_id) "
+                            "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) on conflict (run_key, finding_id, format) do update set "
                             "local_path = excluded.local_path, s3_uri = excluded.s3_uri, invocation_id = excluded.invocation_id, "
                             "created_utc = excluded.created_utc, uploaded_utc = excluded.uploaded_utc, scene_id = excluded.scene_id, "
-                            "site = excluded.site, hull = excluded.hull",
-                            (store.run_key, e[1], e[2], e[3], e[4], invocation, stamp, stamp if upload else None, e[5], e[6], e[7]),
+                            "site = excluded.site, hull = excluded.hull, sync_id = excluded.sync_id",
+                            (store.run_key, e[1], e[2], e[3], e[4], invocation, stamp, stamp if upload else None, e[5], e[6], e[7], sync_id),
                         )
                     else:
                         store.db.execute(
-                            "insert into review.outputs (run_key, path, s3_uri, created_utc, capture_date, site, source, n_rows, n_pairs, n_possible, scene_ids, sha256, uploaded_utc, invocation_id) "
-                            "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) on conflict (run_key, path) do update set "
+                            "insert into review.outputs (run_key, path, s3_uri, created_utc, capture_date, site, source, n_rows, n_pairs, n_possible, scene_ids, sha256, uploaded_utc, invocation_id, sync_id) "
+                            "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) on conflict (run_key, path) do update set "
                             "s3_uri = excluded.s3_uri, created_utc = excluded.created_utc, capture_date = excluded.capture_date, site = excluded.site, "
                             "source = excluded.source, n_rows = excluded.n_rows, n_pairs = excluded.n_pairs, n_possible = excluded.n_possible, "
-                            "scene_ids = excluded.scene_ids, sha256 = excluded.sha256, uploaded_utc = excluded.uploaded_utc, invocation_id = excluded.invocation_id",
-                            (store.run_key, e[1], e[2], stamp, e[3], e[4], e[5], e[6], e[7], 0, ",".join(e[8]), e[9], stamp if upload else None, invocation),
+                            "scene_ids = excluded.scene_ids, sha256 = excluded.sha256, uploaded_utc = excluded.uploaded_utc, invocation_id = excluded.invocation_id, sync_id = excluded.sync_id",
+                            (store.run_key, e[1], e[2], stamp, e[3], e[4], e[5], e[6], e[7], 0, ",".join(e[8]), e[9], stamp if upload else None, invocation, sync_id),
                         )
                         store.db.execute("delete from review.output_scenes where run_key = %s and path = %s", (store.run_key, e[1]))
                         with store.db.cursor() as cur:
