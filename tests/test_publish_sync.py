@@ -240,3 +240,13 @@ def test_a_pair_nobody_has_reviewed_is_never_added(world):
     assert not any("c" == r for r in rows)
     assert any("added 1" in line for line in lines)
 
+
+def test_a_row_nobody_reviewed_is_never_edited_even_when_the_rules_now_disagree(world):
+    world.hulls([("a", "single", 25.0), ("b", "pair", 25.1)])
+    world.publish([prow("a", 25.0, qa="confirmed"), prow("b", 25.1, qa="confirmed")])
+    lines = world.sync()
+    rows = stored(world.s3)
+    assert rows["a"]["qa_status"] == "confirmed" and rows["a"]["verdict"] == "pair"
+    assert rows["b"]["qa_status"] == "confirmed" and rows["b"]["verdict"] == "pair"
+    assert any("nothing to change" in line and "2 published rows checked" in line for line in lines)
+

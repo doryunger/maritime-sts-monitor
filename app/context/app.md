@@ -80,3 +80,8 @@ Each card shows the pair confidence next to the verdict badge; its tooltip gives
 unit and the install steps. The app reads the ledger and every run from Postgres (`STS_DATABASE_URL` from the host `.env`); only the scene
 chips come from the S3 review folders. The port stays on loopback behind Caddy, or an SSH tunnel. The development
 PC reaches the same database remotely over TLS.
+
+The review-folder sync skips a run whose attempt is still `running` and retries a folder S3 does not have yet every 30
+minutes (`RETRY_MISSING_SECONDS`). The worker creates the run row when the job starts but uploads its review folder only
+when the job ends; an earlier version blacklisted a run for the life of the process on the first "no such key" and so
+never showed run 66's images (2026-10-25).

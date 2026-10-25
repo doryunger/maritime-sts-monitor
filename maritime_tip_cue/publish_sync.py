@@ -136,7 +136,7 @@ def plan_run(run: dict, files: dict, rule: dict, prefix: str, owners: dict) -> d
             out["rows"].setdefault(key, []).append(row)
             counts = out["counts"][key]
             finding = index.get(ident)
-            action = classify(row, desired(finding)) if finding else None
+            action = classify(row, desired(finding)) if finding and finding["qa_status"] is not None else None
             if action is None:
                 counts["unchanged"] += 1
                 continue

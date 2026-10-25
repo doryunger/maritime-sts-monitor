@@ -1,5 +1,6 @@
 import hashlib
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -119,11 +120,24 @@ def test_corrupt_download_is_discarded_and_retried_later(env, pgdb, tmp_path):
     assert not list((tmp_path / "runs").glob(".tmp-*")) and not list((tmp_path / "runs").glob("[!.]*"))
 
 
-def test_run_without_review_data_is_remembered_not_retried_every_cycle(env, pgdb):
+def test_run_without_review_data_is_not_retried_every_cycle_but_is_retried_later(env, pgdb, monkeypatch, tmp_path):
     job_run(pgdb)
     first = s3runs.sync_once(env, "b")
     assert len(first["errors"]) == 1
-    assert s3runs.sync_once(env, "b")["errors"] == []
+    assert s3runs.sync_once(env, "b") == {"added": [], "errors": []}
+    upload(env, review_folder(tmp_path), f"{PREFIX}{JOB}/{ATTEMPT}/")
+    assert s3runs.sync_once(env, "b") == {"added": [], "errors": []}
+    now = time.time()
+    monkeypatch.setattr(s3runs.time, "time", lambda: now + s3runs.RETRY_MISSING_SECONDS + 1)
+    assert s3runs.sync_once(env, "b")["added"] == [s3runs.folder_name(JOB, ATTEMPT)]
+
+
+def test_a_run_whose_attempt_is_still_running_is_not_fetched_yet(env, pgdb):
+    job_run(pgdb)
+    pgdb.execute("update processing.job_attempts set status = 'running' where attempt_id = %s", (ATTEMPT,))
+    pgdb.commit()
+    assert s3runs.sync_once(env, "b") == {"added": [], "errors": []}
+    assert s3runs._missing == {}
 
 
 def test_unsafe_index_paths_are_rejected(env, pgdb):

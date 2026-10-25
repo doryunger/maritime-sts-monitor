@@ -13,7 +13,8 @@ from maritime_tip_cue.watch import registry
 from maritime_tip_cue.watch.registry import fetch
 
 INTERVAL_SECONDS = 300
-_missing: set[str] = set()
+RETRY_MISSING_SECONDS = 1800
+_missing: dict[str, float] = {}
 
 
 def folder_name(job_id: str, attempt_id: str) -> str:
@@ -44,7 +45,7 @@ def review_prefix(row: dict) -> str | None:
 
 
 def wanted_runs() -> list[dict]:
-    return fetch(None, "select run_key, run_no, origin, folder, attempt_id, job_id from review.run_lineage order by run_no")
+    return fetch(None, "select run_key, run_no, origin, folder, attempt_id, job_id, attempt_status from review.run_lineage order by run_no")
 
 
 def sync_once(client, bucket: str) -> dict:
@@ -55,7 +56,9 @@ def sync_once(client, bucket: str) -> dict:
         name = row["folder"]
         final = root / name
         prefix = review_prefix(row)
-        if final.is_dir() or name in _missing or prefix is None:
+        if final.is_dir() or prefix is None or row.get("attempt_status") == "running":
+            continue
+        if time.time() - _missing.get(name, 0.0) < RETRY_MISSING_SECONDS:
             continue
         temporary = root / f".tmp-{name}"
         shutil.rmtree(temporary, ignore_errors=True)
@@ -65,8 +68,11 @@ def sync_once(client, bucket: str) -> dict:
             added.append(name)
         except ClientError as error:
             shutil.rmtree(temporary, ignore_errors=True)
+            first = name not in _missing
             if error.response["Error"]["Code"] in ("NoSuchKey", "404", "NotFound"):
-                _missing.add(name)
+                _missing[name] = time.time()
+                if not first:
+                    continue
             errors.append({"run": name, "error": str(error)})
         except Exception as error:
             shutil.rmtree(temporary, ignore_errors=True)
