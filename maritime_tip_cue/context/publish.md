@@ -73,6 +73,9 @@ job's manifest against a fresh download of `scene_id`. Review data is a QA aid, 
 is recorded in the receipt and does not stop publication.
 
 ## Syncing reviews
+Sync publishes only what you reviewed: a pair that nobody has flagged is never added by it (new jobs still publish their
+unreviewed pairs at the end of the job, as before). Rejections and status updates are reviewed by definition.
+
 `python -m maritime_tip_cue.publish sync [--runs N ...] [--upload] [--dry-run]` brings the Parquet in line with the
 reviews. A verdict used to change only Postgres: pair->single left the row, single->pair was never added (the worker
 matched and captured only the hulls that were pairs at job end) and confirmed pairs stayed `unreviewed`.

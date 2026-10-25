@@ -144,7 +144,7 @@ def plan_run(run: dict, files: dict, rule: dict, prefix: str, owners: dict) -> d
             qa, verdict = desired(finding)
             out["edits"][key][row["finding_id"]] = {"qa_status": qa, "verdict": verdict}
     for ident, finding in sorted(index.items()):
-        if finding["verdict"] != "pair" or ident in out["published"]:
+        if finding["verdict"] != "pair" or finding["qa_status"] is None or ident in out["published"]:
             continue
         candidate = {
             "source": finding["source"], "capture_utc": finding["capture_utc"], "lat": finding["lat"], "lon": finding["lon"],

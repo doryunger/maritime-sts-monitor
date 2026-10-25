@@ -228,3 +228,15 @@ def test_a_published_row_goes_to_the_run_its_attempt_or_job_or_legacy_folder_nam
     assert publish_sync.pick_owner({"attempt_id": "x", "job_id": "y", "run": 1}, [held(3, "f")]) == 3
     assert publish_sync.pick_owner({"attempt_id": None, "job_id": None, "run": 1}, []) is None
 
+
+def test_a_pair_nobody_has_reviewed_is_never_added(world):
+    world.hulls([("a", "pair", 25.0), ("c", "pair", 25.3)])
+    world.flag("a", "ok")
+    world.publish([prow("b", 25.1)])
+    lines = world.sync()
+    rows = stored(world.s3)
+    assert set(rows) == {"a", "b"} and rows["a"]["qa_status"] == "confirmed"
+    assert world.matched == [["a"]]
+    assert not any("c" == r for r in rows)
+    assert any("added 1" in line for line in lines)
+
