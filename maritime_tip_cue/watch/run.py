@@ -122,6 +122,10 @@ def stage_two_s1(store: Store, pass_id: str, members: list[tuple[dict, Path, lis
                 "rect_angle_deg": r.get("rect_angle_deg"),
                 "single_box": r.get("single_box"),
                 "single_box_veto": r.get("single_box_veto", False),
+                "confidence": r.get("confidence"),
+                "second_hull": r.get("second_hull"),
+                "rule_verdict": r.get("rule_verdict"),
+                "shape_rule_pair": r.get("shape_rule_pair"),
                 "object": o,
             }
         )
