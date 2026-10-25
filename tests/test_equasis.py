@@ -170,3 +170,42 @@ def test_cached_answers_never_reach_equasis(tmp_path, monkeypatch):
 
 def test_the_rules_carry_the_two_second_delay():
     assert RULES["request_delay_s"] == 2
+
+
+def stored(name, **extra):
+    return {"imo": extra.pop("imo", "9226140"), "name": name, "gross_tonnage": "29303", "type": "Chemical/Oil Products Tanker",
+            "year_built": "2002", "flag": "Hong Kong, China (HKG)", **extra}
+
+
+def test_name_variants_strip_prefixes_and_fall_back_to_shorter_forms():
+    assert equasis.name_variants("M/T MARITIME PROSPERITY", RULES) == ["MARITIME PROSPERITY", "MARITIME"]
+    assert equasis.name_variants("TIAN SHENG 27", RULES) == ["TIAN SHENG 27", "TIAN SHENG"]
+    assert equasis.name_variants("SEA-PROSPER", RULES) == ["SEA PROSPER", "SEA-PROSPER"]
+    assert equasis.name_variants("ZHOU", RULES) == ["ZHOU"]
+    assert len(equasis.name_variants("MV MARIA & SONS TRADER XX", RULES)) <= RULES["name_variants_max"]
+
+
+def test_a_name_that_is_not_stored_exactly_is_found_through_a_shorter_search():
+    eq = FakeEquasis({"TIAN SHENG": [stored("TIAN SHENG 27")]}, DETAIL)
+    record = equasis.resolve_vessel(eq, {"name": "TIAN SHENG 27 EXTRA", "flag": "HK", "type_code": "8", "dwt": 44400}, RULES)
+    assert eq.searches[0] == "TIAN SHENG 27 EXTRA" and "TIAN SHENG" in eq.searches
+    assert record["imo"] == "9226140" and record["search_name"] == "TIAN SHENG"
+
+
+def test_shorter_searches_ignore_ships_whose_names_do_not_look_like_ours():
+    stranger = stored("MARITIME STAR OF ASIA", imo="9999999")
+    eq = FakeEquasis({"MARITIME": [stranger, stored("MARITIME PROSPERITY")]}, DETAIL)
+    record = equasis.resolve_vessel(eq, {"name": "M/T MARITIME PROSPERITY", "flag": "HK", "type_code": "8", "dwt": 44400}, RULES)
+    assert record["imo"] == "9226140" and record["candidates"] == 1
+
+
+def test_the_search_stops_at_the_first_variant_that_gives_a_confident_match():
+    eq = FakeEquasis({"AVA 6": [AVA]}, DETAIL)
+    equasis.resolve_vessel(eq, {"name": "AVA 6", "flag": "HK", "type_code": "8", "dwt": 44400}, RULES)
+    assert eq.searches == ["AVA 6"]
+
+
+def test_every_variant_is_tried_before_giving_up_but_never_more_than_the_cap():
+    eq = FakeEquasis({})
+    record = equasis.resolve_vessel(eq, {"name": "ALPHA BETA GAMMA DELTA EPSILON", "flag": "HK", "type_code": "8", "dwt": 1}, RULES)
+    assert record["confidence"] == "not found" and 1 < len(eq.searches) <= RULES["name_variants_max"]

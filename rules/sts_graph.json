@@ -1090,6 +1090,31 @@
     "max_lookups_per_run": {
       "value": 40,
       "basis": "guess: two known vessels on up to 20 pairs in one job; one vessel at a time, never a loop over all vessels (Equasis forbids bulk retrieval)"
+    },
+    "name_variants_max": {
+      "value": 4,
+      "basis": "guess: each variant is one Equasis request, so a hard name costs at most this many searches per vessel"
+    },
+    "name_similarity_min": {
+      "value": 0.6,
+      "basis": "guess: a shortened search returns other ships too; a candidate must still look like the AIS name (difflib ratio) to count"
+    },
+    "name_truncated_chars": {
+      "value": 19,
+      "basis": "AIS names hold 20 characters, so a name this long is probably cut off and the last word may be partial"
+    },
+    "name_prefixes": {
+      "value": [
+        "MT",
+        "M/T",
+        "MV",
+        "M/V",
+        "SS",
+        "S/S",
+        "MS",
+        "M/S"
+      ],
+      "basis": "vessel-type prefixes seen in AIS names that Equasis does not store"
     }
   }
 }

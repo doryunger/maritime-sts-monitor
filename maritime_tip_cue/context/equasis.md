@@ -16,7 +16,13 @@ the run and is reported; it never stops publication. Without `EQUASIS_EMAIL` and
 step is skipped.
 
 ## Resolving
-The AIS name is searched; each candidate is scored on flag (2), type (1) and gross tonnage per DWT (2), weights and
+AIS names hold 20 characters and may carry prefixes like M/T, so the exact AIS name often is not what Equasis stores.
+`find_candidates` searches the cleaned full name first, then up to `identity.name_variants_max` variants: the name without
+a vessel prefix, with and without hyphens, without a probably cut-off last word, then its first three and two words, or
+the first eight letters of one long word. It stops at the first variant whose candidates reach a medium score. Candidates
+from a shortened search must still look like the AIS name (`identity.name_similarity_min`, difflib ratio), so a search for
+"MARITIME" cannot pull in unrelated ships; the variant that found the ship is kept as `search_name`. Each variant is one
+request, so a hard name costs at most the cap. Then the AIS name is searched; each candidate is scored on flag (2), type (1) and gross tonnage per DWT (2), weights and
 limits in `rules/sts_graph.json` `identity`. A candidate needs a medium score (3) to count, ties stay unresolved, and
 a DWT within tolerance of the AIS DWT, read from the IMO details page, makes it strong. The record keeps IMO, MMSI,
 call sign, gross tonnage, DWT, year built, type, status, the Equasis name and flag, the false-flag marker, confidence

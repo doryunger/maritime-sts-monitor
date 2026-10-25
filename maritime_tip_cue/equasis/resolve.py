@@ -1,5 +1,6 @@
 import re
 import sys
+from difflib import SequenceMatcher
 from datetime import UTC, datetime
 
 import pycountry
@@ -10,7 +11,7 @@ from maritime_tip_cue.watch.state import Store
 
 FIELDS = (
     "imo", "mmsi", "call_sign", "gross_tonnage", "dwt", "year_built", "vessel_type", "status", "equasis_name",
-    "equasis_flag", "false_flag", "confidence", "reasons", "candidates", "source", "resolved_utc",
+    "equasis_flag", "false_flag", "confidence", "reasons", "candidates", "search_name", "source", "resolved_utc",
 )
 
 
@@ -72,8 +73,66 @@ def close_dwt(equasis_dwt, ours_dwt, rules: dict) -> bool:
     return bool(dwt and ours_dwt and abs(dwt - ours_dwt) <= rules["dwt_tolerance"] * dwt)
 
 
+def normalise(name: str) -> str:
+    return " ".join(re.sub(r"[^A-Z0-9 ]", " ", (name or "").upper().replace("&", " AND ")).split())
+
+
+def keep_hyphens(name: str) -> str:
+    return " ".join(re.sub(r"[^A-Z0-9 \-]", " ", (name or "").upper().replace("&", " AND ")).split())
+
+
+def strip_prefix(name: str, rules: dict) -> str:
+    pattern = "|".join(re.escape(p) for p in sorted(rules["name_prefixes"], key=len, reverse=True))
+    return re.sub(rf"^(?:{pattern})(?=[\s.\-]|$)[\s.\-]*", "", (name or "").strip().upper())
+
+
+def name_variants(name: str, rules: dict) -> list[str]:
+    stripped = strip_prefix(name, rules) or (name or "")
+    full = normalise(stripped)
+    tokens = full.split()
+    candidates = [full]
+    hyphenated = keep_hyphens(stripped)
+    if hyphenated != full:
+        candidates.append(hyphenated)
+    if len(normalise(name)) >= rules["name_truncated_chars"] and len(tokens) > 1:
+        candidates.append(" ".join(tokens[:-1]))
+    if len(tokens) > 3:
+        candidates.append(" ".join(tokens[:3]))
+    if len(tokens) > 2:
+        candidates.append(" ".join(tokens[:2]))
+    if len(tokens) == 1 and len(tokens[0]) > 12:
+        candidates.append(tokens[0][:8])
+    seen, variants = set(), []
+    for variant in candidates:
+        if len(variant) >= 4 and variant not in seen:
+            seen.add(variant)
+            variants.append(variant)
+    return variants[: int(rules["name_variants_max"])]
+
+
+def similar(candidate_name: str, ours: str, rules: dict) -> bool:
+    return SequenceMatcher(None, normalise(candidate_name), normalise(ours)).ratio() >= rules["name_similarity_min"]
+
+
+def find_candidates(eq: Equasis, ours: dict, rules: dict) -> tuple[list[dict], str]:
+    gathered, used = {}, ""
+    variants = name_variants(ours["name"], rules) or [ours["name"]]
+    for index, variant in enumerate(variants):
+        found = eq.search(variant)
+        if index:
+            found = [c for c in found if similar(c["name"], ours["name"], rules)]
+        for candidate in found:
+            gathered.setdefault(candidate["imo"], candidate)
+        if found and not used:
+            used = variant
+        ranked = [score(ours, c, rules)[0] for c in gathered.values()]
+        if ranked and max(ranked) >= rules["levels"]["medium"]:
+            return list(gathered.values()), used
+    return list(gathered.values()), used
+
+
 def resolve_vessel(eq: Equasis, ours: dict, rules: dict) -> dict:
-    candidates = eq.search(ours["name"])
+    candidates, search_name = find_candidates(eq, ours, rules)
     ranked = sorted(((score(ours, c, rules), c) for c in candidates), key=lambda item: -item[0][0])
     tied = [item for item in ranked if item[0][0] == ranked[0][0][0]] if ranked else []
     if len(tied) > 1 and ours.get("dwt"):
@@ -83,7 +142,7 @@ def resolve_vessel(eq: Equasis, ours: dict, rules: dict) -> dict:
                 points, why = points + rules["scores"]["size"], why + ["dwt"]
             rescored.append(((points, why), candidate))
         ranked = sorted(rescored, key=lambda item: -item[0][0]) + ranked[len(tied):]
-    record = {"candidates": len(candidates), "source": "equasis", "resolved_utc": datetime.now(UTC).isoformat(timespec="seconds")}
+    record = {"candidates": len(candidates), "search_name": search_name, "source": "equasis", "resolved_utc": datetime.now(UTC).isoformat(timespec="seconds")}
     tie = len(ranked) > 1 and ranked[0][0][0] == ranked[1][0][0]
     if not ranked or tie or level(ranked[0][0][0], rules) == "weak":
         return record | {"confidence": "unresolved" if ranked else "not found", "reasons": "tie" if tie else ""}
