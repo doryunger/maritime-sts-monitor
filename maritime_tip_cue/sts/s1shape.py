@@ -17,6 +17,20 @@ def measure(obj: dict, cfg: dict, pixel: float) -> dict | None:
     if not lengths or not widths:
         return None
     length, beam = max(lengths), max(widths)
+    return _measure(obj, cfg, pixel, length, beam, cfg["polarisation"])
+
+
+def second_hull(obj: dict, cfg: dict, pixel: float, length_m: float, pol: str, length_to_beam: float) -> dict | None:
+    if obj["d"] is None or not length_m or length_m <= 0:
+        return None
+    out = _measure(obj, cfg, pixel, float(length_m), float(length_m) / length_to_beam, pol)
+    if out is None:
+        return None
+    return {"rows_share": out["outside_peak_rows"] / out["rows"], "edge_noise": out["edge_noise"]}
+
+
+def _measure(obj: dict, cfg: dict, pixel: float, length: float, beam: float, pol: str) -> dict | None:
+    d = obj["d"]
     if not np.isfinite([length, beam]).all() or min(length, beam) <= 0:
         return None
     angle, _, width = d["rect"]
@@ -32,7 +46,7 @@ def measure(obj: dict, cfg: dict, pixel: float) -> dict | None:
     y = center[1] + s[:, None] * u[1] + t[None, :] * n[1]
     a = obj["a"]
     rr, cc = (a["py"][0, 0] - y) / pixel, (x - a["px"][0, 0]) / pixel
-    power = 10 ** (a[cfg["polarisation"]] / 10)
+    power = 10 ** (a[pol] / 10)
     grid = map_coordinates(power, np.array([rr, cc]), order=1, mode="constant", cval=np.nan)
     near = np.abs(t) <= width / 2 + cfg["search_margin_m"]
     sea_cells = np.abs(t) >= width / 2 + cfg["sea_margin_m"]

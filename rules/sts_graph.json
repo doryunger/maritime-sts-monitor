@@ -711,6 +711,124 @@
       "basis": "Upper bound of the same one-beam consistency check. A straight but excessively wide box is not sufficient evidence of a single hull."
     }
   },
+  "s1_confidence": {
+    "enabled": {
+      "value": true,
+      "basis": "Score decides the S1 verdict: the shape rule alone could not separate single ships from unresolved pairs."
+    },
+    "threshold": {
+      "value": 0.75,
+      "basis": "user decision 2026-10-25: accept about 3 missed pairs of 60 and some false pairs"
+    },
+    "length_min_m": {
+      "value": 150,
+      "basis": "Pair hulls shorter than this were not seen in the labelled S1 hulls.",
+      "unit": "m"
+    },
+    "length_max_m": {
+      "value": 420,
+      "basis": "Pair hulls longer than this were not seen in the labelled S1 hulls.",
+      "unit": "m"
+    },
+    "width_centre_beams": {
+      "value": 1.95,
+      "basis": "Centre of the outline width in beams for two ships side by side; the score uses the distance from it."
+    },
+    "intercept": {
+      "value": -15.6476750860107,
+      "basis": "Class-balanced L2 logistic fit (lambda 1.0, standardised features) 2026-10-25, labelled hulls: fujairah_outer 21 pairs/92 singles; johor_east_scs 4 pairs/89 singles; malaysia_eopl 10 pairs/141 singles; off_sohar 24 pairs/72 singles. Retrospective, leave-one-region-out check in docs/feasibility.md."
+    },
+    "coef_in_length": {
+      "value": 5.138605562073935,
+      "basis": "Class-balanced L2 logistic fit (lambda 1.0, standardised features) 2026-10-25, labelled hulls: fujairah_outer 21 pairs/92 singles; johor_east_scs 4 pairs/89 singles; malaysia_eopl 10 pairs/141 singles; off_sohar 24 pairs/72 singles. Retrospective, leave-one-region-out check in docs/feasibility.md."
+    },
+    "coef_shape_rule": {
+      "value": 5.796140743604153,
+      "basis": "Class-balanced L2 logistic fit (lambda 1.0, standardised features) 2026-10-25, labelled hulls: fujairah_outer 21 pairs/92 singles; johor_east_scs 4 pairs/89 singles; malaysia_eopl 10 pairs/141 singles; off_sohar 24 pairs/72 singles. Retrospective, leave-one-region-out check in docs/feasibility.md."
+    },
+    "coef_width_off": {
+      "value": -1.8505800308840052,
+      "basis": "Class-balanced L2 logistic fit (lambda 1.0, standardised features) 2026-10-25, labelled hulls: fujairah_outer 21 pairs/92 singles; johor_east_scs 4 pairs/89 singles; malaysia_eopl 10 pairs/141 singles; off_sohar 24 pairs/72 singles. Retrospective, leave-one-region-out check in docs/feasibility.md."
+    },
+    "coef_light_sep": {
+      "value": -6.829340902491343,
+      "basis": "Class-balanced L2 logistic fit (lambda 1.0, standardised features) 2026-10-25, labelled hulls: fujairah_outer 21 pairs/92 singles; johor_east_scs 4 pairs/89 singles; malaysia_eopl 10 pairs/141 singles; off_sohar 24 pairs/72 singles. Retrospective, leave-one-region-out check in docs/feasibility.md."
+    },
+    "coef_fill": {
+      "value": 5.94657164341561,
+      "basis": "Class-balanced L2 logistic fit (lambda 1.0, standardised features) 2026-10-25, labelled hulls: fujairah_outer 21 pairs/92 singles; johor_east_scs 4 pairs/89 singles; malaysia_eopl 10 pairs/141 singles; off_sohar 24 pairs/72 singles. Retrospective, leave-one-region-out check in docs/feasibility.md."
+    },
+    "coef_vh_second": {
+      "value": 6.797429938268196,
+      "basis": "Class-balanced L2 logistic fit (lambda 1.0, standardised features) 2026-10-25, labelled hulls: fujairah_outer 21 pairs/92 singles; johor_east_scs 4 pairs/89 singles; malaysia_eopl 10 pairs/141 singles; off_sohar 24 pairs/72 singles. Retrospective, leave-one-region-out check in docs/feasibility.md."
+    },
+    "coef_vv_second": {
+      "value": 3.6787818484292445,
+      "basis": "Class-balanced L2 logistic fit (lambda 1.0, standardised features) 2026-10-25, labelled hulls: fujairah_outer 21 pairs/92 singles; johor_east_scs 4 pairs/89 singles; malaysia_eopl 10 pairs/141 singles; off_sohar 24 pairs/72 singles. Retrospective, leave-one-region-out check in docs/feasibility.md."
+    },
+    "coef_vh_edge_noise": {
+      "value": 2.117945283805647,
+      "basis": "Class-balanced L2 logistic fit (lambda 1.0, standardised features) 2026-10-25, labelled hulls: fujairah_outer 21 pairs/92 singles; johor_east_scs 4 pairs/89 singles; malaysia_eopl 10 pairs/141 singles; off_sohar 24 pairs/72 singles. Retrospective, leave-one-region-out check in docs/feasibility.md."
+    }
+  },
+  "s2_confidence": {
+    "threshold": {
+      "value": null,
+      "basis": "not applied: the S2 verdict stays from the pair rule (user 2026-10-25); the score is shown for review only"
+    },
+    "width_ratio_cap": {
+      "value": 4,
+      "basis": "Cap on the S2 width ratio before scoring."
+    },
+    "ratio_ab_cap": {
+      "value": 5,
+      "basis": "Cap on the S2 hull A to hull B ratio before scoring."
+    },
+    "intercept": {
+      "value": -7.147297790904531,
+      "basis": "Class-balanced L2 logistic fit (lambda 1.0, standardised features) 2026-10-25, labelled hulls: fujairah_outer 28 pairs/134 singles; johor_east_scs 0 pairs/15 singles; malaysia_eopl 0 pairs/15 singles; off_sohar 9 pairs/37 singles. Retrospective, leave-one-region-out check in docs/feasibility.md."
+    },
+    "coef_rule_pair": {
+      "value": 6.867128491950532,
+      "basis": "Class-balanced L2 logistic fit (lambda 1.0, standardised features) 2026-10-25, labelled hulls: fujairah_outer 28 pairs/134 singles; johor_east_scs 0 pairs/15 singles; malaysia_eopl 0 pairs/15 singles; off_sohar 9 pairs/37 singles. Retrospective, leave-one-region-out check in docs/feasibility.md."
+    },
+    "coef_weak_evidence": {
+      "value": -1.5037406061611325,
+      "basis": "Class-balanced L2 logistic fit (lambda 1.0, standardised features) 2026-10-25, labelled hulls: fujairah_outer 28 pairs/134 singles; johor_east_scs 0 pairs/15 singles; malaysia_eopl 0 pairs/15 singles; off_sohar 9 pairs/37 singles. Retrospective, leave-one-region-out check in docs/feasibility.md."
+    },
+    "coef_b_fired": {
+      "value": -1.3605257377635627,
+      "basis": "Class-balanced L2 logistic fit (lambda 1.0, standardised features) 2026-10-25, labelled hulls: fujairah_outer 28 pairs/134 singles; johor_east_scs 0 pairs/15 singles; malaysia_eopl 0 pairs/15 singles; off_sohar 9 pairs/37 singles. Retrospective, leave-one-region-out check in docs/feasibility.md."
+    },
+    "coef_width_ratio": {
+      "value": 2.1734408708491335,
+      "basis": "Class-balanced L2 logistic fit (lambda 1.0, standardised features) 2026-10-25, labelled hulls: fujairah_outer 28 pairs/134 singles; johor_east_scs 0 pairs/15 singles; malaysia_eopl 0 pairs/15 singles; off_sohar 9 pairs/37 singles. Retrospective, leave-one-region-out check in docs/feasibility.md."
+    },
+    "coef_ratio_ab": {
+      "value": -0.4244285034611451,
+      "basis": "Class-balanced L2 logistic fit (lambda 1.0, standardised features) 2026-10-25, labelled hulls: fujairah_outer 28 pairs/134 singles; johor_east_scs 0 pairs/15 singles; malaysia_eopl 0 pairs/15 singles; off_sohar 9 pairs/37 singles. Retrospective, leave-one-region-out check in docs/feasibility.md."
+    },
+    "coef_plateau_sigma": {
+      "value": 0.7917126999415298,
+      "basis": "Class-balanced L2 logistic fit (lambda 1.0, standardised features) 2026-10-25, labelled hulls: fujairah_outer 28 pairs/134 singles; johor_east_scs 0 pairs/15 singles; malaysia_eopl 0 pairs/15 singles; off_sohar 9 pairs/37 singles. Retrospective, leave-one-region-out check in docs/feasibility.md."
+    },
+    "coef_shape_step_k": {
+      "value": -0.5691128424357287,
+      "basis": "Class-balanced L2 logistic fit (lambda 1.0, standardised features) 2026-10-25, labelled hulls: fujairah_outer 28 pairs/134 singles; johor_east_scs 0 pairs/15 singles; malaysia_eopl 0 pairs/15 singles; off_sohar 9 pairs/37 singles. Retrospective, leave-one-region-out check in docs/feasibility.md."
+    },
+    "coef_shape_continuity": {
+      "value": 0.9741759170135353,
+      "basis": "Class-balanced L2 logistic fit (lambda 1.0, standardised features) 2026-10-25, labelled hulls: fujairah_outer 28 pairs/134 singles; johor_east_scs 0 pairs/15 singles; malaysia_eopl 0 pairs/15 singles; off_sohar 9 pairs/37 singles. Retrospective, leave-one-region-out check in docs/feasibility.md."
+    },
+    "coef_shape_pair": {
+      "value": 1.1289325817884086,
+      "basis": "Class-balanced L2 logistic fit (lambda 1.0, standardised features) 2026-10-25, labelled hulls: fujairah_outer 28 pairs/134 singles; johor_east_scs 0 pairs/15 singles; malaysia_eopl 0 pairs/15 singles; off_sohar 9 pairs/37 singles. Retrospective, leave-one-region-out check in docs/feasibility.md."
+    },
+    "coef_shape_veto": {
+      "value": -1.7810713636244444,
+      "basis": "Class-balanced L2 logistic fit (lambda 1.0, standardised features) 2026-10-25, labelled hulls: fujairah_outer 28 pairs/134 singles; johor_east_scs 0 pairs/15 singles; malaysia_eopl 0 pairs/15 singles; off_sohar 9 pairs/37 singles. Retrospective, leave-one-region-out check in docs/feasibility.md."
+    }
+  },
   "scene": {
     "s2_max_cloud_pct": {
       "value": 30,

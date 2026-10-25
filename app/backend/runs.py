@@ -9,7 +9,7 @@ from pathlib import Path
 from maritime_tip_cue.config import ROOT, settings
 from maritime_tip_cue.sts import rules as rules_mod
 from maritime_tip_cue.watch import registry, report
-from maritime_tip_cue.watch.state import QA_COLUMNS, Store, now, qa_flags, upsert_flags
+from maritime_tip_cue.watch.state import IGNORED_ROLES, QA_COLUMNS, Store, now, qa_flags, upsert_flags
 
 LISTED = ("pair", "possible_pair", "unmeasured")
 SINGLES = 24
@@ -138,10 +138,12 @@ def read_scene_index(path: Path) -> dict:
         flags = {r[0] for r in db.execute("select hull_id from qa_flags")}
         groups: dict = {}
         for value in db.execute(
-            "select h.scene_id, h.site, h.hull_id, f.run_verdict, f.verdict as final_verdict "
+            "select h.scene_id, h.site, h.hull_id, h.role, f.run_verdict, f.verdict as final_verdict "
             "from hulls h join findings f using (scene_id, site, hull_id) order by h.rowid"
         ):
             hull = dict(value)
+            if hull["role"] in IGNORED_ROLES:
+                continue
             groups.setdefault((hull["scene_id"], hull["site"]), []).append(hull)
     finally:
         db.close()
@@ -205,7 +207,7 @@ def stamp(store: Store) -> tuple:
     ).fetchone())
 
 
-def cached(no: int) -> tuple[dict, dict]:
+def cached(no: int) -> tuple[dict, dict, tuple]:
     path = folder(no)
     lock = LOCKS.setdefault(no, threading.Lock())
     with lock:
@@ -216,10 +218,10 @@ def cached(no: int) -> tuple[dict, dict]:
             store.close()
         hit = CACHE.get(no)
         if hit and hit[0] == key:
-            return hit[1], hit[2]
+            return hit[1], hit[2], key
         doc, records = report.collect(path, SINGLES, keep=flagged_ids(no))
         CACHE[no] = (key, doc, records)
-        return doc, records
+        return doc, records, key
 
 
 def finals(no: int) -> dict:
@@ -236,7 +238,7 @@ def flagged_ids(no: int) -> set:
 
 
 def detail(no: int) -> dict:
-    doc, _ = cached(no)
+    doc, _, key = cached(no)
     final = finals(no)
     hulls = [h | {"final_verdict": final.get(h["id"], h["verdict"])} for h in doc["hulls"]]
     by_id = {h["id"]: h for h in hulls}
@@ -256,15 +258,16 @@ def detail(no: int) -> dict:
                 shown |= {"status": "wrong_verdict", "correct_verdict": h["final_verdict"]}
         flags.append(shown)
     row = next(r for r in registry.listing() if r["run_no"] == no)
-    return doc | {"number": no, "summary": summary(row), "hulls": hulls, "flags": flags}
+    version = hashlib.sha1(repr(key).encode()).hexdigest()[:12]
+    return doc | {"number": no, "summary": summary(row), "hulls": hulls, "flags": flags, "image_version": version}
 
 
 def image(no: int, hull_id: str, kind: str) -> bytes | None:
-    _, records = cached(no)
+    _, records, stamp_key = cached(no)
     if hull_id not in records:
         return None
     path = folder(no)
-    key = hashlib.sha1(f"{hull_id}|{CACHE[no][0]}".encode()).hexdigest()[:16]
+    key = hashlib.sha1(f"{hull_id}|{stamp_key}".encode()).hexdigest()[:16]
     target = path / "cache" / f"{key}_{kind}.png"
     if target.exists():
         return target.read_bytes()

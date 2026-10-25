@@ -2,7 +2,7 @@ import math
 
 import numpy as np
 
-from maritime_tip_cue.sts import s1shape
+from maritime_tip_cue.sts import confidence, s1shape
 from maritime_tip_cue.sts.rules import s1_config
 
 
@@ -90,6 +90,7 @@ def verdict(rec: dict, c: dict) -> str:
 def evaluate(objects: list[dict], rules: dict) -> list[dict]:
     c = s1_config(rules)
     bl = blur(objects, c)
+    conf = rules.get("s1_confidence")
     rows = []
     for obj in objects:
         rec = {"length_m": None, "width_beams": None, "light_separation": None, "overlap": None, "fill": None, "blur_m": bl, "vessels": None, "rect_angle_deg": None}
@@ -107,6 +108,7 @@ def evaluate(objects: list[dict], rules: dict) -> list[dict]:
                 vessels=vessels(obj),
             )
         v = verdict(rec, c)
+        rule_pair = v == "pair"
         shape_cfg = rules.get("s1_single_box")
         if shape_cfg and shape_cfg["enabled"] and d is not None and obj["straight"]:
             rec["single_box"] = s1shape.measure(obj, shape_cfg, c["pixel_m"])
@@ -115,5 +117,23 @@ def evaluate(objects: list[dict], rules: dict) -> list[dict]:
                 rec["single_box_veto"] = True
         rec["weak_evidence"] = v == "possible_pair"
         rec["verdict"] = c["weak_pair_verdict"] if v == "possible_pair" else v
+        if conf and conf["enabled"]:
+            rec["confidence"] = None
+            if d is not None and obj["straight"] and rec["length_m"] is not None:
+                shape_cfg = rules["s1_single_box"]
+                reference = max(
+                    max([x["length_m"] for x in obj.get("detections", []) if x.get("own") and x.get("length_m") is not None], default=0.0),
+                    rec["length_m"] - bl,
+                )
+                pixel = c["pixel_m"]
+                ratio = c["hull_length_to_beam"]
+                vh = s1shape.second_hull(obj, shape_cfg, pixel, reference, "vh", ratio)
+                vv = s1shape.second_hull(obj, shape_cfg, pixel, reference, "vv", ratio)
+                rec["second_hull"] = {"vh_rows_share": (vh or {}).get("rows_share"), "vv_rows_share": (vv or {}).get("rows_share"), "vh_edge_noise": (vh or {}).get("edge_noise")}
+                rec["rule_verdict"] = rec["verdict"]
+                rec["shape_rule_pair"] = rule_pair
+                rec["confidence"] = confidence.score(confidence.s1_features(rec, rule_pair, vh, vv, conf), conf)
+                if conf["threshold"] is not None:
+                    rec["verdict"] = "pair" if rec["confidence"] >= conf["threshold"] else "single"
         rows.append(rec)
     return rows

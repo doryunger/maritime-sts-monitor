@@ -24,7 +24,8 @@ FastAPI (`server.py`) over `runs.py` reads `data/runs/registry.db` for the run l
 per-run cache of minimal SQLite rows, invalidated by the main database and WAL file's path, modification time and
 size. Unchanged runs require only file metadata checks. Changed runs are read in a single read-only transaction;
 record JSON, AIS candidates, chips and fixtures are not loaded. The shared `report.select_review_hulls` function
-preserves exactly the full report's seeded review sample, including flagged singles. Running/stopped status is
+preserves exactly the full report's review sample, including flagged singles; the index skips the same
+duplicate and hull-B-box roles as the report, otherwise the two samples differ. Running/stopped status is
 derived on every request so a quiet run can age into stopped without a database write.
 
 `/api/scenes` returns an ETag and a 304 response when the visible rows have not changed. A run's detailed document
@@ -64,6 +65,7 @@ After a pair-rule recheck, the app presents earlier QA choices against the curre
 The expandable AIS matching evidence reads `ais_candidates` from SQLite and shows named terrestrial candidates and
 their decision evidence per slot, plus counts of satellite and unnamed exclusions. This is diagnostic context, not a
 vessel identity QA label; the imagery review flags remain the only user feedback stored by the app.
+Each card shows the pair confidence next to the verdict badge; its tooltip gives the S1 threshold or says the S2 score is review-only.
 
 ## Deployment on the control host
 

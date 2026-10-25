@@ -121,7 +121,7 @@ export default function Run() {
               <div key={sec}>
                 <h2>{label(sec)} <span className="muted">({hulls.length})</span></h2>
                 <div className="grid">
-                  {hulls.map((h) => <HullCard key={h.id} run={no} hull={h} flag={flags[h.id]} onSaved={onSaved} focused={h.hull_id === focus} />)}
+                  {hulls.map((h) => <HullCard key={h.id} run={no} hull={h} flag={flags[h.id]} onSaved={onSaved} focused={h.hull_id === focus} version={doc.image_version} />)}
                 </div>
               </div>
             );

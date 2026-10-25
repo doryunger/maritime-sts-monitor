@@ -17,11 +17,12 @@ interface Props {
   run: number;
   hull: Hull;
   focused?: boolean;
+  version?: string;
   flag?: Flag;
   onSaved: (f: Flag) => void;
 }
 
-export default function HullCard({ run, hull, flag, onSaved, focused }: Props) {
+export default function HullCard({ run, hull, flag, onSaved, focused, version }: Props) {
   const [status, setStatus] = useState(flag?.status ?? "");
   const [fix, setFix] = useState(flag?.correct_verdict ?? "");
   const [note, setNote] = useState(flag?.note ?? "");
@@ -37,6 +38,10 @@ export default function HullCard({ run, hull, flag, onSaved, focused }: Props) {
   const options = hull.verdict === "unmeasured" ? LABELS : FLAGS;
   const alternatives = Object.keys(NAMES).filter((v) => v !== hull.verdict);
   const ready = !!status && (status !== "wrong_verdict" || !!fix);
+  const choose = (v: string) => {
+    setStatus(v);
+    if (v === "wrong_verdict" && alternatives.length === 1) setFix(alternatives[0]);
+  };
   const dirty = status !== (flag?.status ?? "") || (fix || "") !== (flag?.correct_verdict ?? "") || note.trim() !== (flag?.note ?? "");
   const name = `q-${hull.id}`;
 
@@ -72,7 +77,7 @@ export default function HullCard({ run, hull, flag, onSaved, focused }: Props) {
           <>
             <figure onClick={() => setZoom("raw")}>
               <div className="pin-wrap">
-                <img loading="lazy" src={api.image(run, hull.id, "raw")} alt={`Raw capture of ${label(hull.verdict)} hull`} />
+                <img loading="lazy" src={api.image(run, hull.id, "raw", version)} alt={`Raw capture of ${label(hull.verdict)} hull`} />
                 {pair && (hull.vessels || []).map((v, i, all) => {
                   const o = all[1 - i] || v;
                   const dx = v.fx - o.fx, dy = v.fy - o.fy, len = Math.hypot(dx, dy) || 1;
@@ -89,7 +94,7 @@ export default function HullCard({ run, hull, flag, onSaved, focused }: Props) {
               <figcaption>Raw</figcaption>
             </figure>
             <figure onClick={() => setZoom("overlay")}>
-              <img loading="lazy" src={api.image(run, hull.id, "overlay")} alt="Same crop with hull outlines" />
+              <img loading="lazy" src={api.image(run, hull.id, "overlay", version)} alt="Same crop with hull outlines" />
               <figcaption>Outlines</figcaption>
             </figure>
           </>
@@ -99,6 +104,18 @@ export default function HullCard({ run, hull, flag, onSaved, focused }: Props) {
       </div>
       <div className="cap">
         <span className={`badge v-${hull.verdict}`}>{label(hull.verdict)}</span>
+        <span
+          className="mono"
+          title={
+            hull.confidence === null || hull.confidence === undefined
+              ? "—"
+              : hull.confidence_threshold === null || hull.confidence_threshold === undefined
+                ? "Score only; verdict from the S2 rule"
+                : `Pair when at least ${hull.confidence_threshold}`
+          }
+        >
+          Confidence {hull.confidence === null || hull.confidence === undefined ? "—" : hull.confidence.toFixed(2)}
+        </span>
         {changed && <span className={`badge after v-${hull.final_verdict}`}>after QA: {label(hull.final_verdict)}</span>}
         <span className="mono">{hull.source.toUpperCase()} {when(hull.time)}</span>
       </div>
@@ -186,12 +203,12 @@ export default function HullCard({ run, hull, flag, onSaved, focused }: Props) {
         <div className="opts" role="radiogroup" aria-label="QA flag">
           {options.map(([v, t]) => (
             <label key={v}>
-              <input type="radio" name={name} value={v} checked={status === v} onChange={() => setStatus(v)} />
-              {t}
+              <input type="radio" name={name} value={v} checked={status === v} onChange={() => choose(v)} />
+              {v === "wrong_verdict" && alternatives.length === 1 ? `${t}: ${NAMES[alternatives[0]]}` : t}
             </label>
           ))}
         </div>
-        {status === "wrong_verdict" && (
+        {status === "wrong_verdict" && alternatives.length > 1 && (
           <div className="opts fix" role="radiogroup" aria-label="Correct verdict">
             <span className="muted small">Correct verdict:</span>
             {alternatives.map((v) => (
@@ -205,12 +222,12 @@ export default function HullCard({ run, hull, flag, onSaved, focused }: Props) {
         <textarea rows={2} placeholder="What looks wrong? (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
         <div className="row">
           <button className="save" disabled={!ready || !dirty || state === "Saving…"} onClick={save}>Save flag</button>
-          <span className="muted small">{state || (flag ? `Saved ${when(flag.updated_utc)}` : "")}</span>
+          <span className={`small ${dirty && !state ? "warn" : "muted"}`}>{state || (dirty ? "Unsaved changes" : flag ? `Saved ${when(flag.updated_utc)}` : "")}</span>
         </div>
       </div>
       {zoom && (
         <div className="zoom" onClick={() => setZoom(null)} role="dialog" aria-label="Enlarged image">
-          <img src={api.image(run, hull.id, zoom as "raw" | "overlay")} alt="" />
+          <img src={api.image(run, hull.id, zoom as "raw" | "overlay", version)} alt="" />
         </div>
       )}
     </article>

@@ -69,6 +69,20 @@ scatter more in pixel units, no separation), width variation along the hull (wea
 for everything, the opening already removes thin rays). The 150-400 m length window stays the only absolute limit. The old possible band (`width_min_beams_possible`, `overlap_min_possible`) now only sets `weak_evidence`; the
 verdict is `single` (`weak_pair_verdict`), as for Sentinel-2.
 
+Confidence (`confidence.py`, rules `s1_confidence`) replaces the binary rule as the S1 verdict: a logistic score of
+eight features and `pair` when it reaches the threshold (0.75), `single` otherwise; the rule's own call stays in
+`rule_verdict`. Why: the shape rule alone could not separate single ships from unresolved pairs, and the single-box veto
+only removes singles it can explain. The features are length in the tanker window, whether the shape rule said `pair`
+(before the single-box veto), distance of the width from 1.95 beams, light separation, fill, and second-hull evidence:
+the share of rows with a supported peak outside the fitted single-hull body (`s1shape.second_hull`, VH and VV) and the
+VH edge residual. Second-hull evidence ignores the own-detection count limit and the Ai2 width; the reference length is
+the larger of the longest own Ai2 length and the outline length minus the blur, so a merged detection still gets a
+full-length fit. An object without an outline has no score and keeps the rule verdict. Fitted class-balanced
+(L2, lambda 1) on the labelled hulls of all four regions; held-out table in
+[feasibility](../../docs/feasibility.md#pair-confidence-score-2026-10-25).
+The Sentinel-2 score (`s2_confidence`, from the stored check only) is display-only: the S2 verdict stays from the
+pair rule, because the held-out S2 score loses pairs the rule keeps.
+
 ## s1shape
 
 The single-box veto traces half-power excess above a local sea median, not midpoint dB and not the binary

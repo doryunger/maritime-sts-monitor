@@ -71,19 +71,24 @@ are loaded once with `python -m maritime_tip_cue.watch.state import <run folder>
 `report.py` is the data layer of the runs app (`app/`): `collect` builds a run's document (run, scenes, listed hulls,
 AIS parties, fixture comparison) from `state.db` and the stored windows and chips, so it works on a finished run
 without the detector, and `render` draws one hull's raw or overlay tile on request. The listed singles are the
-already-flagged singles first, then a seeded random sample up to 24, so a review never drops out of the list when a
-reanalysis changes the singles. The shore reason in the fixture comparison uses the run's stored hot-spot settings.
+already-flagged singles first, then the unflagged singles in a fixed per-hull order (sha1 of seed and hull id) up to
+24. A fixed rank keeps the list stable while reviewing: flagging a listed single only moves it into the kept set. The
+earlier `random.sample` redrew the whole remainder on every flag (2026-10-25: 6-17 of 24 singles changed on finished
+host runs), so cards vanished on reload and the overview, which recomputes with the latest flags, disagreed with an
+open page. The shore reason in the fixture comparison uses the run's stored hot-spot settings.
 Presentation constants live in `report.py`: crop and upscale are `rules/sts_graph.json` `review`
 (300 m half side) with the scale raised to 6 (360 px tiles); Sentinel-2 true colour maps L1C digital number 0-2550
 to 0-255 (`review.s2_stretch_max`); Sentinel-1 VH is shown as 10 log10 of the stored power between 22 and 50 dB
 (uncalibrated units, sea sits at 22-26 dB, ships reach 45-55 dB), the same range for every chip so tiles compare.
 Raw and overlay come from the same crop code, so they have the same pixel size. The Sentinel-1 overlay rebuilds the
 object outline from the chip (white rectangle = footprint, red = the two parallel arms of the pair rule) next to the
-Ai2 boxes (yellow own, cyan others); Sentinel-2 draws hull A and B (red) and the Ai2 box (cyan). The singles sample
-is a seeded random draw over sorted hull ids, so the same seed gives the same list.
+Ai2 boxes (yellow own, cyan others); Sentinel-2 draws hull A and B (red) and the Ai2 box (cyan). Image URLs carry the
+run's cache stamp (`image_version`) so a recheck is not hidden behind the browser's one-hour image cache.
 When the S1 single-box test supplies a single-hull explanation, its green fitted box replaces the forced red
 arms. The card includes body width, width ratio, edge residual and measured side support; its full box length
 uses the Ai2 reference. The extraction rationale is in [s1shape](sts.md#s1shape).
+Each hull carries `confidence` and `confidence_threshold`: the S1 score is stored by the pair check (null when it has
+no outline or the record predates the score), the S2 score is computed at display time from the stored check.
 
 Fixture comparison matches a fixture object to the nearest run hull of the same date within 60 m (Sentinel-1 by the
 pass date in the fixture name, Sentinel-2 only for fixture sets named `<region>_<date>`; the undated sets `known`,

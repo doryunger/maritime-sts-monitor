@@ -1,6 +1,6 @@
+import hashlib
 import json
 import math
-import random
 import re
 from pathlib import Path
 
@@ -8,7 +8,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 from rasterio.warp import transform as warp_transform
 
-from maritime_tip_cue.sts import fixtures, rules as rules_mod, s1shape
+from maritime_tip_cue.sts import confidence, fixtures, rules as rules_mod, s1shape
 from maritime_tip_cue.watch import review, s1 as s1mod
 from maritime_tip_cue.watch.geo import Shore, haversine_m
 from maritime_tip_cue.watch.state import IGNORED_ROLES, VERDICTS, Store
@@ -73,7 +73,7 @@ def hull_rows(store: Store, scene: dict) -> list[dict]:
     return out
 
 
-def describe(scene: dict, rec: dict, taken: set) -> dict:
+def describe(scene: dict, rec: dict, taken: set, rules: dict) -> dict:
     hid = f"{scene['scene_id']}__{rec['hull_id']}"
     if hid in taken:
         hid += f"__{scene['site']}"
@@ -83,6 +83,10 @@ def describe(scene: dict, rec: dict, taken: set) -> dict:
         box = (rec.get("ai2_boxes") or [{}])[0]
         base["ai2"] = {"length_m": rec.get("ai2_length_m"), "width_m": box.get("width_m"), "heading": box.get("heading"), "boxes": len(rec.get("ai2_boxes") or [])}
         base["measures"] = {k: rec.get(k) for k in S1_KEYS} | {"object_length_m": rec.get("object_length_m"), "object_width_m": rec.get("object_width_m")}
+        hull = rec.get("second_hull") or {}
+        base["measures"].update({"second_hull_vh": hull.get("vh_rows_share"), "second_hull_vv": hull.get("vv_rows_share"), "second_hull_vh_edge_noise": hull.get("vh_edge_noise"), "rule_verdict": rec.get("rule_verdict")})
+        base["confidence"] = rec.get("confidence")
+        base["confidence_threshold"] = (rules.get("s1_confidence") or {}).get("threshold")
         shape = rec.get("single_box")
         if shape:
             base["measures"].update({f"box_{k}": shape.get(k) for k in ("width_m", "width_ratio", "edge_noise", "support_length_m")})
@@ -91,6 +95,9 @@ def describe(scene: dict, rec: dict, taken: set) -> dict:
     else:
         chk = rec.get("check") or {}
         base["ai2"] = {"length_m": rec.get("ai2_length_m"), "width_m": rec.get("ai2_width_m"), "heading": rec.get("ai2_heading"), "speed_kn": rec.get("ai2_speed_kn")}
+        group = rules.get("s2_confidence")
+        base["confidence"] = confidence.score(confidence.s2_features(chk, chk.get("verdict"), group), group) if chk and group and group["intercept"] is not None else None
+        base["confidence_threshold"] = group["threshold"] if group else None
         base["measures"] = {k: chk.get(k) for k in S2_KEYS} | {k: chk.get(k) for k in ("hull_a_length_m", "hull_a_width_m", "hull_b_length_m", "hull_b_width_m")}
     return base
 
@@ -347,8 +354,8 @@ def select_review_hulls(hulls: list[dict], n_singles: int, seed: int = 0, keep: 
     singles = sorted((h for h in hulls if h["verdict"] == "single"), key=lambda h: h["id"])
     keep = keep or set()
     picked = {h["id"] for h in singles if h["id"] in keep}
-    rest = [h for h in singles if h["id"] not in picked]
-    picked |= {h["id"] for h in random.Random(seed).sample(rest, max(0, min(n_singles - len(picked), len(rest))))}
+    rest = sorted((h for h in singles if h["id"] not in picked), key=lambda h: hashlib.sha1(f"{seed}:{h['id']}".encode()).hexdigest())
+    picked |= {h["id"] for h in rest[: max(0, n_singles - len(picked))]}
     listed = [
         h for h in hulls
         if h["verdict"] in ("pair", "possible_pair", "unmeasured") or h["id"] in picked or h["id"] in keep
@@ -368,7 +375,7 @@ def collect(folder: Path, n_singles: int = 24, seed: int = 0, keep: set | None =
             for rec in hull_rows(store, s):
                 if rec["role"] in IGNORED_ROLES:
                     continue
-                h = describe(s, rec, taken)
+                h = describe(s, rec, taken, rules)
                 h["image"] = s["source"] == "s1" or window_of(s, rec) is not None
                 all_hulls.append(h)
                 records[h["id"]] = (s, rec)

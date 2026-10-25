@@ -896,3 +896,33 @@ and was not created. AWS still reported EC2 `running` at 14:24:24 after the temp
 Credentials, private IPs and host addresses are not recorded here. These checks confirm that EC2 can reach
 Redis, authenticate, and perform permitted reads and writes. They do not validate the deployed application
 queue workflow end to end.
+
+
+## Pair confidence score (2026-10-25)
+Logistic score (0-1) per hull, features and coefficients in `rules/sts_graph.json` (`s1_confidence`, `s2_confidence`),
+why in [sts.md](../maritime_tip_cue/context/sts.md#s1pair). S1: `pair` at 0.75 or more (user decision: accept about 3
+missed pairs of 60 and some false pairs). S2: shown only, the verdict stays from the pair rule. Fit: class-balanced
+L2 (lambda 1), standardised features, 59 S1 pairs / 394 singles (3 labelled hulls have no outline) and 37 S2 pairs /
+201 singles. Held-out = leave one region out. Analysis, data copies and fit script:
+`C:\Users\Shadow\projects\maritime-sts-analysis\2026-10-25-pair-confidence\`.
+
+S1 held-out at 0.75 against the shape rule (rule after the single-box veto):
+
+| region | pairs | kept | lost | singles | called pair | rule: kept / lost / called pair |
+|---|---|---|---|---|---|---|
+| fujairah_outer | 21 | 21 | 0 | 92 | 2 | 20 / 1 / 0 |
+| johor_east_scs | 4 | 3 | 1 | 89 | 1 | 3 / 1 / 1 |
+| malaysia_eopl | 10 | 9 | 1 | 141 | 2 | 8 / 2 / 6 |
+| off_sohar | 24 | 23 | 1 | 72 | 1 | 23 / 1 / 2 |
+| all | 59 | 56 | 3 | 394 | 6 | 54 / 5 / 9 |
+
+S2 held-out score at 0.5 against the pair rule (johor_east_scs and malaysia_eopl have no labelled S2 pairs, only
+15 singles each, none called pair by the rule or the score):
+
+| region | pairs | kept | lost | singles | called pair | rule: kept / lost / called pair |
+|---|---|---|---|---|---|---|
+| fujairah_outer | 28 | 21 | 7 | 134 | 6 | 28 / 0 / 3 |
+| off_sohar | 9 | 9 | 0 | 37 | 1 | 9 / 0 / 1 |
+| all | 37 | 30 | 7 | 201 | 7 | 37 / 0 / 4 |
+
+The S2 score is worse than the rule on these labels, which is why it is not applied.

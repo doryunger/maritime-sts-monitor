@@ -114,6 +114,8 @@ export interface Hull {
   image: boolean;
   ai2: Record<string, number | null>;
   measures: Record<string, number | string | null>;
+  confidence: number | null;
+  confidence_threshold: number | null;
   ais: AisParty[];
   ais_diagnostics?: Record<"a" | "b", AisSlotDiagnostics> | null;
   ais_status?: "matched" | "no_match" | "no_data" | "not_checked";
@@ -165,6 +167,7 @@ export interface FixturePass {
 
 export interface RunDetail {
   number: number;
+  image_version: string;
   summary: RunSummary;
   run: {
     hot_spot: string;
@@ -200,7 +203,7 @@ export const api = {
     };
   },
   run: (n: number) => fetch(`/api/runs/${n}`).then((r) => json<RunDetail>(r)),
-  image: (n: number, id: string, kind: "raw" | "overlay") => `/api/runs/${n}/hulls/${encodeURIComponent(id)}/${kind}.png`,
+  image: (n: number, id: string, kind: "raw" | "overlay", version = "") => `/api/runs/${n}/hulls/${encodeURIComponent(id)}/${kind}.png${version ? `?v=${version}` : ""}`,
   saveFlag: (n: number, id: string, body: { status: string; correct_verdict: string | null; note: string }) =>
     fetch(`/api/runs/${n}/flags/${encodeURIComponent(id)}`, {
       method: "PUT",
