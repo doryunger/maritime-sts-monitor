@@ -58,22 +58,21 @@ Conventions are in AGENTS.md (loaded via CLAUDE.md for Claude). Read docs by sec
   `run --job-key <key> [--resume]` handles one job. No wake/stop calls. `STS_CONFIG_PATH` selects a complete
   deployment config, including Linux detector paths. Do not run GPU processing on Lightsail.
 
-## Where work stands (2026-10-20)
-- Runs 1-5 (Fujairah 9 Oct and 12-19 Oct, off_sohar, Johor, EOPL; 12-19 Oct 2026) reviewed, re-checked with the S1 and S2 shape rules, AIS-matched and published to S3 (45 findings, 8 parquet files). Johor and EOPL have one pair each; their singles are largely unreviewed.
-- Expanded EOPL/Johor runs 6 and 7 finished. Gulf catch-up uses Fujairah run 8 and Sohar run 9; both explicit
-  jobs were adopted into the shared tracker/outbox and claimed by their existing local workspaces. The local
-  launcher's schema 2 session points to those shared jobs. Current status belongs in
-  `data/local_runner/session.json`, not the superseded external survey supervisor's progress file.
-  Its frozen survey manifest remains outside the repo under the earlier analysis directory. Do not launch
-  overlapping detectors: scene scratch paths are shared.
-- Operational priorities are now the user's [catalogue tracker and EC2 workflow](../PLAN.md#current-priorities).
-- AIS collection and GizmoSQL now run on the dedicated Lightsail AIS/control host; connection settings
-  are in ignored `data/secrets/control_host.json`. The AIS URI now points there, not to ubuntu3. Both local
-  clients and a complete capture cycle passed. Old AIS services/files were removed from ubuntu3; unrelated
-  apps remain. See [migration verification](../docs/feasibility.md#ais-deployment-migration-verification-2026-10-20)
-  for the external backup and manifests. No endpoints or keys belong in Git.
-- The catalogue tracker is deployed with its four-daily timer. All eight site/sensor channels were baselined
-  without historical dispatch; repeat polling produced no duplicates. Expanded Malaysian bounds are now
-  published in the shared list. Worker execution is implemented and its S3 handshake tested; an actual EC2
-  detector run and automatic lifecycle are not verified or enabled by this delivery. External tests and
-  measurements are in `docs/feasibility.md`.
+## Where work stands (2026-10-25)
+- All state is in one Postgres database on the control host (`review` and `processing` schemas, see
+  `maritime_tip_cue/context/store.md`); no SQLite file is read or written any more except by the one-time importers
+  `pgimport` and `pgledger`. The cutover ran on 2026-10-25: 63 run databases (63 runs, 787 review flags) and the
+  catalogue ledger (107 jobs, 72 attempts, 158 observations) were imported and verified, `pg check` is clean, and the
+  manager, app and EC2 worker run on the Postgres-only code (commit `8c58aa4`). The old SQLite files, a Postgres dump
+  and the previous images (`:pre-pg` tags for app, manager and worker) are kept on the hosts until about 2026-11-01.
+- End-to-end check on EC2 (2026-10-25): one reprocessed Johor S2 scene claimed, detected (4.7 min on the T4), its run
+  written to Postgres by the worker over the private network with the limited worker login, linked scan -> job ->
+  attempt -> run (`pg trace --job`), review chips uploaded, nothing published (no pairs). The two hand-adopted Gulf
+  catch-up jobs of 2026-10-20 are recorded as the scan event `adopted-20261020T175244Z`.
+- Reviews live in Postgres (`review.qa_flags`); the app saves a flag in one transaction and answers after reading the
+  stored row back. The tracked `reviews/<n>.json` files are history only.
+- Tests that need Postgres run in Docker on the Ubuntu host (see Common commands). Access, certificate and backup
+  notes: `deploy/postgres/README.md`. No endpoints, keys or passwords belong in Git.
+- Operational priorities are the user's [catalogue tracker and EC2 workflow](../PLAN.md#current-priorities).
+- AIS collection and GizmoSQL run on the dedicated Lightsail AIS/control host; connection settings are in ignored
+  `data/secrets/control_host.json`. See [migration verification](../docs/feasibility.md#ais-deployment-migration-verification-2026-10-20).

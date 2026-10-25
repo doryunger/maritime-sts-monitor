@@ -932,3 +932,27 @@ Independent S1 check on the fixtures, which the fit never saw: Fujairah 2026-10-
 rule; Hormuz 2026-10-04 is unchanged (17 of 17, no false pairs). Two fixture labels were corrected from single to
 pair after review (user, 2026-10-25): #131, which is run 23 w0_45285_278719 already labelled pair in QA, and #133.
 The S2 fixture `s3` #9 is a known false pair of the S2 rule (user, 2026-10-25), and the test expects it.
+
+## Postgres cutover (2026-10-25)
+
+Every per-run SQLite file, the run registry and the catalogue ledger moved to one Postgres database on the control
+host. Measured during the cutover:
+
+- Import of the 63 run databases: runs 63, scenes 111, hulls 5,959, raw detections 13,447, events 12,500, AIS
+  candidates 7,254, review flags 787; `pgimport verify` matched every run on row counts, flags and final-verdict counts.
+- Ledger import: scans 26, channels 8, observations 158, jobs 107, job attempts 72, scan sources 196. All 107
+  manifests kept their digest through jsonb. 158 of 158 observations and 105 of 107 jobs fell inside a scan window;
+  the two hand-adopted jobs got the explicit scan event `adopted-20261020T175244Z`. All 54 job runs matched exactly one
+  attempt by folder name; one succeeded attempt (the 2026-10-22 test job) had only an S3 artifact `state.db` and was
+  imported from there as run 64.
+- Bug found and fixed during the import: explicit run numbers did not advance the run-number sequence, so the next
+  new run would have collided; the importer now ends with `pg init`.
+- EC2 reached Postgres over the private network with full certificate verification (the certificate names the
+  public and the private address). The limited worker login can read and write data and use the run-number
+  sequence; dropping or truncating tables and creating roles are refused.
+- The rules change of 2026-10-25 (new rules hash) made the scan re-version every scene: about 48 jobs were created and
+  the manager closed all of them as superseded, because earlier jobs had completed those scenes.
+- One scene was deliberately reprocessed on EC2 to prove the path: Johor S2 T48NVJ 2026-10-23 (no pairs, nothing
+  published). Attempt 1 ran 14:32:59 to 14:37:38 UTC; run 66 holds 1 scene, 15 hulls, 21 raw detections, 130 events.
+  Building the new worker image used 16.5 GB of EC2 disk (24 GB free before, 12 GB after the build); watch it.
+
