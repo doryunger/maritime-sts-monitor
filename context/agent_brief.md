@@ -48,6 +48,7 @@ Conventions are in AGENTS.md (loaded via CLAUDE.md for Claude). Read docs by sec
 - `.venv/Scripts/python -m maritime_tip_cue.ais.match <run no>` match AIS to the after-QA pair hulls (`--all-checked --stats` for limit measurements).
 - `.venv/Scripts/python -m maritime_tip_cue.watch.recheck <run numbers>` re-runs the S2 pair check of runs from their stored windows (after a rule change; no detector).
 - `.venv/Scripts/python -m maritime_tip_cue.publish <runs> [--upload]` builds the GeoParquet and captures from the runs' after-QA pairs (dedupe across tiles and hot spots) into `data/publish/`, and uploads with `--upload`. Why notes: `maritime_tip_cue/context/publish.md`.
+- `.venv/Scripts/python -m maritime_tip_cue.publish sync [--runs N ...] [--upload] [--dry-run]` brings the published Parquet in line with review verdicts (pair->single stays as `rejected`, single->pair is added, QA status updated; `publish_sync.py`); `--dry-run` prints the plan only. See `publish.md` `## Syncing reviews`.
 - `app\start.cmd` runs app at http://127.0.0.1:8765/ (runs table, run pages, QA saved to `review.qa_flags`).
 - `run-scenes.cmd` lists numbered shared queue jobs; `python -m maritime_tip_cue.local_runner --all` consumes ready
   jobs, `--resume` recovers the saved session, and `--status` reads local/shared state without processing.

@@ -16,7 +16,7 @@ longer hull; this catches S2 tiles that overlap and hot spots that overlap (fuja
 `also_in`. A vessel seen again on a later pass is a new finding.
 
 Rows: point geometry (WKB, GeoParquet 1.0 `geo` metadata, OGC:CRS84 by default) at the pair centre, capture time and
-date, hot spot, source, scene, run and hull ids, QA status (`confirmed`, `corrected` or `unreviewed`), the source's
+date, hot spot, source, scene, run and hull ids, QA status (`confirmed`, `corrected`, `unreviewed` or, after a sync, `rejected`), the source's
 measurements as JSON, and vessel 1 and 2 (the same numbering as the app: S2 hull A and B or shape step, S1 longer and
 shorter light line), each with position and AIS name, IMO, MMSI, flag, match distance and report age, null when
 unmatched. `vessel_1_is_sanctioned` and `vessel_2_is_sanctioned` are always boolean; missing or null archive values, including unmatched slots, are false; `ais_covered` false means the archive had no ships at that time, so "no name" is not evidence.
@@ -72,3 +72,35 @@ in Postgres under the attempt's run), `rules_sha256` (the pinned rules in the jo
 job's manifest against a fresh download of `scene_id`. Review data is a QA aid, never a gate: a missing review upload
 is recorded in the receipt and does not stop publication.
 
+## Syncing reviews
+`python -m maritime_tip_cue.publish sync [--runs N ...] [--upload] [--dry-run]` brings the Parquet in line with the
+reviews. A verdict used to change only Postgres: pair->single left the row, single->pair was never added (the worker
+matched and captured only the hulls that were pairs at job end) and confirmed pairs stayed `unreviewed`.
+
+Plan = desired state (`review.findings` verdict after QA and `review.qa_flags`) minus the rows read from S3 (all
+Parquets under the findings prefix, matched by run, scene, hot spot and hull, never by job). Per file it prints
+`added / rejected / restored / status_updated / unchanged`; a second sync prints `nothing to change`.
+- Pair turned single or excluded: the row stays with `qa_status = 'rejected'` and `verdict` = `single` / `excluded`
+  (any other non-pair verdict is written as is); every other column, the captures and the PNG paths stay. A later pair
+  verdict returns it to `confirmed` / `corrected` / `unreviewed`. Confirmed (`ok`) and corrected (`wrong_verdict`,
+  `is_pair`) use `QA_LABEL`. `qa_note` is not touched.
+- Viewer contract (the viewer is in another repo): hide rows where `qa_status = 'rejected'`. New values: `qa_status`
+  `rejected`; `verdict` `single`, `excluded` (and `pair`, as before) on rejected rows.
+- A pair with no published row is added: AIS matching for only those hulls (`ais.match.select_hulls` +
+  `run_match`, the code of `watch/jobs.py`, current rules), then the normal captures and row through `assemble`. Provenance
+  columns are copied from another row of the same run, else only `attempt_id`. The captures need the run folder
+  (`data/runs/<folder>`) on the machine that syncs. A pair that is a duplicate of a published, non-rejected finding
+  (same rule as publishing) is counted as skipped before any AIS call or image is made; the merge applies the rule again.
+- Edits go through `merge_group` with `job_id=None` and an `edits` map: rows are replaced by `finding_id` inside the
+  If-Match / ETag retry loop, so other jobs' rows in a shared file are untouched. Images go up before the Parquet, for
+  added findings only. A rejected row no longer counts as the twin of a new finding, so a rejected twin cannot hide a
+  real pair seen from another tile.
+- `--upload` is the only mode that changes S3 or records anything: it writes `review.outputs` / `output_scenes` /
+  `captures` (with `scene_id`, `site`, `hull`) for the added findings; `n_rows` of an output is the run's rows in that
+  file after the sync. Without it, S3 is only read: added rows and PNGs are written under `data/publish`, edits are
+  reported but not applied, and a repeat shows the same plan. `--dry-run` prints the plan and writes nothing.
+- Runs: default is every run with an output row or a pair after QA; a run the gate rejects (not done, or a job not in
+  the ledger's completed set; legacy runs are exempt from the job requirement) is skipped with a line, while an explicit
+  `--runs` list refuses everything, as publish does.
+- Two edits in different files that depend on each other are seen on the next sync (rows in other files are not edited
+  in the same pass).

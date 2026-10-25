@@ -1,3 +1,4 @@
+import hashlib
 import io
 import json
 
@@ -18,7 +19,7 @@ def length_of(row: dict) -> float:
 
 
 def twin(a: dict, b: dict, rule: dict) -> bool:
-    if a["source"] != b["source"]:
+    if a["source"] != b["source"] or b.get("qa_status") == "rejected":
         return False
     if abs((a["capture_utc"] - b["capture_utc"]).total_seconds()) > rule["dedupe_time_s"]:
         return False
@@ -49,9 +50,11 @@ def encode_rows(rows: list[dict]) -> bytes:
     return sink.getvalue()
 
 
-def write_rows(client, bucket: str, key: str, rows: list[dict], etag: str | None) -> None:
+def write_rows(client, bucket: str, key: str, rows: list[dict], etag: str | None) -> str:
     condition = {"IfMatch": etag} if etag else {"IfNoneMatch": "*"}
-    client.put_object(Bucket=bucket, Key=key, Body=encode_rows(rows), ContentType="application/octet-stream", **condition)
+    body = encode_rows(rows)
+    client.put_object(Bucket=bucket, Key=key, Body=body, ContentType="application/octet-stream", **condition)
+    return hashlib.sha256(body).hexdigest()
 
 
 def list_keys(client, bucket: str, prefix: str) -> list[str]:
@@ -95,15 +98,20 @@ def keep_identity(row: dict, old: dict | None) -> dict:
     return row
 
 
-def merge_group(client, bucket: str, prefix: str, date: str, key: str, new_rows: list[dict], job_id: str | None, rule: dict, on_keep=None) -> dict:
+def merge_group(client, bucket: str, prefix: str, date: str, key: str, new_rows: list[dict], job_id: str | None, rule: dict, on_keep=None, edits: dict | None = None) -> dict:
     for _ in range(ATTEMPTS):
         here, etag = read_rows(client, bucket, key)
         previous = {row["finding_id"]: row for row in here}
         if job_id:
             here = [row for row in here if row.get("job_id") != job_id]
         by_id = {row["finding_id"]: row for row in here}
+        edited = []
+        for finding_id, changes in (edits or {}).items():
+            if finding_id in by_id:
+                by_id[finding_id] = {**by_id[finding_id], **changes}
+                edited.append(finding_id)
         others = {}
-        for other_key in list_keys(client, bucket, f"{prefix}{date}/"):
+        for other_key in list_keys(client, bucket, f"{prefix}{date}/") if new_rows else []:
             if other_key != key and other_key.endswith(".parquet"):
                 others[other_key] = read_rows(client, bucket, other_key)
         kept, skipped, notes = [], [], {}
@@ -132,7 +140,7 @@ def merge_group(client, bucket: str, prefix: str, date: str, key: str, new_rows:
                     for finding_id, text in entries:
                         row = by_id[finding_id]
                         row["also_in"] = ";".join(filter(None, [row.get("also_in"), text]))
-            write_rows(client, bucket, key, merged, etag) if merged else None
+            sha = write_rows(client, bucket, key, merged, etag) if merged else None
             for other_key, entries in notes.items():
                 if other_key != key:
                     rows, other_etag = others[other_key]
@@ -140,7 +148,7 @@ def merge_group(client, bucket: str, prefix: str, date: str, key: str, new_rows:
                         row = next(r for r in rows if r["finding_id"] == finding_id)
                         row["also_in"] = ";".join(filter(None, [row.get("also_in"), text]))
                     write_rows(client, bucket, other_key, rows, other_etag)
-            return {"key": key, "kept": [r["finding_id"] for r in kept], "skipped": skipped, "rows": len(merged)}
+            return {"key": key, "kept": [r["finding_id"] for r in kept], "skipped": skipped, "rows": len(merged), "edited": edited, "sha256": sha}
         except ClientError as error:
             if error.response["Error"]["Code"] not in CONFLICT:
                 raise

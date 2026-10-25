@@ -101,7 +101,7 @@ def collect(no: int) -> list[dict]:
     return collect_at(registry.folder_of(no), no)
 
 
-def collect_at(path: Path, no: int, job_id: str | None = None, rules: dict | None = None) -> list[dict]:
+def collect_at(path: Path, no: int, job_id: str | None = None, rules: dict | None = None, only: set | None = None) -> list[dict]:
     store = Store.open(no)
     try:
         site = site_settings(store)
@@ -134,6 +134,8 @@ def collect_at(path: Path, no: int, job_id: str | None = None, rules: dict | Non
         ).fetchall()
         out = []
         for r in rows:
+            if only is not None and (r["scene_id"], r["site"], r["hull_id"]) not in only:
+                continue
             rec = r["record"]
             parties = {
                 p["slot"]: dict(p)
@@ -363,6 +365,7 @@ def assemble(findings: list[dict], rules: dict, root: Path | None = None, proven
                     "run": f["run"],
                     "job_id": f.get("job_id"),
                     **(provenance or {}),
+                    **f.get("provenance", {}),
                     "verdict": "pair",
                     "run_verdict": f["run_verdict"],
                     "qa_status": f["qa"],
@@ -428,6 +431,10 @@ def record_and_upload(tables: dict, upload: bool, rules: dict) -> None:
         for no in sorted({f["run"] for f in items}):
             mine = [f for f in items if f["run"] == no]
             per_run[no].append(("output", str(path), f"s3://{bucket}/{key}", date, site, source, len(items), len(items), sorted({f["scene_id"] for f in mine}), sha))
+    record_entries(per_run, stamp, upload)
+
+
+def record_entries(per_run: dict, stamp: str, upload: bool) -> None:
     for no, entries in per_run.items():
         store = Store.open(no)
         try:
@@ -482,6 +489,10 @@ def publish_run(client, bucket: str, out: Path, run_no: int, job_id: str, rules:
 
 
 def main() -> int:
+    if sys.argv[1:2] == ["sync"]:
+        from maritime_tip_cue import publish_sync
+
+        return publish_sync.main(sys.argv[2:])
     parser = argparse.ArgumentParser(prog="maritime-sts-monitor publish")
     parser.add_argument("runs", nargs="+", type=int)
     parser.add_argument("--upload", action="store_true")
