@@ -17,3 +17,16 @@ Choices that are not obvious from the DDL:
 - The importer reads each source from an in-memory snapshot, writes one run per transaction and checks the row counts
   against the source before it commits. A run already present is skipped, so re-running cannot overwrite reviews.
 - Remote access is TLS only with password logins; the user name is random. Credentials never go in Git.
+
+## traceability
+Rule: every row derived from an event carries that event's key, so an event can be traced to all its products.
+The chain is scan (`processing.scans`) -> observation and job (`scan_id`) -> `job_scenes` -> attempt (`job_id`) ->
+run (`review.runs.attempt_id`) -> scenes -> hulls -> AIS, flags, publications (`run_key`, plus composite keys to the
+hull). `review.run_lineage` joins the chain for one run. Legacy PC runs have no attempt and `origin = 'legacy'`.
+- `qa_flags.hull_id` stays the app's `scene__hull[__site]` id; `site` and `hull` are the real key columns, filled by
+  `pg.LINKS` (which `pg init` and the importer run). On 2026-10-25 every one of the 787 flags matched exactly one hull.
+- Published captures link to their hull by the id rule `<source>_<capture time>_<hull id with _ as -, dashes collapsed>`;
+  all 86 findings matched one hull each. `outputs.scene_ids` (comma text) is mirrored in `output_scenes`.
+- `events` carries `run_key` and `scene_id` but no foreign key: it has no `site`, and some events name no scene.
+- `pg trace --run|--attempt|--job|--scan` lists every row an event produced; `pg check` fails when a table has no
+  event key or no foreign key, or when a link is missing. Run it after every import or cutover.

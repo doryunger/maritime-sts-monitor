@@ -116,6 +116,7 @@ def import_run(conn: psycopg.Connection, root: Path, run_no: int, folder: str, c
         if got != expected:
             raise RuntimeError(f"{folder}: imported {got} but the source holds {expected}")
         conn.execute("update review.runs set import_counts = %s where run_key = %s", (json.dumps(got), run_key))
+        conn.execute(pg.LINKS)
         merge_identities(conn, source)
     source.close()
     return got
