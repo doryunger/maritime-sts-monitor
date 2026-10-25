@@ -926,3 +926,9 @@ S2 held-out score at 0.5 against the pair rule (johor_east_scs and malaysia_eopl
 | all | 37 | 30 | 7 | 201 | 7 | 37 / 0 / 4 |
 
 The S2 score is worse than the rule on these labels, which is why it is not applied.
+
+Independent S1 check on the fixtures, which the fit never saw: Fujairah 2026-10-16 keeps 10 of 10 pairs and calls 3 of
+187 singles pair (#171, #150, #106: wide or sidelobe-crossed single targets), against 7 of 8 pairs kept by the shape
+rule; Hormuz 2026-10-04 is unchanged (17 of 17, no false pairs). Two fixture labels were corrected from single to
+pair after review (user, 2026-10-25): #131, which is run 23 w0_45285_278719 already labelled pair in QA, and #133.
+The S2 fixture `s3` #9 is a known false pair of the S2 rule (user, 2026-10-25), and the test expects it.

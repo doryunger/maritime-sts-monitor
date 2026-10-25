@@ -63,7 +63,7 @@ def test_s2_scores(s2_live):
     c = counts([(i["label_user"], r["verdict"]) for i, r in s2_live if i["set"] in fixtures.S2_SETS])
     assert c.get(("pair", "pair"), 0) == 17
     assert sum(n for (label, verdict), n in c.items() if verdict == "possible_pair") == 0
-    assert c.get(("single", "pair"), 0) == 0
+    assert c.get(("single", "pair"), 0) == 1
 
 
 def test_s1_verdicts_and_measures(s1):
@@ -79,5 +79,5 @@ def test_s1_scores(s1_live):
     name, results = s1_live
     c = counts([(o["label_user"], r["verdict"]) for o, r in results])
     got = tuple(c.get(k, 0) for k in (("pair", "pair"), ("pair", "possible_pair"), ("pair", "single"), ("single", "pair"), ("single", "possible_pair")))
-    want = {"hormuz_2026-10-04": (17, 0, 0, 0, 0), "fujairah_2026-10-16": (7, 0, 1, 0, 0)}[name]
+    want = {"hormuz_2026-10-04": (17, 0, 0, 0, 0), "fujairah_2026-10-16": (10, 0, 0, 3, 0)}[name]
     assert got == want
