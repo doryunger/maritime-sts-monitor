@@ -38,3 +38,15 @@ The run's `vessel_identities` table, then the published row per vessel: `vessel_
 vessels aggregator, owned here from now on. The sanctions check, the archive-wide selection and the CSV output were not
 taken: the archive already supplies `is_sanctioned`, and results live in the run database.
 `python -m maritime_tip_cue.equasis <run numbers>` enriches existing runs.
+
+## Seeding from the aggregator's identities
+The archive's `identities` view read `/repo/reference/vessel_ids.csv` of the aggregator. On 2026-10-25 the aggregator
+dropped its Equasis code and moved that data out (535 resolved vessels and a 1.3 MB cache, now in
+`~/equasis-from-vessels-aggregator/` on the control host), so the view errored on every query ("No files found that
+match the pattern") and the identity fill ran empty. Identities are owned here, so `ais.match.load_identities` now reads
+`review.vessel_identities` instead of the archive view, and
+`python -m maritime_tip_cue.identity_seed --vessel-ids <csv> [--cache <json>] [--dry-run]` loads the aggregator's
+resolved vessels (rows with an IMO only; unresolved ones are left for our own lookup, which has more name variants) and
+merges its Equasis cache into `equasis.cache`. A vessel already in the table is never overwritten. The `sanctioned` column
+is not imported: `sanctions.apply` derives it from our own list. Seeding avoids asking Equasis again for those ships,
+which matters because a publish sync that asked for many vessels at once reached its limit.

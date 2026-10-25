@@ -1,6 +1,5 @@
 import argparse
 import math
-import sys
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
@@ -12,6 +11,7 @@ from maritime_tip_cue.ais import archive
 from maritime_tip_cue.sts import rules as rules_mod
 from maritime_tip_cue.watch.geo import Shore, haversine_m
 from maritime_tip_cue.watch.pgutil import iso
+from maritime_tip_cue.watch.registry import fetch
 from maritime_tip_cue.watch.state import IGNORED_ROLES, Store
 
 PAIR_VERDICTS = ("pair",)
@@ -247,16 +247,13 @@ def assign(hulls: dict[str, dict]) -> dict[tuple[str, str], int]:
 def load_identities(ship_ids: list[str]) -> dict:
     if not ship_ids:
         return {}
-    ids = ",".join("'" + s.replace("'", "''") + "'" for s in ship_ids)
-    query = (
-        "select ship_id, name, imo, mmsi, flag, confidence, reasons, equasis_name, equasis_flag, false_flag, equasis_type, "
-        f"gross_tonnage, equasis_dwt, year_built, call_sign, status, candidates, resolved_utc from identities where ship_id in ({ids})"
+    rows = fetch(
+        None,
+        "select ship_id, imo, mmsi, call_sign, gross_tonnage, dwt as equasis_dwt, year_built, vessel_type as equasis_type, "
+        "status, equasis_name, equasis_flag, false_flag, confidence, reasons, candidates, resolved_utc "
+        "from review.vessel_identities where ship_id = any(%s) and imo is not null",
+        (ship_ids,),
     )
-    try:
-        rows = archive.fetch(query).to_pylist()
-    except Exception as error:
-        print(f"archive identities unavailable: {type(error).__name__}: {str(error)[:160]}", file=sys.stderr)
-        return {}
     return {r["ship_id"]: r for r in rows}
 
 
