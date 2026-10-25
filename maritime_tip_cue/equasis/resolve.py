@@ -216,7 +216,7 @@ def enrich(store: Store, rules: dict, eq: Equasis | None = None, log=print) -> d
         try:
             record = resolve_vessel(eq, vessel, rules)
         except (SessionExpired, NotConfigured, requests.RequestException) as error:
-            summary["skipped"] = f"{type(error).__name__}: {error}"
+            summary["skipped"] = f"{vessel['name']}: {type(error).__name__}: {error}"
             log(f"equasis lookup stopped: {summary['skipped']}", file=sys.stderr)
             break
         with store.tx():
