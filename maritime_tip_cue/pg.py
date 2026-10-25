@@ -422,6 +422,13 @@ def check(conn: psycopg.Connection) -> list[str]:
     return problems
 
 
+def who() -> str:
+    try:
+        return getpass.getuser()
+    except (KeyError, OSError):
+        return "unknown"
+
+
 def remove_run(conn: psycopg.Connection, reason: str, run: int | None = None, attempt: str | None = None, by: str | None = None) -> dict:
     if (run is None) == (attempt is None):
         raise ValueError("give exactly one of run or attempt")
@@ -476,7 +483,7 @@ def main() -> int:
             if not args.reason:
                 parser.error("remove-run needs --reason")
             try:
-                result = remove_run(conn, args.reason, args.run, args.attempt, args.by or getpass.getuser())
+                result = remove_run(conn, args.reason, args.run, args.attempt, args.by or who())
             except ValueError as error:
                 print("refused:", error)
                 return 1

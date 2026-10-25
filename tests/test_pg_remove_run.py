@@ -53,3 +53,12 @@ def test_attempt_mode_refuses_a_live_run_an_unknown_attempt_and_ambiguous_argume
         pg.remove_run(pgdb, "x", attempt="nope")
     with pytest.raises(ValueError, match="exactly one"):
         pg.remove_run(pgdb, "x")
+
+
+def test_the_user_name_falls_back_when_the_account_is_unknown(monkeypatch):
+    def unknown():
+        raise KeyError("getpwuid(): uid not found: 1000")
+
+    monkeypatch.setattr(pg.getpass, "getuser", unknown)
+    assert pg.who() == "unknown"
+
