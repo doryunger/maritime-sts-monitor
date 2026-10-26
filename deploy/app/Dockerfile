@@ -23,5 +23,5 @@ ARG GIT_COMMIT=
 ENV STS_GIT_COMMIT=${GIT_COMMIT}
 ENV STS_CONFIG_PATH=/app/config.yaml
 USER 1000:1000
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('STS_APP_PORT', '8765') + '/', timeout=4)"
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD python -c "import os, http.client; c = http.client.HTTPConnection('127.0.0.1', int(os.environ.get('STS_APP_PORT', '8765')), timeout=4); c.request('GET', '/'); assert c.getresponse().status < 500"
 CMD ["python", "-m", "app.backend.server"]
