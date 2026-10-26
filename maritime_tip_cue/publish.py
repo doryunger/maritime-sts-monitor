@@ -13,7 +13,7 @@ import pyarrow.parquet as pq
 from PIL import Image, ImageDraw, ImageFont
 from shapely.geometry import Point
 
-from maritime_tip_cue import task_queue
+from maritime_tip_cue import sanctions, task_queue
 from maritime_tip_cue.config import DATA_DIR, env, settings
 from maritime_tip_cue.publish_merge import merge_group
 from maritime_tip_cue.sts import rules as rules_mod
@@ -108,7 +108,7 @@ def identity_rules(snapshot: dict | None) -> dict:
     return ((snapshot or {}).get("identity") or deployed) | {key: deployed[key] for key in equasis.DEPLOYED_LIMITS}
 
 
-def collect_at(path: Path, no: int, job_id: str | None = None, rules: dict | None = None, only: set | None = None) -> list[dict]:
+def collect_at(path: Path, no: int, job_id: str | None = None, rules: dict | None = None, only: set | None = None, verdicts: tuple = ("pair",)) -> list[dict]:
     store = Store.open(no)
     try:
         site = site_settings(store)
@@ -123,8 +123,6 @@ def collect_at(path: Path, no: int, job_id: str | None = None, rules: dict | Non
             from maritime_tip_cue.equasis import resolve as equasis
 
             summary = equasis.enrich(store, identity_rules(rules))
-            from maritime_tip_cue import sanctions
-
             summary["sanctioned_ships"] = sanctions.apply(store)
             print(f"equasis: {summary}", file=sys.stderr)
         except Exception as error:
@@ -136,8 +134,8 @@ def collect_at(path: Path, no: int, job_id: str | None = None, rules: dict | Non
             "join review.hulls h on h.run_key = f.run_key and h.scene_id = f.scene_id and h.site = f.site and h.hull_id = f.hull_id "
             "join review.scenes s on s.run_key = f.run_key and s.scene_id = f.scene_id and s.site = f.site "
             "left join review.qa_flags q on q.run_key = f.run_key and q.hull_id = f.scene_id || '__' || f.hull_id "
-            "where f.run_key = %s and f.verdict = 'pair' order by f.scene_id, f.hull_id",
-            (store.run_key,),
+            "where f.run_key = %s and f.verdict = any(%s) order by f.scene_id, f.hull_id",
+            (store.run_key, list(verdicts)),
         ).fetchall()
         out = []
         for r in rows:
@@ -147,7 +145,7 @@ def collect_at(path: Path, no: int, job_id: str | None = None, rules: dict | Non
             parties = {
                 p["slot"]: dict(p)
                 for p in store.db.execute(
-                    "select m.slot, m.name, coalesce(m.imo, v.imo) as imo, coalesce(m.mmsi, v.mmsi) as mmsi, m.flag, m.dist_a_m, m.dist_b_m, "
+                    "select m.slot, m.name, coalesce(m.imo, v.imo) as imo, coalesce(m.mmsi, v.mmsi) as mmsi, m.flag, m.dist_a_m, m.dist_b_m, m.score as match_score, "
                     "m.report_age_min, m.ship_id, (m.is_sanctioned or coalesce(v.sanctions_lists, '') <> '') as is_sanctioned, v.sanctions_lists, v.call_sign, v.gross_tonnage, v.dwt as equasis_dwt, v.year_built, "
                     "v.vessel_type, v.status as equasis_status, v.confidence as identity_confidence, v.source as identity_source "
                     "from review.ais_matches m left join review.vessel_identities v on v.ship_id = m.ship_id "
@@ -155,10 +153,16 @@ def collect_at(path: Path, no: int, job_id: str | None = None, rules: dict | Non
                     (store.run_key, r["scene_id"], r["site"], r["hull_id"]),
                 )
             }
+            for p in parties.values():
+                p["sanctions_lists"] = p.get("sanctions_lists") or sanctions.lists_for(p.get("imo")) or None
+                p["is_sanctioned"] = bool(p.get("is_sanctioned") or p["sanctions_lists"])
+                p["sanctions_programs"] = sanctions.programs_for(p.get("imo")) or None
+            if r["verdict"] != "pair" and not any(p["is_sanctioned"] for p in parties.values()):
+                continue
             ships = coverage.get((r["scene_id"], r["site"]))
             out.append(
                 {
-                    "run": no, "job_id": job_id, "root": path, "scene_id": r["scene_id"], "site": r["site"], "hull_id": r["hull_id"], "source": r["source"],
+                    "run": no, "job_id": job_id, "root": path, "scene_id": r["scene_id"], "site": r["site"], "hull_id": r["hull_id"], "source": r["source"], "verdict": r["verdict"],
                     "capture_utc": iso(r["capture_utc"]), "lat": r["lat"], "lon": r["lon"], "run_verdict": r["run_verdict"],
                     "qa": QA_LABEL.get(r["qa"], "unreviewed"), "qa_note": r["qa_note"], "record": rec, "folder": r["folder"],
                     "parties": parties, "ais_coverage_ships": ships, "ais_covered": ships is not None and ships >= floor,
@@ -227,16 +231,17 @@ def draw_markers(img: Image.Image, points: list[dict], matched: list[bool]) -> I
     return Image.alpha_composite(img.convert("RGBA"), layer).convert("RGB")
 
 
-def write_captures(f: dict, base: str, rules: dict, root: Path) -> dict:
+def write_captures(f: dict, base: str, rules: dict, root: Path, single: bool = False) -> dict:
     out = {}
     folder = root / "captures" / ddmmyyyy(f["capture_utc"]) / f["site"] / f["source"]
     folder.mkdir(parents=True, exist_ok=True)
     scene = {"source": f["source"], "folder": f["folder"], "data": f["scene_data"]}
     img = report.render(f["root"], scene, f["record"], rules, False)
     if img is not None:
-        points = report.vessel_points(f["root"], scene, f["record"], rules)
-        if len(points) == 2 and all(0 <= p["fx"] <= 1 and 0 <= p["fy"] <= 1 for p in points):
-            img = draw_markers(img, points, [bool(f["parties"].get(slot)) for slot in ("a", "b")])
+        at = [vessel_positions(f["source"], f["record"], f["lat"], f["lon"])[0] or (f["lat"], f["lon"])] if single else None
+        points = report.vessel_points(f["root"], scene, f["record"], rules, at)
+        if len(points) == (1 if single else 2) and all(0 <= p["fx"] <= 1 and 0 <= p["fy"] <= 1 for p in points):
+            img = draw_markers(img, points, [True] if single else [bool(f["parties"].get(slot)) for slot in ("a", "b")])
         png = folder / f"{base}.png"
         img.save(png)
         out["png"] = png
@@ -280,30 +285,33 @@ def pair_heading(f: dict) -> tuple[float | None, str | None]:
     return (round(mean, 1), source) if mean is not None else (None, None)
 
 
-def party_cols(f: dict, n: int, slot: str, pos) -> dict:
-    p = f["parties"].get(slot) or {}
+def vessel_fields(p: dict, pos, slot: str = "a") -> dict:
     dist = p.get("dist_b_m") if slot == "b" and p.get("dist_b_m") is not None else p.get("dist_a_m")
     return {
-        f"vessel_{n}_lat": pos[0] if pos else None,
-        f"vessel_{n}_lon": pos[1] if pos else None,
-        f"vessel_{n}_ship_id": p.get("ship_id"),
-        f"vessel_{n}_name": p.get("name"),
-        f"vessel_{n}_imo": p.get("imo"),
-        f"vessel_{n}_mmsi": p.get("mmsi"),
-        f"vessel_{n}_flag": p.get("flag"),
-        f"vessel_{n}_call_sign": p.get("call_sign"),
-        f"vessel_{n}_gross_tonnage": p.get("gross_tonnage"),
-        f"vessel_{n}_dwt": p.get("equasis_dwt"),
-        f"vessel_{n}_year_built": p.get("year_built"),
-        f"vessel_{n}_vessel_type": p.get("vessel_type"),
-        f"vessel_{n}_status": p.get("equasis_status"),
-        f"vessel_{n}_identity_confidence": p.get("identity_confidence"),
-        f"vessel_{n}_identity_source": p.get("identity_source"),
-        f"vessel_{n}_is_sanctioned": bool(p.get("is_sanctioned")),
-        f"vessel_{n}_sanctions_lists": p.get("sanctions_lists") or None,
-        f"vessel_{n}_ais_distance_m": dist,
-        f"vessel_{n}_ais_report_age_min": p.get("report_age_min"),
+        "lat": pos[0] if pos else None,
+        "lon": pos[1] if pos else None,
+        "ship_id": p.get("ship_id"),
+        "name": p.get("name"),
+        "imo": p.get("imo"),
+        "mmsi": p.get("mmsi"),
+        "flag": p.get("flag"),
+        "call_sign": p.get("call_sign"),
+        "gross_tonnage": p.get("gross_tonnage"),
+        "dwt": p.get("equasis_dwt"),
+        "year_built": p.get("year_built"),
+        "vessel_type": p.get("vessel_type"),
+        "status": p.get("equasis_status"),
+        "identity_confidence": p.get("identity_confidence"),
+        "identity_source": p.get("identity_source"),
+        "is_sanctioned": bool(p.get("is_sanctioned")),
+        "sanctions_lists": p.get("sanctions_lists") or None,
+        "ais_distance_m": dist,
+        "ais_report_age_min": p.get("report_age_min"),
     }
+
+
+def party_cols(f: dict, n: int, slot: str, pos) -> dict:
+    return {f"vessel_{n}_{key}": value for key, value in vessel_fields(f["parties"].get(slot) or {}, pos, slot).items()}
 
 
 def measures(f: dict) -> dict:
@@ -397,11 +405,11 @@ def assemble(findings: list[dict], rules: dict, root: Path | None = None, proven
     return kept, tables
 
 
-def upload_tables(client, bucket: str, tables: dict, rules: dict, root: Path, job_id: str | None = None) -> dict:
-    prefix_f, prefix_c = settings()["s3"]["findings_prefix"], settings()["s3"]["captures_prefix"]
+def upload_tables(client, bucket: str, tables: dict, rules: dict, root: Path, job_id: str | None = None, folder: str = "sts", prefix_key: str = "findings_prefix") -> dict:
+    prefix_f, prefix_c = settings()["s3"][prefix_key], settings()["s3"]["captures_prefix"]
     outcomes = {}
     for (date, site, source), (path, items) in tables.items():
-        key = prefix_f + path.relative_to(root / "sts").as_posix()
+        key = prefix_f + path.relative_to(root / folder).as_posix()
         by_id = {f["finding_id"]: f for f in items}
 
         def push(kept_rows, by_id=by_id):
@@ -480,17 +488,26 @@ def publish_run(client, bucket: str, out: Path, run_no: int, job_id: str, rules:
     import shutil
     import tempfile
 
-    found = complete(collect_at(out, run_no, job_id, rules))
+    from maritime_tip_cue import publish_sanctioned
+
+    singles = tuple(rules_mod.load()["sanctioned"]["verdicts"])
+    found = complete(collect_at(out, run_no, job_id, rules, verdicts=("pair", *singles)))
     root = Path(tempfile.mkdtemp(prefix="publish-"))
     try:
-        kept, tables = assemble(found, rules, root, provenance)
+        kept, tables = assemble([f for f in found if f["verdict"] == "pair"], rules, root, provenance)
         outcomes = upload_tables(client, bucket, tables, rules, root, job_id) if tables else {}
-        return {
+        result = {
             "pairs": len(kept),
             "published": sum(len(o["kept"]) for o in outcomes.values()),
             "duplicates_skipped": sum(len(o["skipped"]) for o in outcomes.values()),
             "files": sorted(o["key"] for o in outcomes.values()),
         }
+        try:
+            result["sanctioned"] = publish_sanctioned.publish_findings(client, bucket, [f for f in found if f["verdict"] != "pair"], rules, root, job_id, provenance)
+        except Exception as error:
+            result["sanctioned"] = {"error": f"{type(error).__name__}: {error}"}
+            print(f"sanctioned publish failed: {result['sanctioned']['error']}", file=sys.stderr)
+        return result
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

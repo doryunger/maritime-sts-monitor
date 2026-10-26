@@ -18,14 +18,14 @@ PAIR_VERDICTS = ("pair",)
 COLUMNS = (
     "scene_id site hull_id ship_id is_sat name imo mmsi flag seen_utc report_age_min method rep_lat rep_lon "
     "proj_lat proj_lon dist_a_m dist_b_m limit_m ais_length_m ais_width_m meas_length_m length_diff_m "
-    "heading_diff_deg speed_kn chosen slot reasons is_sanctioned"
+    "heading_diff_deg speed_kn chosen slot reasons is_sanctioned score"
 ).split()
 CANDIDATE_COLUMNS = (
     "scene_id site hull_id slot ship_id is_sat name type type_code gt_type_code flag dwt status state "
     "seen_utc elapsed_min captured_utc tile_utc report_age_min method before_seen_utc before_age_min "
     "after_seen_utc after_age_min bracket_gap_min rep_lat rep_lon proj_lat proj_lon distance_m limit_m "
     "ais_length_m ais_width_m meas_length_m length_diff_m ais_heading hull_heading heading_diff_deg "
-    "speed_kn course rot decision reasons is_sanctioned"
+    "speed_kn course rot decision reasons is_sanctioned score"
 ).split()
 
 
@@ -59,7 +59,7 @@ def fetch_reports(capture: datetime, bbox: list[float], rule: dict):
     fmt = "%Y-%m-%d %H:%M:%S"
     sql = (
         "select distinct ship_id, name, is_sat, type, type_code, gt_type_code, flag, lat, lon, speed_kn, course, heading, rot, "
-        "seen_utc, elapsed_min, destination, length_m, width_m, dwt, status, state, captured_utc, tile_utc, coalesce(is_sanctioned, false) as is_sanctioned from vessels "
+        "seen_utc, elapsed_min, destination, length_m, width_m, dwt, status, state, captured_utc, tile_utc, coalesce(is_sanctioned, false) as is_sanctioned, sanctions_imo from vessels "
         f"where seen_utc >= TIMESTAMPTZ '{lo.strftime(fmt)}+00' and seen_utc <= TIMESTAMPTZ '{hi.strftime(fmt)}+00' "
         f"and lat between {s} and {n} and lon between {w} and {e}"
     )
@@ -158,7 +158,21 @@ def heading_diff(a: float | None, b: float | None) -> float | None:
     return min(d, 180 - d)
 
 
-def candidates_for(hull: dict, projected: list[dict], rule: dict) -> list[dict]:
+def single_score(c: dict, ps: dict, source: str, strict: dict, stationary_max_kn: float) -> float:
+    terms = strict["terms"][source]
+    score = 0.0
+    length = terms.get("length_m")
+    if length and ps["ldiff"] is not None and ps["ldiff"] <= length["gate"]:
+        score += length["weight"]
+    if terms.get("stationary") and (c["speed_kn"] is None or c["speed_kn"] <= stationary_max_kn):
+        score += terms["stationary"]
+    heading = terms.get("heading_deg")
+    if heading and ps["hdiff"] is not None and ps["hdiff"] <= heading["gate"]:
+        score += heading["weight"]
+    return round(score, 4)
+
+
+def candidates_for(hull: dict, projected: list[dict], rule: dict, strict: dict | None = None) -> list[dict]:
     radius_m = rule["search_radius_km"] * 1000
     slots = hull["slots"]
     out = []
@@ -188,8 +202,16 @@ def candidates_for(hull: dict, projected: list[dict], rule: dict) -> list[dict]:
                 reasons.append("satellite")
             if not c["name"]:
                 reasons.append("unnamed")
+            score = None
+            if strict is not None:
+                if d > strict["max_distance_m"] and "distance" not in reasons:
+                    reasons.append("distance")
+                score = single_score(c, {"ldiff": ldiff, "hdiff": hdiff}, hull["source"], strict, rule["stationary_max_speed_kn"])
+                if score < strict["min_score"][hull["source"]]:
+                    reasons.append("score")
             o["per_slot"].append(
                 {
+                    "score": score,
                     "slot": s["slot"],
                     "dist": d,
                     "limit": limit,
@@ -201,6 +223,9 @@ def candidates_for(hull: dict, projected: list[dict], rule: dict) -> list[dict]:
                 }
             )
     return out
+
+
+SCORE_COST_OFFSET = 1000
 
 
 def assign(hulls: dict[str, dict]) -> dict[tuple[str, str], int]:
@@ -221,14 +246,20 @@ def assign(hulls: dict[str, dict]) -> dict[tuple[str, str], int]:
                     i = slot_index[(hid, j)]
                     age_s = round(o["c"]["age"] * 60)
                     distance_mm = round(ps["dist"] * 1000)
-                    edges[(i, ship_index[ship])] = (distance_mm, age_s)
+                    edges[(i, ship_index[ship])] = (distance_mm, age_s, ps.get("score"))
     if not edges:
         return {}
-    age_weight = max(age_s for _, age_s in edges.values()) * len(slots) + 1
-    valid_costs = {
-        key: distance_mm * age_weight + age_s
-        for key, (distance_mm, age_s) in edges.items()
-    }
+    if any(score is not None for _, _, score in edges.values()):
+        valid_costs = {
+            key: ((SCORE_COST_OFFSET - round(score * 100)) * 10000 + round(distance_mm / 100)) * 100 + min(round(age_s / 60), 99)
+            for key, (distance_mm, age_s, score) in edges.items()
+        }
+    else:
+        age_weight = max(age_s for _, age_s, _ in edges.values()) * len(slots) + 1
+        valid_costs = {
+            key: distance_mm * age_weight + age_s
+            for key, (distance_mm, age_s, _) in edges.items()
+        }
     unmatched_cost = max(valid_costs.values()) * len(slots) + 1
     invalid_cost = unmatched_cost * (len(slots) + 1)
     costs = np.full((len(slots), len(ships) + len(slots)), invalid_cost, dtype=np.int64)
@@ -314,6 +345,12 @@ def refresh_identities(store: Store, loader=load_identities) -> int:
     return changed
 
 
+def match_singles(store: Store, rules: dict, log=print) -> dict:
+    sanctioned = rules_mod.load()["sanctioned"]
+    rows = select_hulls(store, tuple(sanctioned["verdicts"]), False, False)
+    return run_match(store, rows, rules, log, exclude_taken=True, strict=sanctioned["single_match"])
+
+
 def utc_text(value: datetime | None) -> str | None:
     return value.strftime("%Y-%m-%dT%H:%M:%SZ") if value else None
 
@@ -334,7 +371,7 @@ def select_hulls(store: Store, verdicts: tuple, all_checked: bool, stats: bool) 
     return rows
 
 
-def run_match(store: Store, rows: list[dict], rules: dict, log=print) -> dict:
+def run_match(store: Store, rows: list[dict], rules: dict, log=print, exclude_taken: bool = False, strict: dict | None = None) -> dict:
     rule = rules["ais_match"]
     by_scene = defaultdict(list)
     for r in rows:
@@ -345,6 +382,15 @@ def run_match(store: Store, rows: list[dict], rules: dict, log=print) -> dict:
         bbox = site_bbox(store, site)
         reports = fetch_reports(capture, bbox, rule)
         projected = project(reports, capture, rule)
+        if exclude_taken:
+            taken = {
+                r["ship_id"]
+                for r in store.db.execute(
+                    "select ship_id from review.ais_matches where run_key = %s and scene_id = %s and site = %s and chosen and hull_id <> all(%s)",
+                    (store.run_key, scene_id, site, [r["hull_id"] for r in hs]),
+                )
+            }
+            projected = [c for c in projected if c["ship_id"] not in taken]
         with store.tx():
             store.db.execute(
                 "insert into review.ais_coverage (run_key, scene_id, site, ships, reports, window_min, checked_utc) values (%s,%s,%s,%s,%s,%s,now()) "
@@ -356,7 +402,7 @@ def run_match(store: Store, rows: list[dict], rules: dict, log=print) -> dict:
         for r in hs:
             h = hull_slots(r)
             h["row"] = r
-            h["cands"] = candidates_for(h, projected, rule)
+            h["cands"] = candidates_for(h, projected, rule, strict)
             hulls[r["hull_id"]] = h
         chosen = assign(hulls)
         idents = load_identities(sorted({ship for (_, ship) in chosen}))
@@ -377,7 +423,7 @@ def run_match(store: Store, rows: list[dict], rules: dict, log=print) -> dict:
                             utc_text(c.get("after_seen_utc")), c.get("after_age"), c.get("bracket_gap"), c["lat_rep"], c["lon_rep"],
                             c["lat"], c["lon"], ps["dist"], ps["limit"], c.get("length_m"), c.get("width_m"), ps["meas_length"],
                             ps["ldiff"], c.get("ais_heading"), ps["hull_heading"], ps["hdiff"], c.get("speed_kn"), c.get("course"),
-                            c.get("rot"), decision, ",".join(ps["reasons"]), bool(c.get("is_sanctioned")),
+                            c.get("rot"), decision, ",".join(ps["reasons"]), bool(c.get("is_sanctioned")), ps.get("score"),
                         )
                     )
                     if selected:
@@ -386,11 +432,12 @@ def run_match(store: Store, rows: list[dict], rules: dict, log=print) -> dict:
                         matches.append(
                             (
                                 scene_id, site, hid, c["ship_id"], bool(c["is_sat"]), (ident or {}).get("name") or c["name"],
-                                (ident or {}).get("imo"), (ident or {}).get("mmsi"), (ident or {}).get("flag") or c.get("flag"),
+                                (ident or {}).get("imo") or (str(c["sanctions_imo"]) if c.get("sanctions_imo") not in (None, "") else None),
+                                (ident or {}).get("mmsi"), (ident or {}).get("flag") or c.get("flag"),
                                 utc_text(c["seen_utc"]), c["age"], c["method"], c["lat_rep"], c["lon_rep"], c["lat"], c["lon"],
                                 dists[0], dists[1] if len(dists) > 1 and h["source"] == "s2" else None, ps["limit"], c.get("length_m"),
                                 c.get("width_m"), ps["meas_length"], ps["ldiff"], ps["hdiff"], c.get("speed_kn"), True,
-                                ps["slot"], "ok", bool(c.get("is_sanctioned")),
+                                ps["slot"], "ok", bool(c.get("is_sanctioned")), ps.get("score"),
                             )
                         )
         with store.tx(), store.db.cursor() as cur:
@@ -509,7 +556,8 @@ def main() -> int:
     rules = rules_mod.load()
     rows = select_hulls(store, tuple(args.verdicts.split(",")), args.all_checked, args.stats)
     if not args.stats and not args.all_checked:
-        keep = {(r["scene_id"], r["site"], r["hull_id"]) for r in rows}
+        kept_verdicts = tuple(dict.fromkeys([*args.verdicts.split(","), *rules["sanctioned"]["verdicts"]]))
+        keep = {(r["scene_id"], r["site"], r["hull_id"]) for r in select_hulls(store, kept_verdicts, False, False)}
         stale = set()
         with store.tx():
             for table in ("ais_matches", "ais_candidates"):

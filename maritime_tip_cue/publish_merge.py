@@ -79,22 +79,22 @@ IDENTITY_FIELDS = (
 def keep_identity(row: dict, old: dict | None) -> dict:
     if old is None:
         return row
-    for n in (1, 2):
-        ship, old_ship = row.get(f"vessel_{n}_ship_id"), old.get(f"vessel_{n}_ship_id")
+    for prefix in ("vessel_",) if "vessel_ship_id" in row else ("vessel_1_", "vessel_2_"):
+        ship, old_ship = row.get(f"{prefix}ship_id"), old.get(f"{prefix}ship_id")
         same = ship == old_ship if ship is not None and old_ship is not None else (
-            old_ship is None and row.get(f"vessel_{n}_name") is not None and row.get(f"vessel_{n}_name") == old.get(f"vessel_{n}_name")
+            old_ship is None and row.get(f"{prefix}name") is not None and row.get(f"{prefix}name") == old.get(f"{prefix}name")
         )
         if not same:
             continue
-        if old.get(f"vessel_{n}_is_sanctioned") and not row.get(f"vessel_{n}_is_sanctioned"):
-            row[f"vessel_{n}_is_sanctioned"] = True
-            row[f"vessel_{n}_sanctions_lists"] = row.get(f"vessel_{n}_sanctions_lists") or old.get(f"vessel_{n}_sanctions_lists")
+        if old.get(f"{prefix}is_sanctioned") and not row.get(f"{prefix}is_sanctioned"):
+            row[f"{prefix}is_sanctioned"] = True
+            row[f"{prefix}sanctions_lists"] = row.get(f"{prefix}sanctions_lists") or old.get(f"{prefix}sanctions_lists")
         for field in IDENTITY_FIELDS:
-            key = f"vessel_{n}_{field}"
+            key = f"{prefix}{field}"
             if row.get(key) is None and old.get(key) is not None:
                 row[key] = old[key]
-        if row.get(f"vessel_{n}_ship_id") is None and old_ship is not None:
-            row[f"vessel_{n}_ship_id"] = old_ship
+        if row.get(f"{prefix}ship_id") is None and old_ship is not None:
+            row[f"{prefix}ship_id"] = old_ship
     return row
 
 

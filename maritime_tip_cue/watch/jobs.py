@@ -44,6 +44,7 @@ def execute(manifest: dict, store: Store, rules_path: Path) -> dict:
         if failed or counts["failed"]:
             raise RuntimeError(f"job has {counts['failed']} incomplete scenes")
         match.run_match(store, match.select_hulls(store, match.PAIR_VERDICTS, False, False), rules, runmod.log)
+        match.match_singles(store, rules, runmod.log)
         status = "done"
         return counts
     finally:

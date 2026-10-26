@@ -17,6 +17,10 @@ Checked 2026-10-22. This records the worker image, instance setup and current on
 - The first failures occurred with about 12 GiB free on the original filesystem. Storage did not cause them. The user expanded the existing root EBS volume from 80 to 100 GB. The existing root partition and ext4 filesystem were grown online; `df` then reported 96 GiB total and 32 GiB free. Existing data and boot partitions were retained.
 - The existing demo web and app containers stayed healthy throughout the worker build and checks.
 
+## Sanctioned singles deployment (2026-10-26)
+
+The worker image `maritime-sts-gpu-worker:test` was rebuilt from the working tree on top of commit `f20216c` (recorded as `f20216c-dirty`: the changes were not committed yet) for the scored single match and the `sanctioned/` publish. The previous image is kept as `maritime-sts-gpu-worker:pre-sanctioned` for rollback. `config.local.yaml` gained `s3.sanctioned_prefix: sanctioned/` (backup `config.local.yaml.bak-pre-sanctioned`); the sanctions list, the Equasis credentials and cache were already on the host. The two nullable `score` columns were added to `review.ais_matches` and `review.ais_candidates` first, and the role policy got `sanctioned/*` (put, get, list). A smoke test in the new image passed: Postgres with the score columns, 1,985 listed IMOs, the archive's `sanctions_imo` column, Equasis credentials and an S3 write under `sanctioned/` with the instance role (probe object removed). No job has run on the new image yet. The rebuild took the free disk from 30 GB to 13 GB; Docker's build cache holds 55 GB (all reclaimable, `docker builder prune` costs a slower next build).
+
 ## SSH access procedure
 
 Connect to the Lightsail control host with the identity and host recorded in the ignored

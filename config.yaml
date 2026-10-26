@@ -1,6 +1,7 @@
 s3:
   hotspots_key: hotspots/sts_hotspots.json
   findings_prefix: sts/
+  sanctioned_prefix: sanctioned/
   captures_prefix: captures/
 
 land:

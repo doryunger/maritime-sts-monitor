@@ -150,14 +150,14 @@ def window_of(scene: dict, rec: dict) -> str | None:
     return next((w["file"] for w in (scene["data"] or {}).get("index", []) if rec["hull_id"] in w["members"] and w["file"]), None)
 
 
-def vessel_points(root: Path, scene: dict, rec: dict, rules: dict) -> list[dict]:
+def vessel_points(root: Path, scene: dict, rec: dict, rules: dict, at: list[tuple[float, float]] | None = None) -> list[dict]:
     folder = root / scene["folder"]
     if scene["source"] == "s2":
         chk = rec.get("check") or {}
-        pts = [(chk.get(f"hull_{w}_lat"), chk.get(f"hull_{w}_lon")) for w in ("a", "b")]
+        pts = at or [(chk.get(f"hull_{w}_lat"), chk.get(f"hull_{w}_lon")) for w in ("a", "b")]
         pts = [p for p in pts if None not in p]
         window = window_of(scene, rec)
-        if len(pts) < 2 or window is None:
+        if len(pts) < (1 if at else 2) or window is None:
             return []
         z = np.load(folder / "s2_windows" / window)
         tr = [float(v) for v in z["transform"][:6]]
@@ -167,13 +167,13 @@ def vessel_points(root: Path, scene: dict, rec: dict, rules: dict) -> list[dict]
         col0, row0 = (cx[0] - tr[2]) / tr[0], (tr[5] - cy[0]) / -tr[4]
     else:
         found = rec.get("vessels") or []
-        if len(found) < 2:
+        if not at and len(found) < 2:
             return []
         obj = rec["object"]
         z = np.load(folder / "chips" / obj["file"])
         tr = [float(v) for v in z["transform"][:6]]
         h, w = z["vh"].shape
-        pts = [(v["lat"], v["lon"]) for v in found]
+        pts = at or [(v["lat"], v["lon"]) for v in found]
         half = min(int(rules["review"]["crop_half_m"] / 10), h // 2, w // 2)
         col0, row0 = (obj["x"] - tr[2]) / tr[0], (tr[5] - obj["y"]) / -tr[4]
     r0, c0, r1, c1 = review.crop_box(col0, row0, half, h, w)

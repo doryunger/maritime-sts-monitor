@@ -226,6 +226,8 @@ alter table review.captures add column if not exists scene_id text;
 alter table review.captures add column if not exists site text;
 alter table review.captures add column if not exists hull text;
 alter table review.vessel_identities add column if not exists first_run_key bigint;
+alter table review.ais_matches add column if not exists score double precision;
+alter table review.ais_candidates add column if not exists score double precision;
 alter table processing.observations add column if not exists scan_id text;
 alter table processing.jobs add column if not exists scan_id text;
 

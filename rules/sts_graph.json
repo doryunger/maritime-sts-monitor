@@ -1129,6 +1129,38 @@
       "basis": "User-approved operational overlap, 2026-10-20: baseline current scenes and discover new arrivals in a rolling seven-day window; not a measured upper bound on catalogue delay."
     }
   },
+  "sanctioned": {
+    "verdicts": {
+      "value": [
+        "single"
+      ],
+      "basis": "decision, user 2026-10-26: detections the pair check calls single are AIS-matched too, and the ones matched to a sanctioned vessel are published as sanctioned-vessel findings; pairs stay in the STS files with their own sanctioned flags."
+    },
+    "single_match": {
+      "value": {
+        "max_distance_m": 150,
+        "terms": {
+          "s1": {
+            "length_m": {"gate": 50, "weight": 0.66},
+            "stationary": 0.31,
+            "heading_deg": null
+          },
+          "s2": {
+            "length_m": {"gate": 60, "weight": 0.59},
+            "stationary": 0.25,
+            "heading_deg": {"gate": 10, "weight": 1.06}
+          }
+        },
+        "min_score": {"s1": 0.97, "s2": 1.06}
+      },
+      "basis": "Stricter AIS match for singles, scored per hull and candidate: a term adds its weight when the candidate passes its gate (missing data adds nothing), a candidate under min_score or farther than max_distance_m is rejected, and the one-to-one assignment maximises score, then distance, then report age. Measured 2026-10-26 on 2,300 singles of 12 runs (all four hot spots, S1 and S2), separating the nearest named ship of isolated hulls (no second named ship within 500 m) within 150 m (signal) from the nearest one 500-2000 m away (background). The distance histogram of isolated hulls is flat from 150 m on (about 37 per 50 m for S1, 3 for S2) and peaks at 50-100 m. Each weight is the log of signal share over background share kept at the gate (nats, S1/S2): length within 50/60 m keeps 0.87/0.85 of signal and 0.45/0.47 of background (0.66/0.59); stationary (speed at most ais_match.stationary_max_speed_kn) 0.98/0.99 against 0.72/0.77 (0.31/0.25); S2 heading within 10 degrees 0.95 against 0.33 (1.06). S1 heading and report age and S2 report age do not separate (S1 heading within 60 degrees 0.91 against 0.84, matching the known unreliable S1 box heading), so they carry no term. min_score is the highest sum that still keeps most signal: S1 0.97 (length and stationary) keeps 0.86 of signal and passes 0.34 of background; S2 1.06 keeps 0.92 and passes 0.31. With about 111 S1 and 10 S2 background ships expected inside 150 m this is roughly 4% and 2% false matches among accepted ones, against 11% and 6% without the score. The S2 sample is small (151 isolated hulls)."
+    },
+    "name_min_chars": {
+      "value": 4,
+      "unit": "characters",
+      "basis": "Only a single whose AIS name equals a listed name or alias (letters and digits, 4 or more) is looked up in Equasis, so lookups stay per suspect. Measured 2026-10-26 on the 237 archive-flagged ships (10-26 Oct): 222 carry such a name at 4 characters, 198 at 5, 141 at 6; only 28 listed names are shorter than 4."
+    }
+  },
   "publish": {
     "dedupe_time_s": {
       "value": 120,

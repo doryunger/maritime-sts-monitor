@@ -15,6 +15,10 @@ once made Equasis answer 404, its limit, on 2026-10-25), a cap per run (`identit
 the run and is reported; it never stops publication. Without `EQUASIS_EMAIL` and `EQUASIS_PASSWORD` in `.env` the
 step is skipped.
 
+Singles are not looked up in bulk: a matched single is a lookup candidate only when the archive flagged it or its AIS
+name equals a listed name or alias of `sanctioned.name_min_chars` letters and digits or more (`resolve.pending`); pairs
+come first in the order. See `publish.md` `## Sanctioned singles` for the numbers behind the rule.
+
 ## Request log and who sets the limits
 Every HTTP request to Equasis (home, login, search, details) and every cache hit is a row in `review.equasis_requests`:
 time, run, kind, query, outcome (`ok`, `http_error`, `error`, `cache`), HTTP status, elapsed ms, seconds since the

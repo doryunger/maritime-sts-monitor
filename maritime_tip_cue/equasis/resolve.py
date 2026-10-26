@@ -7,7 +7,9 @@ from difflib import SequenceMatcher
 import pycountry
 import requests
 
+from maritime_tip_cue import sanctions
 from maritime_tip_cue.equasis.client import Equasis, NotConfigured, SessionExpired, configured
+from maritime_tip_cue.sts import rules as rules_mod
 from maritime_tip_cue.watch.state import Store
 
 FIELDS = (
@@ -174,20 +176,27 @@ def resolve_vessel(eq: Equasis, ours: dict, rules: dict) -> dict:
 
 
 def pending(store: Store) -> list[dict]:
+    rule = rules_mod.load()["sanctioned"]
     rows = store.db.execute(
-        "select m.ship_id, m.name, m.flag, m.ais_length_m as length_m, c.type_code, c.dwt "
+        "select m.ship_id, m.name, m.flag, m.ais_length_m as length_m, c.type_code, c.dwt, m.is_sanctioned, f.verdict "
         "from review.ais_matches m left join review.ais_candidates c on c.run_key = m.run_key and c.scene_id = m.scene_id "
         "and c.site = m.site and c.hull_id = m.hull_id and c.slot = m.slot and c.ship_id = m.ship_id "
+        "left join review.findings f on f.run_key = m.run_key and f.scene_id = m.scene_id and f.site = m.site and f.hull_id = m.hull_id "
         "left join review.vessel_identities v on v.ship_id = m.ship_id "
         "where m.run_key = %s and m.chosen and m.ship_id is not null and m.name is not null and v.ship_id is null "
         "order by m.scene_id, m.hull_id, m.slot, m.id",
         (store.run_key,),
     ).fetchall()
+    suspect = {
+        row["ship_id"]
+        for row in rows
+        if row["verdict"] not in rule["verdicts"] or row["is_sanctioned"] or sanctions.listed_name(row["name"], rule["name_min_chars"])
+    }
     seen, vessels = set(), []
-    for row in rows:
-        if row["ship_id"] not in seen:
+    for row in sorted(rows, key=lambda r: r["verdict"] in rule["verdicts"]):
+        if row["ship_id"] in suspect and row["ship_id"] not in seen:
             seen.add(row["ship_id"])
-            vessels.append(dict(row))
+            vessels.append({k: v for k, v in row.items() if k not in ("is_sanctioned", "verdict")})
     return vessels
 
 

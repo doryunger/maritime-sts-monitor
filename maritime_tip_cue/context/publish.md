@@ -119,3 +119,44 @@ Parquets under the findings prefix, matched by run, scene, hot spot and hull, ne
   and the button stays disabled until then.
 - Two edits in different files that depend on each other are seen on the next sync (rows in other files are not edited
   in the same pass).
+
+## Sanctioned singles
+Singles are the pair check's `single` hulls (rules `sanctioned.verdicts`; `moving` is already read as `single`). They go
+through the same AIS match as pairs, then identity and the sanctions list, and a single whose matched vessel is
+sanctioned is published to `sanctioned/<DD-MM-YYYY>/<hot_spot>/<source>.parquet` with its capture under the same
+`captures/` tree. Nothing is built from AIS alone: no detection, no row. Satellite and unnamed AIS are never matched
+(`ais.md`), so a row always names a terrestrial AIS vessel.
+
+Order in a job (`watch/jobs.execute`): pairs are matched first, then singles (`match.match_singles`: `exclude_taken`
+removes every ship already chosen by another hull of the scene, and the scored rule `sanctioned.single_match` applies,
+see `ais.md`). Without `exclude_taken` the singles pass would hand a pair's ship to a single standing next to it and the
+pair would lose its name on a re-match. `vessel_match_score` in the row is the score of the match. At publish (`publish_run`) one `collect_at` call
+takes pairs and singles together, so identities are refreshed, Equasis is asked and the list applied once. A single is
+kept only if a matched party is sanctioned (archive flag `is_sanctioned`, the vessel's identity IMO or the archive's
+`sanctions_imo` found in our list); an unconfirmed name match is not published. The group `sanctioned` is read from
+the running image's rules, not the job snapshot: queued jobs carry snapshots without it.
+
+Equasis is asked about a single only when it is a suspect: the archive flagged it, or its AIS name equals a listed
+name or alias (letters and digits, `name_min_chars`). Pairs are looked up first, as before. Measured on the 237 ships
+the archive flagged between 10 and 26 Oct 2026 (all in our list, 237 of 237): 224 carry a listed name, 210 carry
+exactly the list name or an alias; ships are often reflagged, so flag is not compared. The archive also gives
+`sanctions_imo` for the ships it has resolved, which fills the match IMO without a lookup. In the four hot spots over
+the same days 19 (malaysia_eopl), 45 (johor_east_scs), 23 (fujairah_outer) and 21 (off_sohar) flagged ships were inside
+the boxes, plus 54, 25, 23 and 20 unflagged ships whose names are listed: many are generic names (ARTEMIS, ORION),
+which is why a name alone does not publish.
+
+Rows are the pair rows with one vessel: `vessel_*` columns without the 1/2 number, `vessel_sanctions_lists`,
+`vessel_sanctions_programs` (from the list's `programs`), `vessel_imo`, `verdict` (`single`), capture PNG path.
+`vessel_is_sanctioned` is always true. The PNG carries one marker, yellow, on the vessel. Duplicates, `also_in` and the
+per-job replace are the pair merge, with `publish_merge.keep_identity` reading the unnumbered columns. A finding that QA
+later turns into a pair is not removed from `sanctioned/` and `publish sync` does not touch these files.
+
+The sanctioned publish runs after the pair publish and cannot fail the attempt: the worker's `config.local.yaml` is its
+only config and its IAM policy is separate, so an old copy of either would otherwise fail every job whose pairs were
+already published. The error goes to the receipt (`published.sanctioned.error`) and the same runs can be published later
+with the CLI below, since their state stays in Postgres. `published.sanctioned.listed_imos` is the size of the list the
+worker read; the list is in the ignored `data/sanctions/`, so the worker only has it if the host's mounted `data/`
+does, and 0 there means every list-based decision silently found nothing.
+
+`python -m maritime_tip_cue.publish_sanctioned <runs> [--match] [--upload]` builds the same files for existing runs;
+`--match` first runs the singles AIS pass on them. Without `--upload` it writes to `data/publish/sanctioned/`.

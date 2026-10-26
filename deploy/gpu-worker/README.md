@@ -86,22 +86,23 @@ the bucket configured in `.env` and attach this policy to the EC2 role:
       "Resource": "arn:aws:s3:::<S3_BUCKET_NAME>/catalogue/reviews/*"
     },
     {
-      "Sid": "PublishPairsAndImages",
+      "Sid": "PublishPairsSanctionedAndImages",
       "Effect": "Allow",
       "Action": ["s3:PutObject", "s3:GetObject"],
       "Resource": [
         "arn:aws:s3:::<S3_BUCKET_NAME>/sts/*",
+        "arn:aws:s3:::<S3_BUCKET_NAME>/sanctioned/*",
         "arn:aws:s3:::<S3_BUCKET_NAME>/captures/*"
       ]
     },
     {
-      "Sid": "ListPublishedPairs",
+      "Sid": "ListPublishedPairsAndSanctioned",
       "Effect": "Allow",
       "Action": "s3:ListBucket",
       "Resource": "arn:aws:s3:::<S3_BUCKET_NAME>",
       "Condition": {
         "StringLike": {
-          "s3:prefix": "sts/*"
+          "s3:prefix": ["sts/*", "sanctioned/*"]
         }
       }
     },
@@ -114,6 +115,16 @@ the bucket configured in `.env` and attach this policy to the EC2 role:
   ]
 }
 ```
+
+Sanctioned singles need `review.ais_matches.score` and `review.ais_candidates.score` in the database before the new image runs (two nullable columns: `pg init` or the two `alter table ... add column if not exists score double precision` statements, run by the table owner on the control host; a worker on the new image fails its match insert without them), and three things beyond the image on the worker (details: `maritime_tip_cue/context/publish.md`
+`## Sanctioned singles`): `sanctioned_prefix: sanctioned/` under `s3:` in the worker's `config.local.yaml` (it is the
+only config the container reads, so a copy made before this change lacks it), the list file
+`data/sanctions/sanctioned_vessels.csv` in the mounted `data/` directory on the host (ignored by Git and absent from the
+image; without it only the archive's own flag marks a vessel), and `EQUASIS_EMAIL`/`EQUASIS_PASSWORD` in the `.env`
+(without them a single is published only if the archive already flagged it). `data/equasis/cache.json` lives in the same
+mounted directory, so lookups survive between jobs. A failed sanctioned publish is written to the job receipt under
+`published.sanctioned.error` and does not fail the attempt; `published.sanctioned.listed_imos` is the number of listed
+IMOs the worker could read (0 means the list file is missing).
 
 The Sentinel-1 source uses requester-pays requests; AWS bills those reads to the account making the requests.
 The policy assumes the configured artifact bucket is in the same AWS account and has no explicit deny or

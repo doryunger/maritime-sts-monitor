@@ -40,6 +40,43 @@ def lists_for(imo, listed: dict | None = None) -> str:
     return (table() if listed is None else listed).get(clean_imo(imo), "")
 
 
+def name_key(name) -> str:
+    return re.sub(r"[^A-Z0-9]", "", str(name or "").upper())
+
+
+@cache
+def entries(path: str | None = None) -> dict[str, dict]:
+    target = Path(path) if path else list_path()
+    if not target.is_file():
+        return {"imos": {}, "names": {}}
+    imos: dict[str, dict] = {}
+    names: dict[str, set[str]] = {}
+    with target.open(encoding="utf-8-sig", newline="") as handle:
+        for row in csv.DictReader(handle):
+            imo = clean_imo(row.get("imo"))
+            if not imo:
+                continue
+            entry = imos.setdefault(imo, {"programs": set(), "designated": set()})
+            entry["programs"].update(p.strip() for p in re.split(r"\]\s*\[", row.get("programs") or "") if p.strip())
+            if row.get("designated"):
+                entry["designated"].add(row["designated"])
+            for alias in [row.get("name"), *(row.get("other_names") or "").split("|")]:
+                key = name_key(alias)
+                if key:
+                    names.setdefault(key, set()).add(imo)
+    return {"imos": imos, "names": names}
+
+
+def programs_for(imo, index: dict | None = None) -> str:
+    entry = (index or entries())["imos"].get(clean_imo(imo))
+    return "; ".join(sorted(entry["programs"])) if entry else ""
+
+
+def listed_name(name, min_chars: int, index: dict | None = None) -> bool:
+    key = name_key(name)
+    return len(key) >= min_chars and key in (index or entries())["names"]
+
+
 def apply(store: Store, listed: dict | None = None) -> int:
     listed = table() if listed is None else listed
     if not listed:

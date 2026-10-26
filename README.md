@@ -126,6 +126,18 @@ captures/<DD-MM-YYYY>/<hot_spot>/<source>/<finding>[_<vessel names>].tif / .png
   from S3 when a user requests an image. For a pair, the marker-only PNG is the display image; no detection boxes
   or other overlays are used.
 
+Sanctioned vessels are published the same way, as a separate tree:
+
+```
+sanctioned/<DD-MM-YYYY>/<hot_spot>/<source>.parquet
+captures/<DD-MM-YYYY>/<hot_spot>/<source>/<finding>_<vessel name>.png
+```
+
+- A row is a detected `single` hull (the pair check's verdict) whose terrestrial AIS match (scored, within 150 m, see `ais.md`) is a sanctioned vessel: one
+  vessel's position, name, flag, IMO, MMSI, Equasis data, sanctions lists and programs, `vessel_is_sanctioned` true,
+  AIS match distance and report age, and the capture path. Satellite AIS is never matched. No AIS-only rows.
+- A file exists only when that source has such a finding at that hot spot on that date.
+
 ### Run state (SQLite)
 
 Every process keeps its state in one SQLite file in its working folder (WAL mode, one writer, any
