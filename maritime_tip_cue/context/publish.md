@@ -22,8 +22,9 @@ shorter light line), each with position and AIS name, IMO, MMSI, flag, match dis
 unmatched. `vessel_1_is_sanctioned` and `vessel_2_is_sanctioned` are always boolean; missing or null archive values, including unmatched slots, are false; `ais_covered` false means the archive had no ships at that time, so "no name" is not evidence.
 
 Captures: one PNG per pair, the same crop as the QA card (`review.crop_half_m`) with the card's fixed stretch. When both
-vessel positions project into the crop, the numbered markers are drawn on it exactly as the review app shows them: a small
-dot on the vessel and a numbered pill 16 px away from the other vessel, yellow when that vessel has an AIS match and white
+vessel positions project into the crop, the numbered markers are drawn on it as the review app shows them but 1.6 times
+larger (`publish.MARKER_SCALE`, from 2026-10-26: the review-app size was too small to read on the published image): a dot
+on the vessel and a numbered pill 26 px away from the other vessel, yellow when that vessel has an AIS match and white
 when it has none; otherwise the plain crop is published. There is no separate unmarked copy and no GeoTIFF. The Parquet
 row has one S3 path, `capture_png`. File names carry the finding id and the AIS names.
 
@@ -147,7 +148,7 @@ which is why a name alone does not publish.
 
 Rows are the pair rows with one vessel: `vessel_*` columns without the 1/2 number, `vessel_sanctions_lists`,
 `vessel_sanctions_programs` (from the list's `programs`), `vessel_imo`, `verdict` (`single`), capture PNG path.
-`vessel_is_sanctioned` is always true. Heading: `heading_deg` and `heading_source` are the pair rule applied to the single's own hull record (an axis in [0, 180), no bow or stern; S1 `pixel_rect`, S2 `fitted`, null when the S2 fit left the Ai2 heading unchanged), and `vessel_ais_heading_deg` (0-360, the AIS heading, or course when the ship moves and has no heading; null when AIS gave neither) and `vessel_ais_speed_kn` come from the selected `ais_candidates` row. The two are kept apart because our axis has no direction and the Sentinel-1 box heading is unreliable (see the pair heading note above). The PNG carries one marker, yellow, on the vessel. Duplicates, `also_in` and the
+`vessel_is_sanctioned` is always true. Heading: `heading_deg` and `heading_source` are the pair rule applied to the single's own hull record (an axis in [0, 180), no bow or stern; S1 `pixel_rect`, S2 `fitted`, null when the S2 fit left the Ai2 heading unchanged), and `vessel_ais_heading_deg` (0-360, the AIS heading, or course when the ship moves and has no heading; null when AIS gave neither) and `vessel_ais_speed_kn` come from the selected `ais_candidates` row. The two are kept apart because our axis has no direction and the Sentinel-1 box heading is unreliable (see the pair heading note above). The PNG is the plain crop with no marker: only pairs get markers (decision, user 2026-10-26). Duplicates, `also_in` and the
 per-job replace are the pair merge, with `publish_merge.keep_identity` reading the unnumbered columns. A finding that QA
 later turns into a pair is not removed from `sanctioned/` and `publish sync` does not touch these files.
 

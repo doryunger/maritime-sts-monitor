@@ -204,13 +204,15 @@ def dedupe(findings: list[dict], rule: dict) -> list[dict]:
 
 MATCHED = (255, 214, 0, 235)
 UNMATCHED = (255, 255, 255, 245)
+MARKER_SCALE = 1.6
 
 
 def draw_markers(img: Image.Image, points: list[dict], matched: list[bool]) -> Image.Image:
+    k = MARKER_SCALE
     layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(layer)
     try:
-        font = ImageFont.load_default(size=11)
+        font = ImageFont.load_default(size=round(11 * k))
     except TypeError:
         font = ImageFont.load_default()
     for i, point in enumerate(points):
@@ -218,17 +220,17 @@ def draw_markers(img: Image.Image, points: list[dict], matched: list[bool]) -> I
         dx, dy = point["fx"] - other["fx"], point["fy"] - other["fy"]
         length = math.hypot(dx, dy) or 1
         x, y = point["fx"] * img.width, point["fy"] * img.height
-        px = x + dx / length * 16
-        py = y + dy / length * 16 - (16 if length == 1 else 0)
+        px = x + dx / length * 16 * k
+        py = y + dy / length * 16 * k - (16 * k if length == 1 else 0)
         fill = MATCHED if matched[i] else UNMATCHED
-        draw.ellipse((x - 4, y - 4, x + 4, y + 4), fill=(0, 0, 0, 153))
-        draw.ellipse((x - 3, y - 3, x + 3, y + 3), fill=fill)
+        draw.ellipse((x - 4 * k, y - 4 * k, x + 4 * k, y + 4 * k), fill=(0, 0, 0, 153))
+        draw.ellipse((x - 3 * k, y - 3 * k, x + 3 * k, y + 3 * k), fill=fill)
         label = str(point["n"])
         text = draw.textbbox((0, 0), label, font=font)
-        width = max(18, (text[2] - text[0]) + 8)
-        box = (px - width / 2, py - 9, px + width / 2, py + 9)
-        draw.rounded_rectangle((box[0] - 1, box[1] - 1, box[2] + 1, box[3] + 1), radius=10, fill=(0, 0, 0, 128))
-        draw.rounded_rectangle(box, radius=9, fill=fill)
+        width = max(18 * k, (text[2] - text[0]) + 8 * k)
+        box = (px - width / 2, py - 9 * k, px + width / 2, py + 9 * k)
+        draw.rounded_rectangle((box[0] - k, box[1] - k, box[2] + k, box[3] + k), radius=10 * k, fill=(0, 0, 0, 128))
+        draw.rounded_rectangle(box, radius=9 * k, fill=fill)
         draw.text((px - (text[2] - text[0]) / 2 - text[0], py - (text[3] - text[1]) / 2 - text[1]), label, fill=(17, 17, 17, 255), font=font)
     return Image.alpha_composite(img.convert("RGBA"), layer).convert("RGB")
 
@@ -240,10 +242,9 @@ def write_captures(f: dict, base: str, rules: dict, root: Path, single: bool = F
     scene = {"source": f["source"], "folder": f["folder"], "data": f["scene_data"]}
     img = report.render(f["root"], scene, f["record"], rules, False)
     if img is not None:
-        at = [vessel_positions(f["source"], f["record"], f["lat"], f["lon"])[0] or (f["lat"], f["lon"])] if single else None
-        points = report.vessel_points(f["root"], scene, f["record"], rules, at)
-        if len(points) == (1 if single else 2) and all(0 <= p["fx"] <= 1 and 0 <= p["fy"] <= 1 for p in points):
-            img = draw_markers(img, points, [True] if single else [bool(f["parties"].get(slot)) for slot in ("a", "b")])
+        points = [] if single else report.vessel_points(f["root"], scene, f["record"], rules)
+        if len(points) == 2 and all(0 <= p["fx"] <= 1 and 0 <= p["fy"] <= 1 for p in points):
+            img = draw_markers(img, points, [bool(f["parties"].get(slot)) for slot in ("a", "b")])
         png = folder / f"{base}.png"
         img.save(png)
         out["png"] = png
