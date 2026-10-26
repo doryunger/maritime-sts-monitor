@@ -27,7 +27,7 @@ limits while testing; switch to `https://acme-v02.api.letsencrypt.org/directory`
 for the real certificate. After the proxy works, set `STS_APP_HOST=127.0.0.1` in `deploy/app/sts-app.service` so the
 app is reachable only through Caddy, and restart `sts-app`.
 
-`GET /health` on either domain is answered by Caddy itself with `200 pong`, before the app and its login, so uptime
+`GET /health` on either domain is answered by Caddy itself with `200` with `{"status": "ok"}`, before the app and its login, so uptime
 checks need no credentials. It shows the proxy and its certificate are up, not that the app behind it is; use `/` with
 credentials for that. After editing the Caddyfile: `sudo systemctl restart sts-proxy`.
 
