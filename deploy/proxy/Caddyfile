@@ -2,14 +2,27 @@
 	acme_ca {$ACME_CA}
 }
 
+(health) {
+	handle /health {
+		header Cache-Control "no-store"
+		respond "pong" 200
+	}
+}
+
 {$APP_DOMAIN} {
 	encode zstd gzip
 	header Strict-Transport-Security "max-age=31536000"
-	reverse_proxy 127.0.0.1:8010
+	import health
+	handle {
+		reverse_proxy 127.0.0.1:8010
+	}
 }
 
 {$VIEWER_DOMAIN} {
 	encode zstd gzip
 	header Strict-Transport-Security "max-age=31536000"
-	respond "The viewer is not deployed yet." 503
+	import health
+	handle {
+		respond "The viewer is not deployed yet." 503
+	}
 }
