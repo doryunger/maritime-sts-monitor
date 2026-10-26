@@ -99,6 +99,7 @@ def main() -> int:
     parser.add_argument("runs", nargs="+", type=int)
     parser.add_argument("--upload", action="store_true")
     parser.add_argument("--match", action="store_true")
+    parser.add_argument("--no-enrich", action="store_true")
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
     rules = rules_mod.load()
@@ -115,7 +116,7 @@ def main() -> int:
                 store.close()
     found = []
     for no in args.runs:
-        found += publish.complete(publish.collect_at(publish.registry.folder_of(no), no, None, None, verdicts=verdicts))
+        found += publish.complete(publish.collect_at(publish.registry.folder_of(no), no, None, None, verdicts=verdicts, enrich=not args.no_enrich))
     if args.upload:
         import boto3
 

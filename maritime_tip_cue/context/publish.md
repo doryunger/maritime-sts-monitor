@@ -45,6 +45,19 @@ hull A to hull B is 76 to 90 degrees from the heading on 44 of them; hulls 45364
 Sentinel-1 record from this version on; older records get it recomputed from their saved chips when backfilled.
 Both vessels' angles are doubled before averaging, so 179 and 1 give 0.
 
+## Redrawing published images
+`python -m maritime_tip_cue.publish_redraw [--upload]` redraws the capture of every published pair row at the current marker
+size and writes it over the key the row already holds (`capture_png`); the parquet files are never touched, so QA status
+and identities stay as published. Without `--upload` it draws only; with it, each old image is first saved under
+`data/publish/pair-captures-backup-<time>/`. It collects with `enrich=False`, so it does no identity refresh, sanctions
+apply or Equasis request (all of which `collect_at` does by default and which dominate its time: about 4 s per run of
+database round trips against under 0.02 s per image). Rows are matched to a run by scene, hot spot and hull among the runs
+where that hull is currently a pair, because the `run` and `job_id` in older rows are the numbers at publish time (legacy runs
+1-9 are now 34-42 and the job runs were renumbered), not the current run. Rejected rows and rows whose hull QA has since
+turned into a single are skipped. First run, 2026-10-26: 137 of 138 images redrawn at marker scale 1.6 (the one skipped is
+a pair QA turned into a single; the parquet still lists it as not rejected until `publish sync` runs). The same pass can
+rebuild the sanctioned images: `publish_sanctioned <runs> --upload --no-enrich`.
+
 ## Publishing from the worker
 
 Every queue job now publishes its own pairs at the end of the run, after its review data is on S3

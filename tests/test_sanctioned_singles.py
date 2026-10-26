@@ -264,3 +264,20 @@ def test_an_s1_single_takes_the_pixel_rect_axis_as_its_heading_and_none_when_the
     kept, tables = publish_sanctioned.assemble([finding(record={"check": {"fix_heading": 10.0}, "ai2_heading": 10.0})], rules_mod.load(), tmp_path / "2")
     row, = pq.read_table(next(iter(tables.values()))[0]).to_pylist()
     assert (row["heading_deg"], row["heading_source"]) == (None, None)
+
+
+def test_collecting_without_enrichment_never_reaches_equasis_or_the_identity_steps(pgdb, tmp_path, monkeypatch, listed):
+    store = new_store(monkeypatch, tmp_path)
+    add_single_scene(store, [("flagged", "single")])
+    add_match(store, hull_id="flagged", ship_id="1", name="KRONOS", imo="9338905")
+    store.db.execute("update review.ais_matches set is_sanctioned = true where ship_id = '1'")
+
+    def refused(*a, **k):
+        raise AssertionError("enrichment must not run")
+
+    monkeypatch.setattr(equasis, "enrich", refused)
+    monkeypatch.setattr(match, "refresh_identities", refused)
+    monkeypatch.setattr(sanctions, "apply", refused)
+    found = publish.collect_at(store.path, store.run_no, "J", None, verdicts=("single",), enrich=False)
+    assert [f["hull_id"] for f in found] == ["flagged"]
+    store.close()

@@ -108,25 +108,26 @@ def identity_rules(snapshot: dict | None) -> dict:
     return ((snapshot or {}).get("identity") or deployed) | {key: deployed[key] for key in equasis.DEPLOYED_LIMITS}
 
 
-def collect_at(path: Path, no: int, job_id: str | None = None, rules: dict | None = None, only: set | None = None, verdicts: tuple = ("pair",)) -> list[dict]:
+def collect_at(path: Path, no: int, job_id: str | None = None, rules: dict | None = None, only: set | None = None, verdicts: tuple = ("pair",), enrich: bool = True) -> list[dict]:
     store = Store.open(no)
     try:
         site = site_settings(store)
         job_id = job_id or run_job_id(store)
-        try:
-            from maritime_tip_cue.ais import match
+        if enrich:
+            try:
+                from maritime_tip_cue.ais import match
 
-            match.refresh_identities(store)
-        except Exception as error:
-            print(f"identity refresh skipped: {type(error).__name__}: {error}", file=sys.stderr)
-        try:
-            from maritime_tip_cue.equasis import resolve as equasis
+                match.refresh_identities(store)
+            except Exception as error:
+                print(f"identity refresh skipped: {type(error).__name__}: {error}", file=sys.stderr)
+            try:
+                from maritime_tip_cue.equasis import resolve as equasis
 
-            summary = equasis.enrich(store, identity_rules(rules))
-            summary["sanctioned_ships"] = sanctions.apply(store)
-            print(f"equasis: {summary}", file=sys.stderr)
-        except Exception as error:
-            print(f"equasis enrichment skipped: {type(error).__name__}: {error}", file=sys.stderr)
+                summary = equasis.enrich(store, identity_rules(rules))
+                summary["sanctioned_ships"] = sanctions.apply(store)
+                print(f"equasis: {summary}", file=sys.stderr)
+            except Exception as error:
+                print(f"equasis enrichment skipped: {type(error).__name__}: {error}", file=sys.stderr)
         floor = rules_mod.load()["ais_match"]["min_coverage_ships"]
         coverage = {(r["scene_id"], r["site"]): r["ships"] for r in store.db.execute("select scene_id, site, ships from review.ais_coverage where run_key = %s", (store.run_key,))}
         rows = store.db.execute(
