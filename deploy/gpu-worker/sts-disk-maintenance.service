@@ -1,0 +1,8 @@
+[Unit]
+Description=Prune the worker's Docker build cache and dangling images, warn when disk is low
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/ubuntu/maritime-sts-monitor-worker-test/deploy/gpu-worker/disk-maintenance.sh

@@ -1,0 +1,9 @@
+[Unit]
+Description=Worker disk maintenance, 15 minutes after boot and every 6 hours while awake
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=6h
+
+[Install]
+WantedBy=timers.target

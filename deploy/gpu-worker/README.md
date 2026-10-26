@@ -145,3 +145,28 @@ docker run --rm --network host --env-file .env -v "$PWD/config.local.yaml:/app/c
 
 The manager records each attempt and allows one delayed retry. A second failure is terminal and requires an
 explicit operator decision before a future manual retry mechanism is used.
+
+## Disk maintenance on the worker
+
+The root volume fills with old image generations, not with a prunable cache: on 2026-10-26 Docker reported 48 GB of
+"build cache" but 17 of the 18 GB it could reclaim were the same layers as the 23 GB worker image, and a prune freed
+nothing. Each rebuild that changes a heavy layer (requirements, model weights) leaves the previous image behind, and a
+manual `:pre-*` rollback tag keeps it. `disk-maintenance.sh` keeps the newest `KEEP_ROLLBACK_TAGS` (1) tags `:pre-*` of the
+worker image and removes older ones, removes dangling images, and trims the build cache to `KEEP_CACHE_GB` (15). It logs
+free space and Docker's own usage figures before and after to the journal, and fails (so it shows in
+`systemctl --failed`) when less than `MIN_FREE_GB` (10) remains. Other tagged images, such as the unrelated
+`refinery-demo` ones (11 GB), are never touched. The dispatcher's own preflight still refuses to run a job below 3 GiB free.
+
+Install on the worker (the checkout is `~/maritime-sts-monitor-worker-test`; the units are copied there with the code):
+
+```bash
+cd ~/maritime-sts-monitor-worker-test
+chmod +x deploy/gpu-worker/disk-maintenance.sh
+sudo cp deploy/gpu-worker/sts-disk-maintenance.service deploy/gpu-worker/sts-disk-maintenance.timer /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now sts-disk-maintenance.timer
+journalctl -u sts-disk-maintenance --no-pager | tail
+```
+
+The instance is stopped most of the time, so the timer fires 15 minutes after boot and every 6 hours while awake. After
+a manual image build run `sudo systemctl start sts-disk-maintenance`. Keep the instance awake with the wake script when
+doing this by hand: a plain SSH session does not refresh the idle timer and the instance stops after 3 minutes.
