@@ -101,6 +101,13 @@ def collect(no: int) -> list[dict]:
     return collect_at(registry.folder_of(no), no)
 
 
+def identity_rules(snapshot: dict | None) -> dict:
+    from maritime_tip_cue.equasis import resolve as equasis
+
+    deployed = rules_mod.load()["identity"]
+    return ((snapshot or {}).get("identity") or deployed) | {key: deployed[key] for key in equasis.DEPLOYED_LIMITS}
+
+
 def collect_at(path: Path, no: int, job_id: str | None = None, rules: dict | None = None, only: set | None = None) -> list[dict]:
     store = Store.open(no)
     try:
@@ -115,7 +122,7 @@ def collect_at(path: Path, no: int, job_id: str | None = None, rules: dict | Non
         try:
             from maritime_tip_cue.equasis import resolve as equasis
 
-            summary = equasis.enrich(store, (rules or rules_mod.load())["identity"])
+            summary = equasis.enrich(store, identity_rules(rules))
             from maritime_tip_cue import sanctions
 
             summary["sanctioned_ships"] = sanctions.apply(store)

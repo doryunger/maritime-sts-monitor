@@ -134,6 +134,15 @@ create table if not exists review.vessel_identities (
     reasons text, candidates integer, search_name text, source text, resolved_utc timestamptz, sanctions_lists text
 );
 
+create table if not exists review.equasis_requests (
+    id bigserial primary key,
+    requested_utc timestamptz not null default now(),
+    run_key bigint references review.runs on delete set null,
+    kind text not null, query text, outcome text not null, http_status integer, results integer,
+    elapsed_ms integer, gap_s double precision, delay_s double precision, error text, commit_hash text
+);
+create index if not exists equasis_requests_time on review.equasis_requests (requested_utc);
+
 create schema if not exists processing;
 
 create table if not exists processing.scans (

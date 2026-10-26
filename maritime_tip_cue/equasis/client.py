@@ -57,23 +57,49 @@ def cache_path() -> Path:
 
 
 class Equasis:
-    def __init__(self, delay_s: float, path: Path | None = None, clock=time.monotonic, sleep=time.sleep):
+    def __init__(self, delay_s: float, path: Path | None = None, clock=time.monotonic, sleep=time.sleep, log=None):
         self.http = requests.Session()
         self.http.headers.update(BROWSER_HEADERS)
         self.session_ready = False
         self.delay_s = delay_s
         self.last = 0.0
+        self.previous_end = None
+        self.log = log
         self.clock = clock
         self.sleep = sleep
         self.path = path or cache_path()
         self.cache = json.loads(self.path.read_text(encoding="utf-8")) if self.path.exists() else {"search": {}, "details": {}}
 
-    def request(self, method: str, url: str, **kwargs) -> requests.Response:
+    def emit(self, kind: str, query: str | None, outcome: str, status: int | None, elapsed_s: float, gap_s: float | None, error: str | None) -> None:
+        if self.log is None:
+            return
         try:
-            return self.http.request(method, url, **kwargs)
-        except requests.ConnectionError:
-            self.http.close()
-            return self.http.request(method, url, **kwargs)
+            self.log({
+                "kind": kind, "query": query, "outcome": outcome, "http_status": status, "elapsed_ms": round(elapsed_s * 1000),
+                "gap_s": gap_s, "delay_s": self.delay_s, "error": error,
+            })
+        except Exception:
+            pass
+
+    def request(self, method: str, url: str, kind: str = "request", query: str | None = None, **kwargs) -> requests.Response:
+        started = self.clock()
+        gap_s = None if self.previous_end is None else started - self.previous_end
+        status, error = None, None
+        try:
+            try:
+                response = self.http.request(method, url, **kwargs)
+            except requests.ConnectionError:
+                self.http.close()
+                response = self.http.request(method, url, **kwargs)
+            status = response.status_code
+            return response
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"
+            raise
+        finally:
+            self.previous_end = self.clock()
+            outcome = "error" if error else "ok" if status < 400 else "http_error"
+            self.emit(kind, query, outcome, status, self.previous_end - started, gap_s, error)
 
     def wait(self) -> None:
         remaining = self.delay_s - (self.clock() - self.last)
@@ -91,13 +117,13 @@ class Equasis:
             return
         self.http.cookies.clear()
         self.wait()
-        response = self.request("GET", HOME, timeout=60)
+        response = self.request("GET", HOME, "home", timeout=60)
         response.raise_for_status()
         if "JSESSIONID" not in self.http.cookies:
             raise SessionExpired("Equasis home page did not set a JSESSIONID cookie")
         self.wait()
         response = self.request(
-            "POST", LOGIN, data={"j_email": email, "j_password": password, "submit": "Login"}, timeout=60,
+            "POST", LOGIN, "login", data={"j_email": email, "j_password": password, "submit": "Login"}, timeout=60,
             headers={**FORM_HEADERS, "Referer": HOME},
         )
         self.last = self.clock()
@@ -110,8 +136,9 @@ class Equasis:
         if not self.session_ready:
             self.open_session()
         self.wait()
+        kind = "details" if "P_IMO" in data else "search"
         response = self.request(
-            "POST", f"{BASE}/ShipInfo?fs=Search", data=data, timeout=60,
+            "POST", f"{BASE}/ShipInfo?fs=Search", kind, data.get("P_IMO") or data.get("P_ENTREE"), data=data, timeout=60,
             headers={**FORM_HEADERS, "Referer": f"{BASE}/Search?fs=Search", "Sec-Fetch-Dest": "document",
                      "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Site": "same-origin", "Sec-Fetch-User": "?1"},
         )
@@ -133,6 +160,7 @@ class Equasis:
     def search(self, name: str, refresh: bool = False) -> list[dict]:
         key = name.strip().upper()
         if not refresh and key in self.cache["search"]:
+            self.emit("search", key, "cache", None, 0.0, None, None)
             return self.cache["search"][key]["results"]
         soup = self.post({
             "P_PAGE": "1", "P_PAGE_COMP": "1", "P_PAGE_SHIP": "1", "ongletActifSC": "ship",
@@ -145,6 +173,7 @@ class Equasis:
 
     def details(self, imo: str, refresh: bool = False) -> dict:
         if not refresh and imo in self.cache["details"]:
+            self.emit("details", imo, "cache", None, 0.0, None, None)
             return self.cache["details"][imo]
         data = parse_details(self.post({"P_IMO": imo}), imo)
         self.cache["details"][imo] = data

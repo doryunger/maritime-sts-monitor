@@ -1,3 +1,4 @@
+import os
 import re
 import sys
 from datetime import UTC, datetime
@@ -13,6 +14,9 @@ FIELDS = (
     "imo", "mmsi", "call_sign", "gross_tonnage", "dwt", "year_built", "vessel_type", "status", "equasis_name",
     "equasis_flag", "false_flag", "confidence", "reasons", "candidates", "search_name", "source", "resolved_utc",
 )
+
+
+DEPLOYED_LIMITS = ("request_delay_s", "max_lookups_per_run")
 
 
 def number(text) -> float | None:
@@ -203,6 +207,20 @@ def save_identity(store: Store, ship_id: str, record: dict) -> None:
         )
 
 
+def request_logger(store: Store):
+    commit = os.environ.get("STS_GIT_COMMIT") or None
+
+    def log(event: dict) -> None:
+        store.db.execute(
+            "insert into review.equasis_requests (run_key, kind, query, outcome, http_status, elapsed_ms, gap_s, delay_s, error, commit_hash) "
+            "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (store.run_key, event["kind"], event["query"], event["outcome"], event["http_status"], event["elapsed_ms"],
+             event["gap_s"], event["delay_s"], event["error"], commit),
+        )
+
+    return log
+
+
 def enrich(store: Store, rules: dict, eq: Equasis | None = None, log=print) -> dict:
     vessels = pending(store)
     summary = {"looked_up": 0, "resolved": 0, "unresolved": 0, "skipped": None}
@@ -215,7 +233,7 @@ def enrich(store: Store, rules: dict, eq: Equasis | None = None, log=print) -> d
         if not configured():
             summary["skipped"] = "Equasis credentials are not set"
             return summary
-        eq = Equasis(rules["request_delay_s"])
+        eq = Equasis(rules["request_delay_s"], log=request_logger(store))
     for vessel in vessels:
         try:
             record = resolve_vessel(eq, vessel, rules)

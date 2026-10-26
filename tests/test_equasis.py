@@ -210,3 +210,78 @@ def test_every_variant_is_tried_before_giving_up_but_never_more_than_the_cap():
     eq = FakeEquasis({})
     record = equasis.resolve_vessel(eq, {"name": "ALPHA BETA GAMMA DELTA EPSILON", "flag": "HK", "type_code": "8", "dwt": 1}, RULES)
     assert record["confidence"] == "not found" and 1 < len(eq.searches) <= RULES["name_variants_max"]
+
+
+class FakeResponse:
+    def __init__(self, status, text="<html></html>"):
+        self.status_code = status
+        self.text = text
+        self.url = "https://www.equasis.org/EquasisWeb/restricted/ShipInfo"
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise client.requests.HTTPError(f"{self.status_code} Client Error")
+
+
+def logged_client(tmp_path, statuses):
+    events, clock = [], {"now": 0.0}
+    eq = client.Equasis(10, path=tmp_path / "c.json", clock=lambda: clock["now"], sleep=lambda s: clock.update(now=clock["now"] + s), log=events.append)
+    eq.session_ready = True
+    answers = iter(statuses)
+
+    def send(method, url, **kwargs):
+        clock["now"] += 0.5
+        return FakeResponse(next(answers))
+
+    eq.http.request = send
+    return eq, events
+
+
+def test_every_request_is_logged_with_its_gap_status_and_the_configured_delay(tmp_path):
+    eq, events = logged_client(tmp_path, [200, 200, 404])
+    eq.search("AVA 6")
+    eq.details("9226140")
+    with pytest.raises(client.requests.HTTPError):
+        eq.search("BOOM")
+    assert [(e["kind"], e["query"], e["outcome"], e["http_status"]) for e in events] == [
+        ("search", "AVA 6", "ok", 200), ("details", "9226140", "ok", 200), ("search", "BOOM", "http_error", 404)]
+    assert events[0]["gap_s"] is None and events[1]["gap_s"] == pytest.approx(10.0) and events[0]["delay_s"] == 10
+
+
+def test_a_cached_answer_is_logged_without_a_request(tmp_path):
+    eq, events = logged_client(tmp_path, [200])
+    eq.search("AVA 6")
+    eq.search("ava 6")
+    assert [e["outcome"] for e in events] == ["ok", "cache"] and events[1]["elapsed_ms"] == 0
+
+
+def test_a_failing_log_never_stops_a_lookup(tmp_path):
+    eq, _ = logged_client(tmp_path, [200])
+    eq.log = lambda event: 1 / 0
+    assert eq.search("AVA 6") == []
+
+
+def test_enrichment_writes_one_row_per_request_against_the_run(make, tmp_path, monkeypatch):
+    store = make([("1", "AVA 6", "HK")])
+    monkeypatch.setenv("EQUASIS_EMAIL", "x@example.com")
+    monkeypatch.setenv("EQUASIS_PASSWORD", "x")
+    monkeypatch.setattr(client, "cache_path", lambda: tmp_path / "c.json")
+    answers = iter([FakeResponse(200, SEARCH_HTML), FakeResponse(200, DETAILS_HTML)])
+    monkeypatch.setattr(client.Equasis, "open_session", lambda self: setattr(self, "session_ready", True))
+    monkeypatch.setattr(client.Equasis, "wait", lambda self: None)
+    monkeypatch.setattr(client.requests.Session, "request", lambda self, *a, **k: next(answers))
+    equasis.enrich(store, dict(RULES, request_delay_s=0))
+    rows = store.db.execute("select run_key, kind, query, outcome, http_status from review.equasis_requests order by id").fetchall()
+    assert [(r["kind"], r["outcome"]) for r in rows] == [("search", "ok"), ("details", "ok")]
+    assert {r["run_key"] for r in rows} == {store.run_key}
+
+
+def test_a_job_snapshot_cannot_lower_the_deployed_delay_or_raise_the_cap():
+    from maritime_tip_cue import publish
+
+    stale = {"identity": dict(RULES, request_delay_s=2, max_lookups_per_run=999, name_variants_max=1)}
+    merged = publish.identity_rules(stale)
+    assert merged["request_delay_s"] == 10 and merged["max_lookups_per_run"] == RULES["max_lookups_per_run"]
+    assert merged["name_variants_max"] == 1
+    assert publish.identity_rules({"ais_match": {}})["request_delay_s"] == 10
+    assert publish.identity_rules(None)["request_delay_s"] == 10

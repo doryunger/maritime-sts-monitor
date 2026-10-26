@@ -15,6 +15,19 @@ once made Equasis answer 404, its limit, on 2026-10-25), a cap per run (`identit
 the run and is reported; it never stops publication. Without `EQUASIS_EMAIL` and `EQUASIS_PASSWORD` in `.env` the
 step is skipped.
 
+## Request log and who sets the limits
+Every HTTP request to Equasis (home, login, search, details) and every cache hit is a row in `review.equasis_requests`:
+time, run, kind, query, outcome (`ok`, `http_error`, `error`, `cache`), HTTP status, elapsed ms, seconds since the
+previous request, the delay in force and the image's commit. It is written in autocommit by the client's `log` hook, so a
+refused request is recorded even when the lookup then aborts, and a failing insert never stops a lookup. Rows outlive
+a removed run (`run_key` is set to null). To see a burst: group by minute and look at `gap_s` against `delay_s`.
+
+On 2026-10-26 a refusal (404) came after about 20 requests in 40 s on the EC2 worker although the repo said 10 s: the worker
+takes its rules from the manifest snapshot stored when the job was created, and 35 queued jobs carried
+`request_delay_s` 2. `publish.identity_rules` therefore takes `request_delay_s` and `max_lookups_per_run` from the
+rules file of the running image and only the scoring and name-search settings from the snapshot. Never read an
+Equasis limit from a job snapshot.
+
 ## Resolving
 AIS names hold 20 characters and may carry prefixes like M/T, so the exact AIS name often is not what Equasis stores.
 `find_candidates` searches the cleaned full name first, then up to `identity.name_variants_max` variants: the name without
