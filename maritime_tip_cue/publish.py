@@ -145,10 +145,12 @@ def collect_at(path: Path, no: int, job_id: str | None = None, rules: dict | Non
             parties = {
                 p["slot"]: dict(p)
                 for p in store.db.execute(
-                    "select m.slot, m.name, coalesce(m.imo, v.imo) as imo, coalesce(m.mmsi, v.mmsi) as mmsi, m.flag, m.dist_a_m, m.dist_b_m, m.score as match_score, "
+                    "select m.slot, m.name, coalesce(m.imo, v.imo) as imo, coalesce(m.mmsi, v.mmsi) as mmsi, m.flag, m.dist_a_m, m.dist_b_m, m.score as match_score, c.ais_heading as ais_heading_deg, m.speed_kn as ais_speed_kn, "
                     "m.report_age_min, m.ship_id, (m.is_sanctioned or coalesce(v.sanctions_lists, '') <> '') as is_sanctioned, v.sanctions_lists, v.call_sign, v.gross_tonnage, v.dwt as equasis_dwt, v.year_built, "
                     "v.vessel_type, v.status as equasis_status, v.confidence as identity_confidence, v.source as identity_source "
                     "from review.ais_matches m left join review.vessel_identities v on v.ship_id = m.ship_id "
+                    "left join review.ais_candidates c on c.run_key = m.run_key and c.scene_id = m.scene_id and c.site = m.site "
+                    "and c.hull_id = m.hull_id and c.slot = m.slot and c.ship_id = m.ship_id "
                     "where m.run_key = %s and m.scene_id = %s and m.site = %s and m.hull_id = %s and m.chosen",
                     (store.run_key, r["scene_id"], r["site"], r["hull_id"]),
                 )

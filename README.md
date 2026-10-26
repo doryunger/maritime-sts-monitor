@@ -135,7 +135,8 @@ captures/<DD-MM-YYYY>/<hot_spot>/<source>/<finding>_<vessel name>.png
 
 - A row is a detected `single` hull (the pair check's verdict) whose terrestrial AIS match (scored, within 150 m, see `ais.md`) is a sanctioned vessel: one
   vessel's position, name, flag, IMO, MMSI, Equasis data, sanctions lists and programs, `vessel_is_sanctioned` true,
-  AIS match distance and report age, and the capture path. Satellite AIS is never matched. No AIS-only rows.
+  AIS match distance, score and report age, our heading axis (`heading_deg`) and the AIS heading and speed, and the capture
+  path. Satellite AIS is never matched. No AIS-only rows.
 - A file exists only when that source has such a finding at that hot spot on that date.
 
 ### Run state (SQLite)

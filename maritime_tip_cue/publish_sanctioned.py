@@ -39,6 +39,7 @@ def assemble(findings: list[dict], rules: dict, root: Path, provenance: dict | N
         for f in sorted(items, key=lambda f: (f["capture_utc"], f["hull_id"])):
             pos = publish.vessel_positions(f["source"], f["record"], f["lat"], f["lon"])[0] or (f["lat"], f["lon"])
             rel = {k: p.relative_to(root / "captures").as_posix() for k, p in f["files"].items()}
+            heading, heading_source = publish.pair_heading(f)
             rows.append(
                 {
                     "finding_id": f["finding_id"],
@@ -60,9 +61,13 @@ def assemble(findings: list[dict], rules: dict, root: Path, provenance: dict | N
                     "qa_status": f["qa"],
                     "qa_note": f["qa_note"] or None,
                     "measures": json.dumps(publish.measures(f)),
+                    "heading_deg": heading,
+                    "heading_source": heading_source,
                     **{f"vessel_{key}": value for key, value in publish.vessel_fields(f["party"], pos).items()},
                     "vessel_sanctions_programs": f["party"].get("sanctions_programs"),
                     "vessel_match_score": f["party"].get("match_score"),
+                    "vessel_ais_heading_deg": f["party"].get("ais_heading_deg"),
+                    "vessel_ais_speed_kn": f["party"].get("ais_speed_kn"),
                     "ais_covered": f["ais_covered"],
                     "ais_coverage_ships": f["ais_coverage_ships"],
                     "capture_png": prefix_c + rel["png"] if "png" in rel else None,

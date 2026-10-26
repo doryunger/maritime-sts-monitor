@@ -59,12 +59,12 @@ def test_a_single_row_keeps_what_the_stored_row_knew_about_the_same_ship():
     assert other["vessel_imo"] is None and other["vessel_is_sanctioned"] is False
 
 
-def finding(hull_id="h1", site="fujairah_outer", seconds=0, party=None):
-    party = party if party is not None else {"slot": "a", "name": "KRONOS", "imo": "9338905", "is_sanctioned": True, "sanctions_lists": "OFAC+UK", "sanctions_programs": "RUSSIA", "ship_id": "7", "dist_a_m": 35.0}
+def finding(hull_id="h1", site="fujairah_outer", seconds=0, party=None, source="s2", record=None):
+    party = party if party is not None else {"slot": "a", "name": "KRONOS", "imo": "9338905", "is_sanctioned": True, "sanctions_lists": "OFAC+UK", "sanctions_programs": "RUSSIA", "ship_id": "7", "dist_a_m": 35.0, "ais_heading_deg": 95.0, "ais_speed_kn": 0.1}
     return {
-        "run": 3, "job_id": "J1", "root": Path("."), "scene_id": "S2A_X", "site": site, "hull_id": hull_id, "source": "s2", "verdict": "single",
+        "run": 3, "job_id": "J1", "root": Path("."), "scene_id": "S2A_X", "site": site, "hull_id": hull_id, "source": source, "verdict": "single",
         "capture_utc": datetime(2026, 10, 21, 6, 52, seconds, tzinfo=UTC).isoformat().replace("+00:00", "Z"), "lat": 25.0, "lon": 56.4,
-        "run_verdict": "single", "qa": "unreviewed", "qa_note": None, "record": {"check": {"hull_a_length_m": 180.0}}, "folder": "f",
+        "run_verdict": "single", "qa": "unreviewed", "qa_note": None, "record": record or {"check": {"hull_a_length_m": 180.0, "fix_heading": 40.0}, "ai2_heading": 10.0}, "folder": "f",
         "parties": {"a": party}, "ais_coverage_ships": 120, "ais_covered": True, "bbox": [56.0, 24.0, 57.0, 26.0], "length_m": 180.0,
     }
 
@@ -91,6 +91,8 @@ def test_a_sanctioned_single_is_written_with_its_vessel_capture_and_flag(png, tm
     assert (row["vessel_imo"], row["vessel_name"], row["vessel_sanctions_lists"], row["vessel_sanctions_programs"]) == ("9338905", "KRONOS", "OFAC+UK", "RUSSIA")
     assert row["capture_png"] == "captures/21-10-2026/fujairah_outer/s2/s2_20261021T065200_h1_KRONOS.png"
     assert (row["vessel_lat"], row["vessel_lon"]) == (25.0, 56.4)
+    assert (row["heading_deg"], row["heading_source"]) == (40.0, "fitted")
+    assert (row["vessel_ais_heading_deg"], row["vessel_ais_speed_kn"]) == (95.0, 0.1)
     assert b"geo" in pq.read_table(path).schema.metadata
     assert not any(name.startswith("vessel_1_") or name.startswith("vessel_2_") for name in row)
 
@@ -183,9 +185,14 @@ def test_only_singles_with_a_sanctioned_party_are_collected_and_pairs_are_left_o
     add_match(store, hull_id="plain", ship_id="3", name="PLAIN", imo="1234567")
     add_match(store, hull_id="pair", ship_id="4", name="PAIR", imo="9338905")
     run_no = store.run_no
+    store.db.execute(
+        "insert into review.ais_candidates (run_key, scene_id, site, hull_id, slot, ship_id, ais_heading) values (%s, 's', 'x', 'flagged', 'a', '1', 123.0)",
+        (store.run_key,),
+    )
     found = publish.collect_at(store.path, run_no, "J", None, verdicts=("single",))
     assert sorted(f["hull_id"] for f in found) == ["by_imo", "flagged"]
     party = found[0]["parties"]["a"]
+    assert [f["parties"]["a"]["ais_heading_deg"] for f in found] == [None, 123.0] or [f["parties"]["a"]["ais_heading_deg"] for f in found] == [123.0, None]
     assert party["is_sanctioned"] and party["sanctions_lists"] == "OFAC+UK" and party["sanctions_programs"] == "RUSSIA; RUSSIA-EO14024"
     both = publish.collect_at(store.path, run_no, "J", None, verdicts=("pair", "single"))
     assert sorted((f["hull_id"], f["verdict"]) for f in both) == [("by_imo", "single"), ("flagged", "single"), ("pair", "pair")]
@@ -248,3 +255,12 @@ def test_the_assignment_prefers_the_higher_score_then_the_nearer_ship_and_pairs_
     assert tied == {("h", "near"): 0}
     plain = match.assign({"h": hull_with([("far", 100.0, 5.0, None), ("near", 40.0, 9.0, None)])})
     assert plain == {("h", "near"): 0}
+
+
+def test_an_s1_single_takes_the_pixel_rect_axis_as_its_heading_and_none_when_there_is_no_fit(png, tmp_path):
+    kept, tables = publish_sanctioned.assemble([finding(source="s1", record={"rect_angle_deg": 30.0})], rules_mod.load(), tmp_path)
+    row, = pq.read_table(next(iter(tables.values()))[0]).to_pylist()
+    assert (row["heading_deg"], row["heading_source"]) == (60.0, "pixel_rect")
+    kept, tables = publish_sanctioned.assemble([finding(record={"check": {"fix_heading": 10.0}, "ai2_heading": 10.0})], rules_mod.load(), tmp_path / "2")
+    row, = pq.read_table(next(iter(tables.values()))[0]).to_pylist()
+    assert (row["heading_deg"], row["heading_source"]) == (None, None)

@@ -147,7 +147,7 @@ which is why a name alone does not publish.
 
 Rows are the pair rows with one vessel: `vessel_*` columns without the 1/2 number, `vessel_sanctions_lists`,
 `vessel_sanctions_programs` (from the list's `programs`), `vessel_imo`, `verdict` (`single`), capture PNG path.
-`vessel_is_sanctioned` is always true. The PNG carries one marker, yellow, on the vessel. Duplicates, `also_in` and the
+`vessel_is_sanctioned` is always true. Heading: `heading_deg` and `heading_source` are the pair rule applied to the single's own hull record (an axis in [0, 180), no bow or stern; S1 `pixel_rect`, S2 `fitted`, null when the S2 fit left the Ai2 heading unchanged), and `vessel_ais_heading_deg` (0-360, the AIS heading, or course when the ship moves and has no heading; null when AIS gave neither) and `vessel_ais_speed_kn` come from the selected `ais_candidates` row. The two are kept apart because our axis has no direction and the Sentinel-1 box heading is unreliable (see the pair heading note above). The PNG carries one marker, yellow, on the vessel. Duplicates, `also_in` and the
 per-job replace are the pair merge, with `publish_merge.keep_identity` reading the unnumbered columns. A finding that QA
 later turns into a pair is not removed from `sanctioned/` and `publish sync` does not touch these files.
 
