@@ -4,7 +4,6 @@ import json
 import sys
 import tempfile
 import time
-from collections import defaultdict
 from pathlib import Path
 
 import pyarrow.parquet as pq
