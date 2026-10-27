@@ -956,3 +956,43 @@ host. Measured during the cutover:
   published). Attempt 1 ran 14:32:59 to 14:37:38 UTC; run 66 holds 1 scene, 15 hulls, 21 raw detections, 130 events.
   Building the new worker image used 16.5 GB of EC2 disk (24 GB free before, 12 GB after the build); watch it.
 
+
+
+## Sentinel-2 hull B on cloud, haze and sea (measured 2026-10-27)
+Review of the S2 pairs rejected as cloud or sea (15 pair to single flags; 9 were still called pair, 7 of the 15 are from
+26 Oct: runs 69, 70 on fujairah_outer and 76 on off_sohar). Hull B sat on cloud or haze beside one ship (8), on empty sea
+(1, r69 44735) or on a boom or wake of the same ship (3: r9 56045, r76 48311, r34 49844); the other 3 had no hull B and
+were already single. Scripts, replay and contact sheet:
+`C:\Users\Shadow\projects\maritime-sts-analysis\2026-10-27-s2-hull-b-cloud\`.
+
+Findings:
+- Windows of scenes processed the day they were captured have no `scl` array: the L2A item is not on the STAC yet, so the
+  cloud tests are skipped without a trace (all 562 hulls of runs 69-80, and runs 40, 46-61). The windows now carry
+  `cloud_mask` in their index entry and the missing mask is logged.
+- A late L2A mask does not help. Fetched afterwards for runs 69, 70 and 76, SCL at hull B is water (class 6) for 6 of the 7
+  cloud and sea rejections, and cloud (class 8 or 9) at many confirmed pairs, because Sen2Cor reads bright hulls as cloud.
+  A cloud veto on hull B would remove good pairs and keep bad ones. In runs 34 and 9 SCL is present and also says water.
+- L1C spectrum of hull B (excess over water per band, ratios to B08, angle to a flat spectrum and to hull A): overlaps
+  completely, a group of confirmed pairs is as flat and as blue as the cloud. B10 is quantised to whole counts. Spatial
+  features of the blob (solidity, edge sharpness, peak and spread) overlap too. None adopted.
+- What separates is the contrast of hull B: its plateau stands 10 to 44 sigma above the water for every rejected blob
+  (12), against 36 to 322 for the 45 confirmed blobs (40 of them at 45 or more).
+- The plain cut at 45 loses 6 of the 17 hand-labelled fixture pairs: their hull B is dim (11 to 42) but hull A is clearly
+  too wide (width ratio 2.1 to 3.3). Cloud-driven rejections mostly lack that A width evidence (7 of 12 have none).
+  Rule applied: a blob below `hull_b_alone_plateau_min_sigma` (40) counts only when hull A's width reaches
+  `pair_width_ratio`.
+
+Replay of the reviewed pairs (69 unique hulls, stored windows, before to after):
+
+| Region | Rejected still pair | Rejected now not pair | Confirmed kept | Confirmed lost |
+|---|---|---|---|---|
+| fujairah_outer | 7 to 3 | 6 to 10 | 38 to 38 | 1 to 1 |
+| off_sohar | 2 to 1 | 0 to 1 | 15 to 15 | 0 to 0 |
+| johor_east_scs, malaysia_eopl | no S2 pairs | | | |
+
+The one confirmed loss (r34 45568) is the earlier note "second vessel is not a cargo or tanker" and is not caused by this rule.
+Still pair: r76 48311 (boom, through hull A width and shape step), r69 44696 (cloud puff, hull A reads wide),
+r34 49844 (wake), r70 45670 (cloud, plateau 44.4; 45 would drop it and also a confirmed pair at 44.2). Fixtures:
+16 of 17 labelled pairs kept (DD8F94DB3 RDN lost, plateau 18.7), the one labelled single called pair is unchanged;
+the frozen verdict test is unchanged. In-sample: all stored S2 pairs were already reviewed, so there is no unseen sample;
+check on the next reviewed S2 runs.

@@ -122,7 +122,7 @@ def extract(scratch: Path, cands: list[dict], scene: dict, rules: dict, folder: 
         for i, w in enumerate(cluster_windows(cands, cfg)):
             region = (w["lon"] - cfg["region_half_lon_deg"], w["lat"] - cfg["region_half_lat_deg"], w["lon"] + cfg["region_half_lon_deg"], w["lat"] + cfg["region_half_lat_deg"])
             path = locate(layers, region) if layers else None
-            entry = w | {"file": None, "region": region}
+            entry = w | {"file": None, "region": region, "cloud_mask": False}
             if path is not None:
                 win = load_window(path, region)
                 if not mask["tried"]:
@@ -131,11 +131,14 @@ def extract(scratch: Path, cands: list[dict], scene: dict, rules: dict, folder: 
                         mask["ds"] = scl_dataset(scene["scene"], datetime.fromisoformat(scene["time"].replace("Z", "+00:00")), rules)
                     except Exception as e:
                         log(f"{scene['scene']}: no cloud mask: {str(e)[:200]}")
+                    if mask["ds"] is None:
+                        log(f"{scene['scene']}: no L2A cloud mask on the STAC yet; cloud tests are skipped for this scene")
                 if mask["ds"] is not None and str(mask["ds"].crs) == win["crs"]:
                     win["scl"] = scl_window(mask["ds"], array_bounds(win["shape"][0], win["shape"][1], win["transform"]), *win["shape"])
                 arrays = {f"band_{k}": v for k, v in win["bands"].items()}
                 if win["scl"] is not None:
                     arrays["scl"] = win["scl"]
+                    entry["cloud_mask"] = True
                 name = f"w{i:03d}.npz"
                 np.savez_compressed(folder / name, transform=np.array(win["transform"])[:6], crs=win["crs"], **arrays)
                 entry["file"] = name

@@ -286,6 +286,11 @@
       "unit": "sigma",
       "basis": "That stretch must stand at least this many sigmas above the water."
     },
+    "hull_b_alone_plateau_min_sigma": {
+      "value": 0,
+      "unit": "sigma",
+      "basis": "Not applied in the frozen snapshot, which predates the rule."
+    },
     "anchor_heading_tol_deg": {
       "value": 1.0,
       "unit": "deg",

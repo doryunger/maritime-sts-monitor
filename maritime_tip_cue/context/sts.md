@@ -45,6 +45,12 @@ histogram of the whole object (no separation: one ship at 10 m is already multim
 hull). The histogram of the stepped strip against hull A in the same rows does separate (a second vessel is nearly
 as bright and has the same value distribution, a halo is dimmer), but is not needed by the current limits.
 
+Hull B on cloud (2026-10-27, `hull_b_alone_plateau_min_sigma`): a hull B blob only has to be 10 sigma above the water, so
+cloud and haze beside a ship pass it. A blob under 40 sigma now counts only when hull A's width also reaches
+`pair_width_ratio`. Not used, with the numbers in feasibility: the L2A scene classification at hull B (it reads bright hulls
+as cloud and thin haze as water), band ratios and spectral angles (a group of confirmed pairs is as flat as cloud), blob
+solidity and edge sharpness. A plain 45 cut on every blob loses 6 of 17 labelled fixture pairs whose hull B is dim.
+
 ## s1object
 Radar outline of one object: dB chips of VH and VV, the object's brightness scale is a high percentile of the
 pixels near the Ai2 point, and the outline is the connected set of pixels within a fixed drop below it. Side-lobe

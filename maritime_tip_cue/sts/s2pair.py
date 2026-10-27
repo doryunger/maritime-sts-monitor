@@ -545,6 +545,8 @@ def check(win: dict, box: dict, cfg: dict) -> dict:
     for side in list(found):
         if halo(zprof, t, (a_lo, a_hi), found[side], cfg):
             del found[side]
+        elif not wide and found[side]["plateau_sigma"] < cfg["hull_b_alone_plateau_min_sigma"]:
+            del found[side]
     if not found and all(dry.values()):
         out["reaches_water"] = False
         out["unmeasured_reason"] = "profile does not reach water at either strip edge"

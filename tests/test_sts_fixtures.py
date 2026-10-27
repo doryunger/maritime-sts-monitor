@@ -61,7 +61,7 @@ def test_s2_verdicts_and_ratios(s2):
 
 def test_s2_scores(s2_live):
     c = counts([(i["label_user"], r["verdict"]) for i, r in s2_live if i["set"] in fixtures.S2_SETS])
-    assert c.get(("pair", "pair"), 0) == 17
+    assert c.get(("pair", "pair"), 0) == 16
     assert sum(n for (label, verdict), n in c.items() if verdict == "possible_pair") == 0
     assert c.get(("single", "pair"), 0) == 1
 

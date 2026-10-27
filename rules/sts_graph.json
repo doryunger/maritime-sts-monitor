@@ -286,6 +286,11 @@
       "unit": "sigma",
       "basis": "That stretch must stand at least this many sigmas above the water."
     },
+    "hull_b_alone_plateau_min_sigma": {
+      "value": 40,
+      "unit": "sigma",
+      "basis": "When hull A's width does not reach pair_width_ratio, hull B's plateau must stand at least this high. Chosen 2026-10-27 from the reviews of hull B blobs rejected as cloud, haze or sea (plateau 10 to 44) and the S2 fixtures; in-sample on fujairah_outer and off_sohar, the only regions with S2 pairs. 45 would also drop one more cloud (44.4) but a confirmed pair at 44.2; see docs/feasibility.md."
+    },
     "anchor_heading_tol_deg": {
       "value": 1.0,
       "unit": "deg",
