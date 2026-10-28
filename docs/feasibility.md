@@ -996,3 +996,210 @@ r34 49844 (wake), r70 45670 (cloud, plateau 44.4; 45 would drop it and also a co
 16 of 17 labelled pairs kept (DD8F94DB3 RDN lost, plateau 18.7), the one labelled single called pair is unchanged;
 the frozen verdict test is unchanged. In-sample: all stored S2 pairs were already reviewed, so there is no unseen sample;
 check on the next reviewed S2 runs.
+
+## Wider-route hot-spot reconnaissance (measured 2026-10-27)
+
+The current pipeline has no discovery pass outside the four shared S3 boxes. `passes.find` searches supplied
+boxes, then the catalogue tracker searches only the shared list. The existing pairs and sanctioned singles
+therefore cannot locate a new area along the Southeast Asia–Gulf of Oman route. A visually confirmed pair
+would be sufficient to propose a new box; sanctions identity is additional evidence, not a prerequisite.
+
+The reusable `coverage_map.png`, `coverage.geojson`, `coverage_summary.json` and builder are outside this app
+repo under `C:\Users\Shadow\projects\maritime-sts-analysis\2026-10-27-route-recon\`.
+Red outlines are the four monitored boxes, blue outlines are catalogue survey boxes, and green/purple polygons
+are the actual S2/S1 detector windows. The GeoJSON retains each qualifying S1/S2 scene's clipped footprint, UTC
+capture time, scene ID and tile cloud value, so future searches can tell an inventoried area from water
+actually inspected. Windows include land and clouds; they are nominal processed extent, not usable-water area.
+The map was visually checked against the local coastline and the saved detector window coordinates.
+
+Both configured STAC catalogues were queried for 15 September–15 October 2026 UTC. The existing scene rule
+requires at least 500 km² footprint overlap with a box and at most 30% **tile** cloud for S2. A catalogue scene
+may cover only part of the box and tile cloud is not a local clear-water measure. Counts are selected scene
+records and distinct capture days, not independent whole-box observations. Existing-site controls in the
+same interval were EOPL S1 18/9 scenes/days and S2 39/8, Johor 18/9 and 21/6, Fujairah 26/19 and 55/13,
+and Sohar 14/9 and 50/13, respectively.
+
+| Survey box (W, S, E, N) | S1 scenes/days | S2 scenes/days | Detector sample and current pair result |
+|---|---:|---:|---|
+| West Malacca `[100.0,2.5,101.5,3.8]` | 12/7 | 13/4 | 29 Sep S2, 18 raw detections, 12 pair candidates: 0 pair, 9 single, 3 unmeasured |
+| North Malacca `[98.5,4.5,100.0,6.0]` | 20/10 | 3/2 | 7 Oct S2: 1 single |
+| Great Nicobar `[92.5,5.5,94.0,7.0]` | 5/5 | 18/5 | 8 Oct S2: 2 singles |
+| South Sri Lanka `[79.5,4.7,81.0,6.0]` | 5/3 | 8/3 | 6 Oct S2: 1 unmeasured |
+| Lakshadweep `[72.0,8.5,73.5,10.0]` | 3/3 | 8/5 | 5 Oct S2 southwest probe: 1 single; the first northeast probe had no qualifying scene |
+| South India `[75.0,7.0,76.5,8.5]` | 3/3 | 19/7 | No detector sample |
+| Outer Gulf of Kutch `[68.0,21.0,69.5,22.5]` | 6/3 | 57/13 | No detector sample |
+| Makran coast `[61.5,24.0,63.0,25.5]` | 8/8 | 64/14 | No detector sample |
+| Linggi `[100.5,2.1,101.2,2.8]` | 9/7 | 7/4 | 29 Sep S2: 7 singles; 4 Oct S2: no pair candidate; 14 Oct S1: 12 singles |
+| Eastern Arabian Sea `[65.0,17.0,66.5,18.5]` | 0/0 | 0/0 | No imagery in these configured catalogues |
+
+The samples were processed with the existing detector, shore and structure filters, and the full sensor
+pair checks. The seven S2 images and one S1 image produced no `pair` verdict. The S1 Linggi image had
+21 raw detections, 19 kept detections, 17 grouped objects and 12 tanker-sized candidates, all called single.
+West Malacca's three unmeasured candidates and Sri Lanka's one unmeasured candidate are unresolved, not
+confirmed singles. The probes borrowed the current sites' 2 km shore exclusion; its effect at these new
+coasts has not been calibrated. One scene per place and three at Linggi cannot establish absence of STS.
+The sample windows and pair results are saved under `samples/` beside the map; the original full-scene
+scratch was removed after preserving them.
+
+[Malaysia's Marine Department](https://www.marine.gov.my/wp-content/uploads/2024/01/20200722165320-97f0b-laporan_tahunan_jabatan_laut_malaysia_2014.pdf)
+listed Linggi and Port Klang among permitted liquid-bulk STS areas in its 2014 report. This is historical
+evidence of transfer activity, not current evidence of sanctioned activity. The [2025 OFAC shipping advisory](https://ofac.treasury.gov/system/files/2025-04/Iran%20Shipping%20Advisory_4162025.pdf)
+documents sanctioned transfers at EOPL and near Nipa; those waters are already inside the current EOPL
+box. Neither source establishes a new sanctioned-transfer location farther along the route. The local AIS
+capture views are configured around the existing boxes, so these new survey sectors lack comparable AIS
+identity coverage; no detected vessel here was identified as sanctioned.
+
+No new live hot spot is justified by this first image sample. The later India and Red Sea intelligence
+review below supersedes the geographic first-pass priority. Further samples should use the full pair check
+on multiple dates, visually review proposed pairs, and record actual scene footprints. Only then choose a
+compact box around activity and audit AIS collector coverage before publishing it to the shared list.
+
+## India and Red Sea intelligence-led reconnaissance (measured 2026-10-27)
+
+The first route survey missed the Mumbai coast entirely and had no Red Sea boxes. The external
+`C:\Users\Shadow\projects\maritime-sts-analysis\2026-10-27-india-intelligence\` directory now holds
+`india_red_sea_coverage_map.png`, `india_red_sea_coverage.geojson`, the scene-count JSON and the builder.
+The map was visually checked against the coastline. GeoJSON distinguishes search boxes from clipped scene
+footprints; **none of these scenes has been run through the detector**. Boxes include land and scene counts
+do not prove usable sea pixels, let alone a vessel pair. The four active hot spots remain the controls in
+the preceding survey and have not been changed.
+
+Intelligence ranks the following places for direct image review:
+
+1. **Mumbai nearshore and outer approaches.** [Bloomberg's vessel-tracking report](https://gcaptain.com/russian-oil-stuck-on-india-banned-ship-finds-new-tanker/)
+   says UK/EU-sanctioned *Andaman Skies* was transferring Russian crude to *Ozanno* off Mumbai on 4 April
+   2025. A separate [Bloomberg/Kpler/Vortexa report](https://news.spotlightnews.us/articles/ship-with-russia-oil-makes-rare-move-off-india-as-trade-strained)
+   says UK/EU-sanctioned *Ailana* transferred about 720,000 barrels to UK/EU-sanctioned *Fortis* near Mumbai
+   on 4 November 2025. These are reported pairs, not pairs independently verified by this detector; neither
+   report gives a precise transfer coordinate. [India's Ministry of Defence](https://www.pib.gov.in/PressReleaseIframePage.aspx?PRID=2224805&lang=2&reg=3)
+   says its Coast Guard intercepted three suspect tankers about 100 nautical miles west of Mumbai on
+   5 February 2026 after identifying two vessels converging on one suspected of illicit mid-sea oil
+   transfer. That approximate position is an **interception**, not a documented transfer coordinate.
+   Nor does a UK/EU designation alone establish that a transfer violated Indian law.
+2. **Ras Isa / FSO Yemen, western Yemen.** [Lloyd's List's satellite and AIS investigation](https://www.lloydslist.com/LL1154420/Yemen%E2%80%99s-oil-company-refutes-UN-account-of-FSO-Safer-debacle)
+   reports multiple transfers involving the moored tanker *Yemen* and says imagery from 14 November 2024
+   showed it alongside *Global Ace*, subsequently sanctioned by the US. A separate
+   [Lloyd's List investigation](https://www.lloydslist.com/LL1154126/Exclusive-How-a-UN-purchased-tanker-became-a-Houthi-floating-storage-facility-for-Russian-oil)
+   reports AIS evidence of a 10 June 2025 transfer from *Yemen* to *Sea Star 1*, which then delivered
+   cargo to Ras Isa. The oil company's account of the
+   transfers disputes the UNDP account, so the image-reported pair is firmer evidence than the claimed
+   cargo origin or authorization. [US Treasury](https://home.treasury.gov/news/press-releases/sb0174)
+   separately documents sanctioned vessels discharging petroleum at Houthi-controlled Ras Isa in 2025;
+   discharge in port is not evidence of an offshore pair. [NOAA's approximate FSO Safer position](https://incidentnews.noaa.gov/incident/10131)
+   is 15.1167 N, 42.5833 E. The UN's 2023 Safer-to-Yemen transfer was an authorized spill-prevention
+   operation and must not be counted as suspicious activity. [US NGA Sailing Directions](https://msi.nga.mil/api/publications/download?key=16694491%2FSFH00000%2FPub172bk.pdf)
+   place Ras Isa Marine Terminal at 15.1167 N, 42.6000 E, about 1.8 km east of NOAA's approximate
+   longitude; imagery review uses the NGA terminal position and records the discrepancy.
+3. **Hudaydah approaches and Djibouti.** A [UN Panel of Experts report](https://documents.un.org/doc/undoc/gen/n24/259/53/pdf/n2425953.pdf)
+   describes false-origin oil/LPG shipments through Hudaydah and Ras Isa, including some STS at sea,
+   without locating those transfers in the Hudaydah approach box. Djibouti appears in vessel itineraries
+   and inspections before Yemen voyages, but no source found here documents a sanctioned offshore pair
+   at Djibouti anchorage. Djibouti's flag registry must not be mistaken for a vessel's position. These
+   are exploratory boxes, below Mumbai and Ras Isa in priority. Sikka/Jamnagar and Bab al-Mandab are
+   geographical context boxes without a documented pair in these particular bounds.
+
+Both configured STAC catalogues were queried for 15 September–15 October 2026 UTC with the current
+scene-selection rules (at least 500 km² box overlap; S2 tile cloud at most 30%). Counts are selected
+scene records / distinct capture days, not full-box observations:
+
+| New survey box (W, S, E, N) | S1 | S2 | Evidence level |
+|---|---:|---:|---|
+| Mumbai nearshore `[71.8,18.3,73.0,19.6]` | 6/3 | 34/7 | Two reported sanctioned-vessel transfers off Mumbai; exact positions unknown |
+| Mumbai outer `[70.3,18.3,71.8,19.8]` | 8/5 | 20/6 | Approximate three-vessel interception area; transfer position unknown |
+| Sikka/Jamnagar `[69.2,21.8,70.7,23.3]` | 10/5 | 32/13 | Context only; no pair substantiated in box |
+| Ras Isa FSO `[42.35,14.85,42.85,15.4]` | 12/6 | 36/9 | Reported image-confirmed pair at moored Yemen tanker; location approximate |
+| Hudaydah approaches `[42.65,14.5,43.15,15.0]` | 8/8 | 18/9 | Port-level sanctions and document-evasion intelligence; offshore pair not located |
+| Djibouti approaches `[42.7,11.2,43.5,12.2]` | 22/10 | 34/9 | Itinerary/inspection context; no local pair established |
+| Bab al-Mandab `[42.4,12.1,43.5,13.3]` | 16/10 | 51/9 | Passage context only; no local pair established |
+
+Historical scene checks provide specific next images: Mumbai nearshore has six qualifying S2 tile records
+on 3 April 2025, one day before the *Andaman Skies* report, and one S1 scene on 3 November 2025, one day
+before the *Ailana/Fortis* transfer; neither is contemporaneous proof. Mumbai outer has four S2 tile
+records on the 5 February 2026 interception day, but the exact intercept point and time are unknown.
+Ras Isa has four zero-cloud S2 tiles on 15 November 2024, the day after Lloyd's List's image-reported
+*Yemen/Global Ace* pair; there is no qualifying S1 scene in the 13–15 November query. For the
+reported *Yemen/Sea Star 1* transfer, Ras Isa has an S1 pass at 02:59 UTC on 10 June 2025;
+the reporting does not specify the transfer hour, so coincidence is unproven. These are
+catalogue availability checks, not image inspection. The next step is to process the historical Ras Isa
+scene and several recent Ras Isa and Mumbai scenes, visually review any pair, and then tighten candidate
+boxes around observed water positions. A [manual crop](C:\Users\Shadow\projects\maritime-sts-analysis\2026-10-27-india-intelligence\ras_isa_june10_fso\ras_isa_terminal_vv_zoom.png)
+of the 10 June 2025 S1 slice that includes the NGA terminal point shows a strong extended radar return
+near the charted FSO; one VV chip does not resolve one hull versus two. The full detector run did not
+finish, so this is not a detector verdict. The local
+fixed-structure inventory has no Ras Isa feature; the 2 km shore filter and persistent FSO return need
+explicit review. Audit AIS archive coverage before adding any box to the shared live list.
+
+## Iran–North India–Maldives corridor reconnaissance (measured 2026-10-27)
+
+This extends the survey east and south from the Gulf of Oman toward North India and the Maldives. The
+clearest geographically separate lead is the Maldives: [Reuters reported](https://gcaptain.com/from-the-maldives-to-venezuela-how-iran-uses-tankers-to-help-get-oil-to-an-ally/)
+that Venezuela's *Maximo Gorki* took Iranian condensate from NITC tanker *Huge* in March 2022 about
+37 nautical miles from the Maldives, then carried it to Venezuela despite US sanctions on both countries.
+Reuters attributed vessel identity and transfer evidence to monitoring services and shipping documents
+and said it could not independently verify the identities. [TankerTrackers' imagery review](https://tankertrackers.com/articles/how-venezuela-managed-its-own-import-of-iranian-gas-condensate)
+separately describes *Maksim Gorky* rendezvousing east of Malé with an Iranian tanker it identified as
+*Herby* around 26 March. The reported area is approximate; the sources do not publish a precise transfer
+coordinate. This is historical pair evidence at state-sanctioned trade level, not a current activity claim.
+
+In the Gulf of Oman, [Financial Times reporting on satellite images and customs/shipping records](https://www.luxtimes.lu/luxembourg/lakshmi-mittal-s-energy-venture-bought-russian-oil-transported-on-blacklisted-ships/100889800.html)
+documented four transfer events from July to September 2025: sanctioned tankers *Belgorod*, *Danshui*,
+*Dignity* and *Primorye* each transferred Russian crude to *Samadha*, which then carried it to India.
+The reported position was about 40 nautical miles east of Sohar. That may overlap the eastern edge of
+the existing Sohar box, so it is a priority scene-review target before defining an adjacent new hotspot.
+The [Indian Coast Guard's February 2026 Mumbai case](https://www.pib.gov.in/PressReleaseIframePage.aspx?PRID=2224805&lang=2&reg=3)
+also supports the northern Arabian Sea as a route, but its reported interception location is not an exact
+transfer point. No specific new transfer position was found for the open central Arabian Sea or Makran
+box in this review.
+
+Sentinel catalogue counts were queried for 15 September–15 October 2026 UTC using the current scene
+rules (at least 500 km² overlap and S2 tile cloud at most 30%). Counts are qualifying catalogue scene
+records / distinct capture days; they do not mean full, clear-water coverage:
+
+| Survey sector (W, S, E, N) | S1 | S2 | Evidence / use |
+|---|---:|---:|---|
+| East of Sohar `[57.0,23.6,58.3,25.1]` | 29/17 | 72/13 | Four reported sanctioned-vessel transfer pairs about 40 nm east of Sohar; check whether the event area lies inside current Sohar coverage |
+| South Makran `[61.5,23.0,63.0,24.5]` | 4/4 | 35/12 | Route reconnaissance only; no pair located in this exact box |
+| Central Arabian Sea `[66.0,12.5,67.5,14.0]` | 0/0 | 0/0 | No qualifying scene in these configured catalogues in this month |
+| East of Malé `[73.3,3.3,75.0,5.2]` | 0/0 | 32/11 | Historical Iran–Venezuela pair lead; S2 coverage, no qualifying S1 |
+| South Maldives / Gan `[72.4,-1.2,74.0,0.4]` | 0/0 | 44/9 | Operational bunkering context; no suspicious pair documented at Gan |
+| North Maldives / Haa Dhaalu `[72.4,6.0,73.8,7.6]` | 6/3 | 32/8 | Designated offshore services area; legitimate cargo transfers are possible and not evidence of sanctions evasion |
+
+For March 2022 around the reported Malé event, the off-Malé box has 38 S2 tile records over 10 capture
+days and no qualifying S1 scenes; several S2 acquisitions fell near the reported late-March timeframe.
+The reported 37-nautical-mile distance and “east of Malé” description do not pin down a single tile,
+so a scene pair must be searched across several nearby captures. Maldives law has designated offshore
+service areas near Haa Alif/Uligamu, Haa Dhaalu/Kulhudhuffushi, Kaafu/Malé and Seenu/Gan since 2013;
+these allow cargo transfers among other services. The [Maldives report describing the regulation](https://maldivesindependent.com/news-in-brief/new-regulation-provides-offshore-and-off-port-services-offered-to-foreign-vessels-57321)
+is context for traffic concentration, not proof those places are used for sanctions evasion.
+
+The best geographically new candidates are **east of Malé**, **Ras Isa**, and **off Mumbai**: each has
+at least one reported vessel pair tied to sanctioned trade and repeat S1/S2 availability in the broader
+sector. The records establish candidate areas, not present-day rates or an exact compact boundary.
+Process the Malé historical captures first, then finish Ras Isa and sample Mumbai. Treat east-of-Sohar
+as an audit of the existing Sohar edge before creating another box. North and South Maldives service
+areas are controls; South Makran is a lower-priority route sample. Do not promote the central Arabian
+Sea box without another imagery source, since neither configured catalogue returned qualifying scenes
+in the measured month. The [corridor map, GeoJSON, scene summary and builder](C:\Users\Shadow\projects\maritime-sts-analysis\2026-10-27-india-intelligence\corridor_coverage_map.png)
+are saved with the earlier India and Red Sea coverage artifacts. They distinguish current Sohar and
+Fujairah boxes from the new survey boxes. No new survey box has been added to the four-site live list.
+
+## East-of-Sohar test area added (decision 2026-10-28)
+
+The isolated test plan now includes `[57.0,23.6,58.3,25.1]` as an east-of-Sohar edge audit, using the candidate bounds and imagery availability recorded above. Its western part overlaps the existing `off_sohar` box `[56.6,24.2,57.6,24.9]`; this is intentional because the reported transfers were about 40 nautical miles east of Sohar and may fall inside that site's coverage. Pair findings in the overlap test the existing boundary. Findings east of 57.6 E provide evidence for extending geographic coverage. This is a fifth scan area because Mumbai's nearshore and outer samples remain separate; it is not a fifth live hot spot and is not evidence of current sanctioned activity.
+
+## First current-image screen of new areas (measured 2026-10-27)
+
+This is one exploratory current-image pass, not a hotspot-rate comparison. Scenes were processed with the existing detector, cleanup and pair-check rules. Repeated S2 tile rows were grouped at 150 m; saved pair crops were visually reviewed where available. The selected date is not matched to the historical reports, and coverage/effort differs from the live-site controls. A pair label by itself establishes neither vessel identity nor sanctions involvement.
+
+| Survey area | Sampled data | Result | Reading |
+|---|---|---|---|
+| Mumbai nearshore `[71.8,18.3,73.0,19.6]` | S1 12 Oct, partial pass; S2 18 Oct, 7 of 8 tiles in the Mumbai union complete | S1: 62 checked objects, 0 pair, 0 possible pair. S2: 3 unique pair labels after 150 m tile deduplication | Three pair locations were visually reviewed as faint/low-contrast; no reviewed crop clearly resolves two hulls. A fourth nearshore location still needs a saved crop and review. One S1 slice remains unavailable after a catalogue timeout. |
+| Mumbai outer `[70.3,18.3,71.8,19.8]` | S2 18 Oct, same 7 of 8 completed tiles in the Mumbai union | 1 unique pair label in the outer box | The reviewed label is visually uncertain. The eighth tile remains unmeasured: its run stalled during layer loading, and an isolated retry was blocked when the sandbox denied the STAC network connection. No outer-box S1 result. |
+| Ras Isa / FSO Yemen `[42.35,14.85,42.85,15.4]` | S2 18 Oct, four adjacent tiles | 62 raw detections, 38 kept, 30 checked tile rows, 9 unique checked objects, 0 pair / 0 possible pair | All checked objects were single. One tile's cloud-mask lookup returned 504, so cloud tests were skipped there under the configured fallback. No current S1 screen. |
+| East of Malé `[73.3,3.3,75.0,5.2]` | S2 17 Oct, one tile | 0 raw/kept detections, 0 checked, 0 pair | A measured zero for this tile only. No qualifying S1 scene in the catalogue window. |
+
+Mumbai's seven completed S2 tiles contain six pair tile-rows but only four distinct locations after the 150 m deduplication: approximately 18.8649 N, 72.8550 E; 18.8978 N, 72.8600 E; 18.8989 N, 72.8641 E; and 19.0111 N, 71.7819 E. Three fall in the nearshore box and one in the outer box. Tile rows overlap, so counting them separately would overstate events. Reviewed crops are saved under `C:\Users\Shadow\projects\maritime-sts-analysis\2026-10-27-india-intelligence\matched-screen\qa\current_mumbai_union_s2\`; three distinct locations look visually uncertain and the fourth has no saved crop yet. None is a confirmed vessel pair. Mumbai S2 had cloud-mask lookup failures on at least one tile, which disabled cloud-dependent checks there. The pass summary and per-tile records are in that directory's `summaries\current\mumbai_union\s2\` folder. The partial S1 and Ras Isa summaries are under their respective `summaries\current\` folders. Coverage geometry is in `footprints.geojson` beside the screen log and summaries.
+
+The four live sites' recent control runs found Fujairah 16 pair / 0 possible pair among 734 checked; Sohar 16 / 2 among 332; Johor East 0 / 1 among 137; and Malaysia EOPL 1 / 1 among 145. Their scene counts and sampled dates differ (Fujairah 6 S1 and 5 S2 scenes; Sohar 4 S1 scenes and its S2 scene failed on missing XML; Johor East 3 S1 scene rows; EOPL 4 S1 scene rows). These are raw run totals, not matched rates. The current Mumbai S2 labels cannot be compared directly to a week of control runs, especially while visual confirmation and one tile are outstanding. Keep all four sites in the comparison set; do not transfer a rule or threshold based on one region.
+
+**Decision:** none of the new areas is ready to add to the live hot-spot list. Mumbai is the strongest next review target because the image screen returned four distinct, though uncertain, S2 pair locations and independent reporting places sanctioned-vessel transfers in the broader area. Retry the eighth S2 tile outside the network-restricted sandbox, complete missing S1 coverage, inspect the historical event-date scenes (Mumbai Apr/Nov 2025 and Feb 2026; Ras Isa Nov 2024 and Jun 2025; Malé Mar 2022), and run matched windows across all four controls before judging recurrence. Ras Isa and Malé's current sampled S2 tiles did not return pair labels; this does not rule out activity on other dates. Preserve the survey boxes and observed scene footprints separately from the four live boxes until repeated, visually supported activity and AIS coverage are established.
