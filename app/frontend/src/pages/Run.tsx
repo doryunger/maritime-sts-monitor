@@ -19,10 +19,10 @@ const TABS: [string, string][] = [
   ["fixtures", "Fixtures"],
 ];
 
-export default function Run() {
+export default function Run({ hotspotTest = false }: { hotspotTest?: boolean }) {
   const no = Number(useParams().no);
   const [params, setParams] = useSearchParams();
-  const tab = params.get("tab") || "qa";
+  const tab = hotspotTest ? "qa" : params.get("tab") || "qa";
   const filter = params.get("filter") || "all";
   const scene = params.get("scene");
   const focus = params.get("hull");
@@ -31,8 +31,8 @@ export default function Run() {
 
   useEffect(() => {
     setDoc(null);
-    api.run(no).then(setDoc).catch((e) => setError(e.message));
-  }, [no]);
+    (hotspotTest ? api.hotspotTestRun(no) : api.run(no)).then(setDoc).catch((e) => setError(e.message));
+  }, [no, hotspotTest]);
 
   useEffect(() => {
     if (doc && focus) document.getElementById(`hull-${focus}`)?.scrollIntoView({ block: "center" });
@@ -62,6 +62,9 @@ export default function Run() {
   const s = doc.summary;
   const flagged = doc.flags.length;
   const issues = doc.flags.filter((f) => !LABELLED.includes(f.status)).length;
+  const sections = hotspotTest ? ["pair", "possible_pair"] : SECTIONS;
+  const verdicts = hotspotTest ? ["pair", "possible_pair"] : VERDICTS;
+  const tabs = hotspotTest ? TABS.slice(0, 1) : TABS;
   const keep = (id: string, verdict: string, final: string, sceneId: string) => {
     if (scene && sceneId !== scene) return false;
     const f = flags[id];
@@ -74,8 +77,9 @@ export default function Run() {
 
   return (
     <section>
-      <p className="crumbs"><Link to="/">Runs</Link> / {no}</p>
+      <p className="crumbs"><Link to={hotspotTest ? "/hotspot-tests" : "/"}>{hotspotTest ? "Hotspot tests" : "Runs"}</Link> / {no}</p>
       <h1>Run {no} <span className="muted">· {label(s.area)}</span></h1>
+      {hotspotTest && <p className="muted">Pair candidates only. AIS was not queried for this scan.</p>}
       <dl className="facts">
         <div><dt>Status</dt><dd><span className={`status s-${s.status}`}>{s.status}</span></dd></div>
         <div><dt>Created</dt><dd className="mono">{when(s.created)}</dd></div>
@@ -83,19 +87,19 @@ export default function Run() {
         <div><dt>Scenes</dt><dd>{s.scenes}{s.scenes_failed ? ` (${s.scenes_failed} failed)` : ""}</dd></div>
         <div><dt>Rules / code</dt><dd className="mono">{doc.run.rules_sha1?.slice(0, 8)} / {doc.run.commit?.slice(0, 8)}</dd></div>
       </dl>
-      <div className="wrap">
+      {!hotspotTest && <div className="wrap">
         <table className="verdicts">
           <thead>
-            <tr><th></th>{VERDICTS.map((v) => <th key={v} className="n">{label(v)}</th>)}</tr>
+            <tr><th></th>{verdicts.map((v) => <th key={v} className="n">{label(v)}</th>)}</tr>
           </thead>
           <tbody>
-            <tr><th>Run</th>{VERDICTS.map((v) => <td key={v} className="n">{s.run_verdicts?.[v] ?? 0}</td>)}</tr>
-            <tr><th>After QA</th>{VERDICTS.map((v) => <td key={v} className="n">{s.verdicts?.[v] ?? 0}</td>)}</tr>
+            <tr><th>Run</th>{verdicts.map((v) => <td key={v} className="n">{s.run_verdicts?.[v] ?? 0}</td>)}</tr>
+            <tr><th>After QA</th>{verdicts.map((v) => <td key={v} className="n">{s.verdicts?.[v] ?? 0}</td>)}</tr>
           </tbody>
         </table>
-      </div>
+      </div>}
       <nav className="tabs" role="tablist">
-        {TABS.map(([k, t]) => (
+        {tabs.map(([k, t]) => (
           <button key={k} role="tab" aria-selected={tab === k} onClick={() => set("tab", k)}>{t}</button>
         ))}
       </nav>
@@ -111,31 +115,31 @@ export default function Run() {
               </button>
             )}
             <span className="muted small">
-              {flagged} of {doc.hulls.length} reviewed, {issues} with issues. Singles: a sample of {doc.run.singles_sample.n} of {doc.run.singles_sample.of}.
+              {flagged} of {doc.hulls.length} pair candidates reviewed{hotspotTest ? "" : `, ${issues} with issues. Singles: a sample of ${doc.run.singles_sample.n} of ${doc.run.singles_sample.of}.`}
             </span>
           </div>
-          {SECTIONS.map((sec) => {
-            const hulls = doc.hulls.filter((h) => (SECTIONS.includes(h.verdict) ? h.verdict : "single") === sec && keep(h.id, h.verdict, h.final_verdict, h.scene_id));
+          {sections.map((sec) => {
+            const hulls = doc.hulls.filter((h) => (sections.includes(h.verdict) ? h.verdict : "single") === sec && keep(h.id, h.verdict, h.final_verdict, h.scene_id));
             if (!hulls.length) return null;
             return (
               <div key={sec}>
                 <h2>{label(sec)} <span className="muted">({hulls.length})</span></h2>
                 <div className="grid">
-                  {hulls.map((h) => <HullCard key={h.id} run={no} hull={h} flag={flags[h.id]} onSaved={onSaved} focused={h.hull_id === focus} version={doc.image_version} />)}
+                  {hulls.map((h) => <HullCard key={h.id} run={no} hull={h} flag={flags[h.id]} onSaved={onSaved} focused={h.hull_id === focus} version={doc.image_version} hotspotTest={hotspotTest} />)}
                 </div>
               </div>
             );
           })}
         </>
       )}
-      {tab === "scenes" && (
+      {!hotspotTest && tab === "scenes" && (
         <div className="wrap">
           <table>
             <thead>
               <tr>
                 <th>Source</th><th>Captured</th><th>Scene</th><th>Status</th>
                 <th className="n">Raw</th><th className="n">Kept</th><th className="n">Checked</th>
-                {SECTIONS.map((v) => <th key={v} className="n">{label(v)}</th>)}
+                {sections.map((v) => <th key={v} className="n">{label(v)}</th>)}
                 <th className="n">Detector s</th>
               </tr>
             </thead>
@@ -149,7 +153,7 @@ export default function Run() {
                   <td className="n">{sc.raw ?? "–"}</td>
                   <td className="n">{sc.kept ?? "–"}</td>
                   <td className="n">{sc.checked ?? "–"}</td>
-                  {SECTIONS.map((v) => <td key={v} className="n">{String(sc[v] ?? 0)}</td>)}
+                  {sections.map((v) => <td key={v} className="n">{String(sc[v] ?? 0)}</td>)}
                   <td className="n">{num(sc.detector_s, 0)}</td>
                 </tr>
               ))}
@@ -157,7 +161,7 @@ export default function Run() {
           </table>
         </div>
       )}
-      {tab === "fixtures" && (
+      {!hotspotTest && tab === "fixtures" && (
         <div>
           {doc.fixtures.totals ? (
             <p>

@@ -96,3 +96,11 @@ The review-folder sync skips a run whose attempt is still `running` and retries 
 minutes (`RETRY_MISSING_SECONDS`). The worker creates the run row when the job starts but uploads its review folder only
 when the job ends; an earlier version blacklisted a run for the life of the process on the first "no such key" and so
 never showed run 66's images (2026-10-25).
+
+## Hotspot-test review
+
+`/hotspot-tests` is served by the same authenticated app through the separate Caddy hostname. It lists versioned
+test areas, run summaries and Parquet keys from the private findings prefix. S3 is accessed by the app identity;
+the bucket is not public. Test run detail and flag endpoints filter out singles, unmeasured hulls and duplicate
+roles, and the existing QA cards save only pair-candidate decisions. The regular runs and scene APIs exclude test
+areas so their detector-only results cannot be confused with AIS-enriched findings.

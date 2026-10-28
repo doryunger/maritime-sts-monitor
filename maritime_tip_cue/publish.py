@@ -74,6 +74,8 @@ def run_problem(no: int, completed: set[str], allow_legacy: bool) -> str | None:
         return "no run record"
     if row["status"] != "done":
         return f"run status is {row['status']}"
+    if ((row["args"] or {}).get("hot_spot_settings") or {}).get("pipeline") == "hotspot_test":
+        return "hotspot-test run is never published to the regular feed"
     job_id = (row["args"] or {}).get("job_id")
     if job_id is None:
         return None if allow_legacy else "not created by a queue job (pass --legacy to publish it deliberately)"

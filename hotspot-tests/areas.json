@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "areas": [
+    {
+      "name": "test_mumbai_nearshore",
+      "label": "Mumbai nearshore",
+      "pipeline": "hotspot_test",
+      "area_version": 3,
+      "bbox": [72.58, 18.7, 72.78, 19.0],
+      "reference_bbox": [71.8, 18.3, 73.0, 19.6],
+      "min_shore_distance_m": 2000,
+      "sources": ["s1", "s2"],
+      "lookback_days": 10,
+      "rationale": "Open water off the Mumbai west coast. The earlier box (version 2, 72.65-73.0 E, 18.65-19.15 N) covered Mumbai Harbour, where charted platform and mooring structures at 18.865 N 72.855 E and 19.05 N 72.79 E lie in the channel, and three faint 18 October 2026 S2 pair labels at 18.8649-18.8990 N, 72.8550-72.8641 E were probably that crowded water, not confirmed pairs. This box holds no charted structure and is 98 percent beyond the 2 km shore mask."
+    },
+    {
+      "name": "test_mumbai_outer",
+      "label": "Mumbai outer approaches",
+      "pipeline": "hotspot_test",
+      "area_version": 2,
+      "bbox": [70.8, 18.6, 72.05, 19.4],
+      "reference_bbox": [70.3, 18.3, 71.8, 19.8],
+      "min_shore_distance_m": 2000,
+      "sources": ["s1", "s2"],
+      "lookback_days": 10,
+      "rationale": "Recent S2 screening produced one visually uncertain pair label at 19.0111 N, 71.7819 E near the former east boundary. The west extent retains the approximate 100 nautical mile west-of-Mumbai Coast Guard lead."
+    },
+    {
+      "name": "test_ras_isa_fso",
+      "label": "Ras Isa / FSO Yemen",
+      "pipeline": "hotspot_test",
+      "area_version": 2,
+      "bbox": [42.48, 15.0, 42.75, 15.25],
+      "reference_bbox": [42.35, 14.85, 42.85, 15.4],
+      "min_shore_distance_m": 2000,
+      "sources": ["s1", "s2"],
+      "lookback_days": 10,
+      "rationale": "Focused around the charted Ras Isa terminal and approximate FSO Safer position after the 18 October 2026 S2 sample returned no pair labels. Historical reported pairs justify repeat review; the current sample does not confirm activity."
+    },
+    {
+      "name": "test_east_of_male",
+      "label": "East of Malé",
+      "pipeline": "hotspot_test",
+      "area_version": 2,
+      "bbox": [73.7, 3.3, 75.0, 5.2],
+      "reference_bbox": [73.3, 3.3, 75.0, 5.2],
+      "min_shore_distance_m": 2000,
+      "sources": ["s1", "s2"],
+      "lookback_days": 10,
+      "rationale": "The west edge moved from 73.3 to 73.7 E to leave out Malé harbour (charted moorings at 4.193 N 73.524 E) and the atolls beside it, where small craft and anchored ships would produce false pairs. The reported March 2022 transfer area is approximate and historical imagery has not yet been screened."
+    },
+    {
+      "name": "test_east_of_sohar",
+      "label": "East of Sohar",
+      "pipeline": "hotspot_test",
+      "area_version": 1,
+      "bbox": [57.0, 23.6, 58.3, 25.1],
+      "reference_bbox": [56.6, 24.2, 57.6, 24.9],
+      "min_shore_distance_m": 2000,
+      "sources": ["s1", "s2"],
+      "lookback_days": 10,
+      "rationale": "Edge audit for four reported sanctioned-tanker transfers about 40 nautical miles east of Sohar. This box overlaps the existing off_sohar bounds [56.6, 24.2, 57.6, 24.9]; pairs in the overlap measure the known site's edge, while pairs east of 57.6 E support extending coverage. Scene counts for 15 September-15 October 2026 were 29 S1 records over 17 days and 72 S2 records over 13 days."
+    }
+  ]
+}

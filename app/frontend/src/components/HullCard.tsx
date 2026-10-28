@@ -18,11 +18,12 @@ interface Props {
   hull: Hull;
   focused?: boolean;
   version?: string;
+  hotspotTest?: boolean;
   flag?: Flag;
   onSaved: (f: Flag) => void;
 }
 
-export default function HullCard({ run, hull, flag, onSaved, focused, version }: Props) {
+export default function HullCard({ run, hull, flag, onSaved, focused, version, hotspotTest = false }: Props) {
   const [status, setStatus] = useState(flag?.status ?? "");
   const [fix, setFix] = useState(flag?.correct_verdict ?? "");
   const [note, setNote] = useState(flag?.note ?? "");
@@ -48,7 +49,8 @@ export default function HullCard({ run, hull, flag, onSaved, focused, version }:
   const save = async () => {
     setState("Saving…");
     try {
-      const f = await api.saveFlag(run, hull.id, { status, correct_verdict: status === "wrong_verdict" ? fix : null, note });
+      const save = hotspotTest ? api.saveHotspotTestFlag : api.saveFlag;
+      const f = await save(run, hull.id, { status, correct_verdict: status === "wrong_verdict" ? fix : null, note });
       onSaved(f);
       setState("");
     } catch (e) {
@@ -57,7 +59,7 @@ export default function HullCard({ run, hull, flag, onSaved, focused, version }:
   };
 
   const a = hull.ai2 || {};
-  const pair = hull.final_verdict === "pair";
+  const pair = hull.final_verdict === "pair" || hull.final_verdict === "possible_pair";
   const changed = hull.final_verdict !== hull.verdict;
 
   return (
@@ -67,7 +69,7 @@ export default function HullCard({ run, hull, flag, onSaved, focused, version }:
         <button
           className="copy"
           title="Copy a link to this card"
-          onClick={() => navigator.clipboard?.writeText(`${location.origin}/runs/${run}?scene=${encodeURIComponent(hull.scene_id)}&hull=${encodeURIComponent(hull.hull_id)}`)}
+          onClick={() => navigator.clipboard?.writeText(`${location.origin}/${hotspotTest ? "hotspot-tests/runs" : "runs"}/${run}?scene=${encodeURIComponent(hull.scene_id)}&hull=${encodeURIComponent(hull.hull_id)}`)}
         >
           link
         </button>
@@ -124,7 +126,7 @@ export default function HullCard({ run, hull, flag, onSaved, focused, version }:
         Ai2 {num(a.length_m, 0)} × {num(a.width_m, 0)} m, heading {num(a.heading, 0)}°
         {a.speed_kn !== undefined && a.speed_kn !== null ? `, ${num(a.speed_kn, 1)} kn` : ""}
       </div>
-      {pair && hull.ais_status !== "no_data" && hull.ais_status !== "not_checked" ? (
+      {!hotspotTest && pair && hull.ais_status !== "no_data" && hull.ais_status !== "not_checked" ? (
         <div className="ais">
           <div className="muted small">AIS</div>
           {["a", "b"].map((slot, i) => {
@@ -146,7 +148,7 @@ export default function HullCard({ run, hull, flag, onSaved, focused, version }:
             );
           })}
         </div>
-      ) : hull.ais?.length ? (
+      ) : !hotspotTest && hull.ais?.length ? (
         <div className="ais">
           AIS:{" "}
           {hull.ais.map((p, i) => (
@@ -158,13 +160,13 @@ export default function HullCard({ run, hull, flag, onSaved, focused, version }:
             </span>
           ))}
         </div>
-      ) : (
+      ) : !hotspotTest ? (
         <div className="ais muted">
           AIS:{" "}
           {hull.ais_status === "no_data" ? "no archive data at capture time" : hull.ais_status === "not_checked" ? "not matched yet" : "no ship matched"}
         </div>
-      )}
-      {hull.ais_diagnostics && (
+      ) : null}
+      {!hotspotTest && hull.ais_diagnostics && (
         <details className="ais-evidence">
           <summary>AIS matching evidence</summary>
           {(["a", "b"] as const).map((slot, i) => {

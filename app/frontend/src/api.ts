@@ -202,6 +202,24 @@ export interface SyncState {
   last_finished: SyncRequest | null;
 }
 
+export interface HotspotTestArea {
+  name: string;
+  label: string;
+  pipeline: string;
+  area_version: number;
+  bbox: [number, number, number, number];
+  reference_bbox: [number, number, number, number];
+  min_shore_distance_m: number;
+  sources: string[];
+  rationale: string;
+}
+
+export interface HotspotTestParquet {
+  key: string;
+  size: number;
+  last_modified: string;
+}
+
 async function json<T>(r: Response): Promise<T> {
   if (!r.ok) {
     const body = await r.json().catch(() => ({}));
@@ -227,9 +245,20 @@ export const api = {
     return json<SyncState>(response);
   },
   run: (n: number) => fetch(`/api/runs/${n}`).then((r) => json<RunDetail>(r)),
+  hotspotTestAreas: () => fetch("/api/hotspot-tests/areas").then((r) => json<HotspotTestArea[]>(r)),
+  hotspotTestRuns: () => fetch("/api/hotspot-tests/runs").then((r) => json<RunSummary[]>(r)),
+  hotspotTestRun: (n: number) => fetch(`/api/hotspot-tests/runs/${n}`).then((r) => json<RunDetail>(r)),
+  hotspotTestParquets: () => fetch("/api/hotspot-tests/parquets").then((r) => json<HotspotTestParquet[]>(r)),
+  hotspotTestParquet: (key: string) => `/api/hotspot-tests/parquets/${key.split("/").map(encodeURIComponent).join("/")}`,
   image: (n: number, id: string, kind: "raw" | "overlay", version = "") => `/api/runs/${n}/hulls/${encodeURIComponent(id)}/${kind}.png${version ? `?v=${version}` : ""}`,
   saveFlag: (n: number, id: string, body: { status: string; correct_verdict: string | null; note: string }) =>
     fetch(`/api/runs/${n}/flags/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => json<Flag>(r)),
+  saveHotspotTestFlag: (n: number, id: string, body: { status: string; correct_verdict: string | null; note: string }) =>
+    fetch(`/api/hotspot-tests/runs/${n}/flags/${encodeURIComponent(id)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

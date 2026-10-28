@@ -45,7 +45,11 @@ def choose_runs(requested: list[int]) -> list[dict]:
         return [by_no[no] for no in requested]
     keys = {
         r["run_key"]
-        for r in registry.fetch(None, "select run_key from review.outputs union select run_key from review.findings where verdict = 'pair'")
+        for r in registry.fetch(
+            None,
+            "select k.run_key from (select run_key from review.outputs union select run_key from review.findings where verdict = 'pair') k "
+            "where not exists (select 1 from review.run_invocations i where i.run_key = k.run_key and left(i.hot_spot, 5) = 'test_')",
+        )
     }
     return [r for r in listing if r["run_key"] in keys]
 

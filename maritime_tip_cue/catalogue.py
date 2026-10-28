@@ -9,7 +9,7 @@ from pathlib import Path
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from maritime_tip_cue import hotspots, passes, pg
+from maritime_tip_cue import hotspot_tests, hotspots, passes, pg
 from maritime_tip_cue import ledger as attempt_ledger
 from maritime_tip_cue.config import ROOT, settings
 from maritime_tip_cue.sts import rules as rules_mod
@@ -142,7 +142,7 @@ def record_channel(db, scan_id, site, source, rows_found, raw_rules, backfill):
             if inserted:
                 new += 1
                 new_scenes.append(row["scene"])
-                if not initial or backfill:
+                if not initial or backfill or site.get("pipeline") == "hotspot_test":
                     changed_groups.add(group)
             else:
                 db.execute(
@@ -273,7 +273,12 @@ def reconcile_redis(db, redis, s3, bucket, artifacts_prefix, events, max_retries
                 error_text = receipt.get("error") or "Worker reported failure"
             if status == "succeeded":
                 manifest = validate_manifest(row["manifest_json"])
-                expected = artifacts_prefix.rstrip("/") + "/" + job_id + "/" + attempt_id + "/"
+                prefix = (
+                    hotspot_tests.artifacts_prefix()
+                    if manifest["site"].get("pipeline") == "hotspot_test"
+                    else artifacts_prefix.rstrip("/") + "/"
+                )
+                expected = prefix + job_id + "/" + attempt_id + "/"
                 if (
                     not isinstance(receipt.get("scene_counts"), dict)
                     or receipt["scene_counts"].get("checked") != len(manifest["scenes"])
@@ -303,6 +308,42 @@ def reconcile_redis(db, redis, s3, bucket, artifacts_prefix, events, max_retries
                         or head.get("Metadata", {}).get("sha256") != artifact["sha256"]
                     ):
                         raise ValueError("Worker artifact checksum or size mismatch")
+                if manifest["site"].get("pipeline") == "hotspot_test":
+                    outputs = receipt.get("hotspot_test_outputs")
+                    expected_groups = {(scene["time"][:10], scene["source"]) for scene in manifest["scenes"]}
+                    if not isinstance(outputs, list) or len(outputs) != len(expected_groups):
+                        raise ValueError("Hotspot-test result files are missing")
+                    observed_groups = set()
+                    for output in outputs:
+                        if not isinstance(output, dict) or not all(
+                            key in output for key in ("key", "size", "sha256", "rows", "date", "source")
+                        ):
+                            raise ValueError("Invalid hotspot-test result metadata")
+                        group = (output["date"], output["source"])
+                        expected_key = (
+                            f"{hotspot_tests.findings_prefix()}{group[0]}/{manifest['site']['name']}/"
+                            f"{group[1]}/{job_id}.parquet"
+                        )
+                        if (
+                            group not in expected_groups
+                            or group in observed_groups
+                            or output["key"] != expected_key
+                            or not isinstance(output["size"], int)
+                            or output["size"] < 0
+                            or not isinstance(output["rows"], int)
+                            or output["rows"] < 0
+                            or not isinstance(output["sha256"], str)
+                            or len(output["sha256"]) != 64
+                            or any(char not in "0123456789abcdef" for char in output["sha256"])
+                        ):
+                            raise ValueError("Invalid hotspot-test result metadata")
+                        head = s3.head_object(Bucket=bucket, Key=output["key"])
+                        if (
+                            head.get("ContentLength") != output["size"]
+                            or head.get("Metadata", {}).get("sha256") != output["sha256"]
+                        ):
+                            raise ValueError("Hotspot-test result checksum or size mismatch")
+                        observed_groups.add(group)
                 finished = datetime.now(UTC)
                 with tx(db):
                     db.execute(
@@ -709,7 +750,7 @@ def scan(db, cfg, backfill=False, first_scene=False):
             for group, body in raw_rules.items()
             if isinstance(body, dict)
         }
-        sites = hotspots.load()
+        sites = hotspots.load() + hotspot_tests.load()
         if not sites:
             raise ValueError("Shared hot-spot list is empty")
         if first_scene:
@@ -733,11 +774,20 @@ def scan(db, cfg, backfill=False, first_scene=False):
         summary["rules_sha256"] = digest(raw_rules)
         selected_job_id = None
         for site in sites:
-            sources = ("s2",) if first_scene else passes.SOURCES
+            sources = ("s2",) if first_scene else (
+                hotspot_tests.sources_for(site["name"])
+                if site.get("pipeline") == "hotspot_test"
+                else passes.SOURCES
+            )
+            site_start = (
+                end - timedelta(days=hotspot_tests.lookback_days(site["name"]))
+                if site.get("pipeline") == "hotspot_test"
+                else start
+            )
             for source in sources:
                 channel_started = utc_now()
                 try:
-                    found = passes.find(start, end, [site], rules=rules, sources=[source])
+                    found = passes.find(site_start, end, [site], rules=rules, sources=[source])
                     if first_scene:
                         detail, selected_job_id = record_first_s2_scene(db, scan_id, site, found, raw_rules)
                     else:
@@ -800,7 +850,7 @@ def write_log(cfg, summary):
 def status(db):
     latest = one(db, "SELECT summary_json FROM processing.scans ORDER BY started_utc DESC LIMIT 1")
     result = {"last_scan": latest["summary_json"] if latest else None, "jobs": counts(db), "sites": []}
-    for site in hotspots.load():
+    for site in hotspots.load() + hotspot_tests.load():
         channels = []
         for source in passes.SOURCES:
             observation = one(

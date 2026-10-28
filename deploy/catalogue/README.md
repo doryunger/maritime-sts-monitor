@@ -177,5 +177,12 @@ records success or failure in the ledger. Direct manifest runs retain the S3 res
 `catalogue/results/<job_id>.json`. Existing reviewed `sts/`
 products are not overwritten.
 
+Hotspot-test jobs use the separately tracked `hotspot-tests/areas.json` scan plan. The initial catalogue scan of a
+new test area queues scenes from the area's `lookback_days` (10 days) window; later scans queue newly discovered scenes. The worker stores
+their attempt artifacts and review images under `hotspot-tests/artifacts/` and `hotspot-tests/reviews/`, skips AIS,
+and writes pair-only GeoParquets under `hotspot-tests/findings/<date>/<area>/<source>/`. These jobs never publish
+to `sts/` or `sanctioned/`. The manager identity must be able to read test attempt artifacts and findings for receipt
+validation. The exact control-host IAM additions are in the [app deployment guide](../app/README.md#hotspot-test-s3-iam).
+
 See [component rationale](../../maritime_tip_cue/context/catalogue.md) for discovery, task grouping, retries
 and publication boundaries.

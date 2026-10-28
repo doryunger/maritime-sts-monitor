@@ -4,13 +4,14 @@ Watches known **ship-to-ship (STS) transfer hot spots** in free satellite imager
 Sentinel-1 or Sentinel-2 pass over a hot spot it detects the ships, checks each tanker for a second
 hull alongside (a possible STS transfer), and then uses AIS to name the vessels it sees, or to show
 that they were not broadcasting. AIS alone can also point to a possible STS place and time outside
-the hot spots; that is a weaker lead, checked on the next pass.
+the hot spots; that is a weaker lead, checked on the next pass. Separate hotspot-test areas use the
+same detectors and pair checks but skip AIS and the regular findings publishers.
 
 ## Boundary
 
 | This repo | `vessels-aggregator` (separate) |
 |---|---|
-| Hot spots, imagery search, detection, STS pair check, AIS matching, AIS-only STS leads, output | AIS collection and the AIS archive server |
+| Hot spots, test areas, imagery search, detection, STS pair check, AIS matching, AIS-only STS leads, output | AIS collection and the AIS archive server |
 
 The only interface is the AIS archive server (GizmoSQL on the dedicated AIS/control host; views `vessels` and
 `identities`), queried with `maritime_tip_cue/ais/archive.py`, plus the shared hot-spot list on S3.
@@ -63,6 +64,19 @@ are dropped.
 
 The expanded Malaysian boxes were published on 2026-10-20. Availability and AIS percentages above were
 measured on the original boxes; those measurements have not been repeated for the extensions.
+
+## Hotspot tests
+
+Exploratory scan areas are versioned separately in [`hotspot-tests/areas.json`](hotspot-tests/areas.json); they are
+not added to the live S3 hot-spot list or AIS collection. New test areas queue scenes from their own `lookback_days` (10 days, set per area in the plan, independent of the
+7-day live window) on their first scan. The worker runs detection and pair checks, skips AIS, and does not call the regular
+`sts/` or `sanctioned/` publishers.
+
+Attempt artifacts and review images use `hotspot-tests/artifacts/` and `hotspot-tests/reviews/`. Pair and
+possible-pair GeoParquets, including empty files for dates with no pair labels, use
+`hotspot-tests/findings/<date>/<area>/<source>/<job_id>.parquet`. The authenticated `/hotspot-tests` page shows
+the active bounds, runs and findings Parquets; its review cards contain only pair candidates. Caddy routes the
+hotspot DNS name to the app, which reads the private S3 bucket through its AWS identity.
 
 ## Processing
 

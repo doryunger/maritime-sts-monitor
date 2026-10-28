@@ -63,6 +63,18 @@ the bucket configured in `.env` and attach this policy to the EC2 role:
       "Resource": "arn:aws:s3:::<S3_BUCKET_NAME>/catalogue/results/*"
     },
     {
+      "Sid": "ManageWorkerClaims",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject"],
+      "Resource": "arn:aws:s3:::<S3_BUCKET_NAME>/catalogue/claims/*"
+    },
+    {
+      "Sid": "WriteDirectWorkerResultReceipts",
+      "Effect": "Allow",
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::<S3_BUCKET_NAME>/catalogue/results/*"
+    },
+    {
       "Sid": "CheckWorkerResultReceiptKeys",
       "Effect": "Allow",
       "Action": "s3:ListBucket",
@@ -84,6 +96,16 @@ the bucket configured in `.env` and attach this policy to the EC2 role:
       "Effect": "Allow",
       "Action": "s3:PutObject",
       "Resource": "arn:aws:s3:::<S3_BUCKET_NAME>/catalogue/reviews/*"
+    },
+    {
+      "Sid": "WriteHotspotTestResults",
+      "Effect": "Allow",
+      "Action": "s3:PutObject",
+      "Resource": [
+        "arn:aws:s3:::<S3_BUCKET_NAME>/hotspot-tests/artifacts/*",
+        "arn:aws:s3:::<S3_BUCKET_NAME>/hotspot-tests/findings/*",
+        "arn:aws:s3:::<S3_BUCKET_NAME>/hotspot-tests/reviews/*"
+      ]
     },
     {
       "Sid": "PublishPairsSanctionedAndImages",

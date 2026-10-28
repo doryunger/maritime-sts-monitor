@@ -1,25 +1,35 @@
 # HTTPS reverse proxy
 
-Caddy runs on the control host with the host network and routes by hostname: `APP_DOMAIN` goes to the STS app on
-`127.0.0.1:8010`, `VIEWER_DOMAIN` to the viewer (a placeholder until the viewer exists). Caddy gets and renews the
+Caddy runs on the control host with the host network and routes by hostname: `APP_DOMAIN` and `HOTSPOTS_DOMAIN` go to the authenticated STS app on
+`127.0.0.1:8010`; `VIEWER_DOMAIN` remains a placeholder until the general viewer exists. The hotspot-test page reads private S3 Parquets through the app's AWS credentials; Caddy does not expose the bucket. Caddy gets and renews the
 Let's Encrypt certificates itself over HTTP-01, so ports 80 and 443 must reach the host. Certificates and account keys
 live in `data/proxy/` (ignored by Git).
 
 ## Prerequisites
 
 1. A static public IP attached to the Lightsail instance.
-2. DNS-only A records (not proxied through Cloudflare) for both names, pointing at that IP.
+2. DNS-only A records (not proxied through Cloudflare) for `APP_DOMAIN`, `VIEWER_DOMAIN` and `HOTSPOTS_DOMAIN`, pointing at that IP.
 3. Lightsail firewall: TCP 80 and 443 open. Close 8010 once the proxy works.
 
 ## Install
 
 ```bash
 cd /home/ubuntu/maritime-sts-monitor
-cp deploy/proxy/proxy.env.example deploy/proxy/proxy.env   # set APP_DOMAIN, VIEWER_DOMAIN
-bash deploy/proxy/check-dns.sh                            # both names must resolve to this host (asks a public resolver, not the host's cached one)
+cp deploy/proxy/proxy.env.example deploy/proxy/proxy.env   # set APP_DOMAIN, VIEWER_DOMAIN and HOTSPOTS_DOMAIN
+bash deploy/proxy/check-dns.sh                            # all names must resolve to this host (asks a public resolver, not the host's cached one)
 mkdir -p data/proxy/data data/proxy/config
 sudo cp deploy/proxy/sts-proxy.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now sts-proxy
+```
+
+The hotspot-test name is `hotspots.stamsite.cc`. Create its DNS-only A record at the same IP as the other two, then on the
+host set it before restarting Caddy (the Caddyfile has no default, and an empty site address stops Caddy from loading):
+
+```bash
+grep -q '^HOTSPOTS_DOMAIN=' deploy/proxy/proxy.env || echo 'HOTSPOTS_DOMAIN=hotspots.stamsite.cc' >> deploy/proxy/proxy.env
+bash deploy/proxy/check-dns.sh
+sudo systemctl restart sts-proxy
+curl -fsS https://hotspots.stamsite.cc/health
 ```
 
 Try the staging CA first (`ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory`) to avoid production rate

@@ -24,6 +24,7 @@ RUN wget -q "https://codeload.github.com/allenai/rslearn_projects/tar.gz/${DETEC
 COPY maritime_tip_cue /app/maritime_tip_cue
 COPY config.yaml /app/config.yaml
 COPY rules /app/rules
+COPY hotspot-tests/areas.json /app/hotspot-tests/areas.json
 RUN mkdir -p /app/data
 ARG GIT_COMMIT=
 ENV STS_GIT_COMMIT=${GIT_COMMIT}

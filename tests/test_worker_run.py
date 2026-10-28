@@ -51,7 +51,7 @@ def setup(pgdb, tmp_path, monkeypatch):
     monkeypatch.setattr(worker, "attach_review", lambda receipt, *a: receipt.update(review={"prefix": "r/"}))
     monkeypatch.setattr(worker, "publish_pairs", lambda *a: {"pairs": 0})
     monkeypatch.setattr(worker.task_queue, "save_result", lambda job_id, owner, receipt: saved.append(receipt))
-    manifest = {"job_id": JOB, "_queue_attempt_id": ATTEMPT, "scenes": [{"scene": "S"}], "rules": {}, "rules_sha256": "r" * 64}
+    manifest = {"job_id": JOB, "_queue_attempt_id": ATTEMPT, "site": {"name": "site-a"}, "scenes": [{"scene": "S"}], "rules": {}, "rules_sha256": "r" * 64}
     return manifest, seen, saved
 
 

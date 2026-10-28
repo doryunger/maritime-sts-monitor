@@ -35,6 +35,12 @@ catalogue:
   artifacts_prefix: catalogue/artifacts/
   reviews_prefix: catalogue/reviews/
 
+hotspot_tests:
+  areas_path: hotspot-tests/areas.json
+  findings_prefix: hotspot-tests/findings/
+  artifacts_prefix: hotspot-tests/artifacts/
+  reviews_prefix: hotspot-tests/reviews/
+
 worker:
   path: data/worker
   attempt_wait_seconds: 120

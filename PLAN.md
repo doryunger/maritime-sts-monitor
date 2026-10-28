@@ -8,7 +8,9 @@ results are reported per hot spot, and one without data is named as such.
 
 ## Current priorities
 
-The user-selected missing pieces are a catalogue tracker and execution on the designated existing EC2
+The isolated [hotspot-test pipeline](hotspot-tests/areas.json) and pair-only review page are implemented locally. Before scans start, rebuild and deploy the catalogue, worker and app; set the new Caddy hostname and S3 permissions; then run the catalogue so the five versioned test areas queue the past 10 days. Historical Maldives imagery remains unprocessed. Keep these areas out of the live S3 hot-spot list.
+
+The operational missing pieces are a catalogue tracker and execution on the designated existing EC2
 instance. The user has supplied a dedicated Lightsail AIS/control host; its [preflight](docs/feasibility.md#dedicated-control-host-preflight-2026-10-20)
 confirms approximately 2 GiB RAM. AIS collection and the archive are deployed there; the old AIS deployment
 was removed from ubuntu3 after data and capture validation.
@@ -64,6 +66,7 @@ started through `run-scenes.cmd`; the local launcher can resume the interrupted 
 | Hot-spot file | Who edits it and how (now `python -m maritime_tip_cue.hotspots publish <file>`) | Decision | 2 |
 | AIS region alignment | Local and deployed collector views jointly cover all expanded survey areas and the AIS query margin; repeat coverage check when boundaries change | Boundary-change coverage check | 2, 5, 7 |
 | EOPL / Johor survey | Expanded survey batch launched; compare original versus added waters after processing ([map and coverage inventory](docs/feasibility.md#eopl-and-johor-expansion-survey-prepared-2026-10-20)); expanded shared boundaries now selected for tracking | Processing and review | 3, 4 |
+| Hotspot tests | Five versioned areas and an isolated detector/pair pipeline are implemented locally. Test jobs skip AIS and regular publishing; the authenticated review page shows only pair candidates and reads private S3 Parquets | Deploy rebuilt roles, set the Caddy DNS environment value and S3 permissions, run the initial catalogue scan, then review scans over time. Process the approximate March 2022 Maldives lead before judging that area; treat east-of-Sohar findings within the existing box as an edge audit | 2, 3, 4, 8, 9 |
 | Detector output cleanup | S2 test: one detection on an inland reservoir; one ship detected twice ~100 m apart (see feasibility) | Sea mask; merge overlapping detections | 4 |
 | Missed S1 pairs | [All-region similarity audit](docs/feasibility.md#sentinel-1-missed-pair-similarity-audit-measured-2026-10-20) retained as research; similar signals can be smudges | Detection rules unchanged; further investigation only when requested | 4 |
 | S1 shape generalisation | [Single-box veto](docs/feasibility.md#sentinel-1-single-box-veto-validated-2026-10-21) corrects the reported false pair without other verdict changes in stored runs or fixtures | Validate on independently reviewed new passes; unresolved weaker returns remain a sensing limit | 4 |

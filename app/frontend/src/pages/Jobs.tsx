@@ -72,6 +72,7 @@ export default function Jobs() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showDone, setShowDone] = useState(false);
+  const [showTests, setShowTests] = useState(false);
   const [params, setParams] = useSearchParams();
   const fromUrl = params.get("sort") as Key | null;
   const sort: { key: Key; dir: 1 | -1 } = fromUrl && KEYS.includes(fromUrl)
@@ -98,14 +99,15 @@ export default function Jobs() {
     }
   }, []);
   useEffect(() => { void refresh(); }, [refresh]);
+  const scoped = useMemo(() => (data?.jobs ?? []).filter((job) => showTests || !job.site.startsWith("test_")), [data, showTests]);
   const jobs = useMemo(() => {
-    const rows = (data?.jobs ?? []).filter((job) => showDone || !CLOSED.includes(job.status));
+    const rows = scoped.filter((job) => showDone || !CLOSED.includes(job.status));
     return [...rows].sort((a, b) => {
       const x = sortValue(a, sort.key), y = sortValue(b, sort.key);
       const primary = x < y ? -1 : x > y ? 1 : 0;
       return primary * sort.dir || a.site.localeCompare(b.site) || earliest(a).localeCompare(earliest(b)) || a.job_id.localeCompare(b.job_id);
     });
-  }, [data, showDone, sort.key, sort.dir]);
+  }, [scoped, showDone, sort.key, sort.dir]);
   const pages = Math.max(1, Math.ceil(jobs.length / PAGE_SIZE));
   const page = Number.isInteger(requested) && requested >= 1 ? Math.min(requested, pages) : 1;
   const goto = (next: number) => {
@@ -114,7 +116,7 @@ export default function Jobs() {
     setParams(copy, { replace: true });
   };
   const visible = jobs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const count = (status: string) => data?.jobs?.filter((job) => job.status === status).length ?? 0;
+  const count = (status: string) => scoped.filter((job) => job.status === status).length;
   return <section>
     <h1>Jobs</h1>
     <p className="muted">The job ledger on the control host. Nothing on this machine is used to decide what is done. Times are UTC.</p>
@@ -122,6 +124,7 @@ export default function Jobs() {
     <div className="table-options">
       <button onClick={() => void refresh()} disabled={loading}>{loading ? "Refreshing..." : "Refresh"}</button>
       <label><input type="checkbox" checked={showDone} onChange={(e) => { setShowDone(e.target.checked); goto(1); }} /> Show superseded jobs</label>
+      <label><input type="checkbox" checked={showTests} onChange={(e) => { setShowTests(e.target.checked); goto(1); }} /> Show hotspot-test jobs</label>
       {data && <span className="muted small">Checked <Time t={data.checked_utc} /></span>}
     </div>
     {error && <p className="error">Could not refresh: {error}. The previous view, if present, is unchanged.</p>}

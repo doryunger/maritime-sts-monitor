@@ -31,6 +31,7 @@ def scene_row(source, scene):
 def scanning(monkeypatch, pgdb, tmp_path):
     found = {"s1": [], "s2": []}
     monkeypatch.setattr(catalogue.hotspots, "load", lambda: [SITE])
+    monkeypatch.setattr(catalogue.hotspot_tests, "load", lambda: [])
     monkeypatch.setattr(
         catalogue.passes, "find", lambda start, end, sites, rules=None, sources=None: list(found[sources[0]])
     )
@@ -187,3 +188,28 @@ def test_claim_then_result_in_one_batch_spends_the_last_retry(claims):
     reconcile(db, server, events)
     status = catalogue.job_status(db, JOB)
     assert status["status"] == "failed" and [a["verdict"] for a in status["attempts"]] == ["failed"]
+
+
+def test_a_new_test_area_queues_its_first_scan_where_a_live_site_only_baselines(scanning, monkeypatch):
+    db, found, cfg = scanning
+    area = {
+        "name": "test_probe",
+        "bbox": [0, 0, 1, 1],
+        "min_shore_distance_m": 1000,
+        "pipeline": "hotspot_test",
+        "area_version": 1,
+        "label": "Probe",
+    }
+    monkeypatch.setattr(catalogue.hotspot_tests, "load", lambda: [area])
+    monkeypatch.setattr(catalogue.hotspot_tests, "sources_for", lambda name: ("s2",))
+    monkeypatch.setattr(catalogue.hotspot_tests, "lookback_days", lambda name: 10)
+    windows = []
+    real = catalogue.passes.find
+    monkeypatch.setattr(
+        catalogue.passes, "find", lambda start, end, sites, rules=None, sources=None: windows.append((sites[0]["name"], end - start)) or real(start, end, sites, rules, sources)
+    )
+    found["s2"] = [dict(scene_row("s2", "S2B_X_T40REN_A"))]
+    catalogue.scan(db, cfg)
+    assert db.execute("select site from processing.jobs").fetchall() == [("test_probe",)]
+    spans = dict(windows)
+    assert spans["test_probe"].days == 10 and spans["site-a"].days == 7

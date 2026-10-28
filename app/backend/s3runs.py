@@ -9,6 +9,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from maritime_tip_cue.config import env, settings
+from maritime_tip_cue import hotspot_tests
 from maritime_tip_cue.watch import registry
 from maritime_tip_cue.watch.registry import fetch
 
@@ -36,7 +37,11 @@ def download(client, bucket: str, prefix: str, target: Path) -> None:
 
 
 def review_prefix(row: dict) -> str | None:
-    base = settings()["catalogue"]["reviews_prefix"].rstrip("/")
+    base = (
+        hotspot_tests.reviews_prefix().rstrip("/")
+        if (row.get("hot_spot") or "").startswith("test_")
+        else settings()["catalogue"]["reviews_prefix"].rstrip("/")
+    )
     if row["origin"] == "legacy":
         return f"{base}/legacy/run-{row['run_no']}/"
     if row["job_id"] and row["attempt_id"]:
@@ -45,7 +50,12 @@ def review_prefix(row: dict) -> str | None:
 
 
 def wanted_runs() -> list[dict]:
-    return fetch(None, "select run_key, run_no, origin, folder, attempt_id, job_id, attempt_status from review.run_lineage order by run_no")
+    return fetch(
+        None,
+        "select l.run_key,l.run_no,l.origin,l.folder,l.attempt_id,l.job_id,l.attempt_status,"
+        "(select i.hot_spot from review.run_invocations i where i.run_key=l.run_key order by i.invocation_id desc limit 1) hot_spot "
+        "from review.run_lineage l order by l.run_no",
+    )
 
 
 def sync_once(client, bucket: str) -> dict:

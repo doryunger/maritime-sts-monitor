@@ -145,6 +145,31 @@ def summaries(only: int | None = None) -> list[dict]:
     return out
 
 
+def hotspot_test_pair_counts() -> dict[int, dict[str, int]]:
+    found = query(
+        "select r.run_no, "
+        "count(*) filter (where f.run_verdict = 'pair') as run_pair, "
+        "count(*) filter (where f.run_verdict = 'possible_pair') as run_possible_pair, "
+        "count(*) filter (where f.verdict = 'pair') as pair, "
+        "count(*) filter (where f.verdict = 'possible_pair') as possible_pair "
+        "from review.runs r "
+        "join review.findings f on f.run_key = r.run_key "
+        "join review.hulls h on h.run_key = f.run_key and h.scene_id = f.scene_id and h.site = f.site and h.hull_id = f.hull_id "
+        "where f.run_verdict in ('pair', 'possible_pair') and coalesce(h.role, '') not in ('duplicate', 'hull_b_box') "
+        "and exists (select 1 from review.run_invocations i where i.run_key = r.run_key and left(i.hot_spot, 5) = 'test_') "
+        "group by r.run_no"
+    )
+    return {
+        row["run_no"]: {
+            "run_pair": row["run_pair"],
+            "run_possible_pair": row["run_possible_pair"],
+            "pair": row["pair"],
+            "possible_pair": row["possible_pair"],
+        }
+        for row in found
+    }
+
+
 def summary(row: dict) -> dict:
     found = summaries(row["run_key"])
     return found[0] if found else {"run": row["run_no"], "created": row["created_utc"], "area": None, "status": "empty"}

@@ -222,7 +222,13 @@ def export_parquets(store, destination: Path, job_id: str) -> list[Path]:
 
 
 def upload_artifacts(client, bucket: str, manifest: dict, paths: list[Path], attempt: str) -> list[dict]:
-    prefix = settings()["catalogue"]["artifacts_prefix"].rstrip("/") + f"/{manifest['job_id']}/{attempt}/"
+    if manifest["site"].get("pipeline") == "hotspot_test":
+        from maritime_tip_cue import hotspot_tests
+
+        base = hotspot_tests.artifacts_prefix().rstrip("/")
+    else:
+        base = settings()["catalogue"]["artifacts_prefix"].rstrip("/")
+    prefix = base + f"/{manifest['job_id']}/{attempt}/"
     artifacts = []
     for path in paths:
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -236,7 +242,13 @@ REVIEW_SKIP_DIRS = {"cache", "work"}
 
 
 def upload_review(client, bucket: str, manifest: dict, out: Path, run_no: int, attempt: str) -> dict:
-    prefix = settings()["catalogue"]["reviews_prefix"].rstrip("/") + f"/{manifest['job_id']}/{attempt}/"
+    if manifest["site"].get("pipeline") == "hotspot_test":
+        from maritime_tip_cue import hotspot_tests
+
+        base = hotspot_tests.reviews_prefix().rstrip("/")
+    else:
+        base = settings()["catalogue"]["reviews_prefix"].rstrip("/")
+    prefix = base + f"/{manifest['job_id']}/{attempt}/"
     meta = {"job_id": manifest["job_id"], "attempt_id": attempt, "run_no": run_no}
     return upload_review_folder(client, bucket, prefix, out, meta)
 
@@ -295,6 +307,46 @@ def publish_pairs(client, bucket: str, out: Path, run_no: int, job_id: str, rule
         return publish.publish_run(client, bucket, out, run_no, job_id, rules_mod.load(rules_path), provenance)
     except Exception as error:
         raise RuntimeError(f"publish failed: {type(error).__name__}: {error}") from error
+
+
+def upload_hotspot_test_findings(client, bucket: str, manifest: dict, path: Path) -> list[dict]:
+    import pyarrow as pa
+    import pyarrow.compute as pc
+    import pyarrow.parquet as pq
+
+    from maritime_tip_cue import hotspot_tests
+
+    table = pq.read_table(path)
+    roles = table["role"]
+    verdicts = table["run_verdict"]
+    keep = pc.and_(
+        pc.is_in(verdicts, value_set=pa.array(["pair", "possible_pair"])),
+        pc.invert(pc.is_in(roles, value_set=pa.array(["duplicate", "hull_b_box"]))),
+    )
+    table = table.filter(keep).drop(["ais_matches", "ais_coverage"])
+    site = manifest["site"]
+    table = table.append_column("area_version", pa.array([site["area_version"]] * table.num_rows, type=pa.int32()))
+    table = table.append_column("pipeline", pa.array(["hotspot_test"] * table.num_rows, type=pa.string()))
+    groups = {}
+    for row in table.to_pylist():
+        day = row["capture_utc"][:10]
+        groups.setdefault((day, row["source"]), []).append(row)
+    scene_groups = {}
+    for scene in manifest["scenes"]:
+        day = scene["time"][:10]
+        scene_groups.setdefault((day, scene["source"]), [])
+    outputs = []
+    base = hotspot_tests.findings_prefix()
+    for (day, source), rows in sorted(scene_groups.items()):
+        selected = groups.get((day, source), [])
+        output = path.parent / f"hotspot_pairs_{day}_{source}.parquet"
+        filtered = pa.Table.from_pylist(selected, schema=table.schema)
+        pq.write_table(filtered, output)
+        digest = hashlib.sha256(output.read_bytes()).hexdigest()
+        key = f"{base}{day}/{site['name']}/{source}/{manifest['job_id']}.parquet"
+        client.upload_file(str(output), bucket, key, ExtraArgs={"Metadata": {"sha256": digest}})
+        outputs.append({"key": key, "sha256": digest, "size": output.stat().st_size, "rows": len(selected), "date": day, "source": source})
+    return outputs
 
 
 def attach_review(receipt: dict, client, bucket: str, manifest: dict, out: Path, run_no, attempt: str):
@@ -384,9 +436,12 @@ def _run_job(client, bucket: str, manifest: dict, resume: bool = False, queue_ow
             paths += [workspace / "manifest.json", rules_path]
             receipt["artifacts"] = upload_artifacts(client, bucket, manifest, paths, attempt)
             attach_review(receipt, client, bucket, manifest, out, run_no, attempt)
-            receipt["published"] = publish_pairs(
-                client, bucket, out, run_no, job_id, rules_path, provenance_of(manifest, attempt, receipt["review"])
-            )
+            if manifest["site"].get("pipeline") == "hotspot_test":
+                receipt["hotspot_test_outputs"] = upload_hotspot_test_findings(client, bucket, manifest, paths[0])
+            else:
+                receipt["published"] = publish_pairs(
+                    client, bucket, out, run_no, job_id, rules_path, provenance_of(manifest, attempt, receipt["review"])
+                )
             receipt["status"] = "succeeded"
         except Exception as error:
             receipt["error"] = f"{type(error).__name__}: {error}"

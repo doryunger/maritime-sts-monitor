@@ -19,6 +19,7 @@ Conventions are in AGENTS.md (loaded via CLAUDE.md for Claude). Read docs by sec
   `tracker.db` (`import|verify --tracker-db <file>`; copy of the live file in `data/test_inputs/`, never committed). `worker.py` and `watch/jobs.py`: explicit processing on EC2, claims, pinned manifests/rules,
   detection Parquets and completion receipts. See `maritime_tip_cue/context/catalogue.md` and
   `deploy/catalogue/README.md` for the deployed timer, commands and recovery behavior.
+- `maritime_tip_cue/hotspot_tests.py` and `hotspot-tests/areas.json`: versioned exploratory scan areas (`test_*` names, `pipeline: hotspot_test`), kept apart from the live S3 hot-spot list; the catalogue queues them, the worker skips AIS and publishers and writes pair-only Parquets under `hotspot-tests/{findings,artifacts,reviews}/`; the app serves them at `/hotspot-tests`. Rationale: `maritime_tip_cue/context/hotspot_tests.md`; test: `tests/test_hotspot_tests.py`.
 - `maritime_tip_cue/local_runner.py`: shared-queue terminal selection and resumable local worker processing;
   session state and logs live under ignored `data/local_runner/`. See `maritime_tip_cue/context/local_runner.md`.
 - `maritime_tip_cue/publish_service.py`: `python -m maritime_tip_cue.publish_service run-pending` claims one pending `review.sync_runs` row (created by the app's Runs-page "Sync results" button, `app/backend/sync.py`, `/api/sync`) and runs `publish_sync.sync_report` with upload; started every 30 s by `deploy/app/sts-sync.timer`. See `publish.md` `## Syncing reviews`.
@@ -42,6 +43,7 @@ Conventions are in AGENTS.md (loaded via CLAUDE.md for Claude). Read docs by sec
 ## Docs
 - `README.md`: hot spots, processing, S3 output tree, decisions. `PLAN.md`: stages and open gaps.
 - `docs/feasibility.md`: measured research. Tip-era docs and rules: tag `tip-era-final`.
+- Wider-route image sampling and its reusable coverage map: [measured research](../docs/feasibility.md#wider-route-hot-spot-reconnaissance-measured-2026-10-27).
 
 ## Common commands (repo root)
 - `.venv/Scripts/python -m pytest tests/test_sts_fixtures.py -q` fixture tests (need the PC-only `data/sts_fixtures`): verdicts to 1e-6 on the frozen rules (`tests/sts_graph_frozen.json`), label scores on the live rules.

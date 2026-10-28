@@ -25,7 +25,7 @@ def test_review_folder_is_uploaded_with_an_index_and_without_caches_or_state(tmp
     (out / "scenes" / "s1" / "a.npz").write_bytes(b"npz")
     (out / "cache" / "x_card.png").write_bytes(b"cache")
     client = Client()
-    summary = worker.upload_review(client, "b", {"job_id": "J"}, out, 7, "A")
+    summary = worker.upload_review(client, "b", {"job_id": "J", "site": {"name": "x"}}, out, 7, "A")
     prefix = "catalogue/reviews/J/A/"
     assert sorted(client.files) == [prefix + "review.png", prefix + "scenes/s1/a.npz"]
     assert summary == {"prefix": prefix, "index": prefix + "index.json", "files": 2}
