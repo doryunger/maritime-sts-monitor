@@ -24,7 +24,7 @@
 	header Strict-Transport-Security "max-age=31536000"
 	import health
 	handle {
-		respond "The viewer is not deployed yet." 503
+		reverse_proxy 127.0.0.1:8090
 	}
 }
 

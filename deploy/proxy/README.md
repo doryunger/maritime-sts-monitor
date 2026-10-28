@@ -1,7 +1,7 @@
 # HTTPS reverse proxy
 
 Caddy runs on the control host with the host network and routes by hostname: `APP_DOMAIN` and `HOTSPOTS_DOMAIN` go to the authenticated STS app on
-`127.0.0.1:8010`; `VIEWER_DOMAIN` remains a placeholder until the general viewer exists. The hotspot-test page reads private S3 Parquets through the app's AWS credentials; Caddy does not expose the bucket. Caddy gets and renews the
+`127.0.0.1:8010`; `VIEWER_DOMAIN` goes to the findings viewer on `127.0.0.1:8090` (the separate `sts-viewer` deployment). The hotspot-test page reads private S3 Parquets through the app's AWS credentials; Caddy does not expose the bucket. Caddy gets and renews the
 Let's Encrypt certificates itself over HTTP-01, so ports 80 and 443 must reach the host. Certificates and account keys
 live in `data/proxy/` (ignored by Git).
 
