@@ -13,7 +13,8 @@ manager, so it is always up and does not depend on the development PC.
   folder under `data/app/runs`, checked against the sizes and hashes in their `index.json`. The folder holds only scene
   chips and windows and the image cache: run state and QA flags are in Postgres (`STS_DATABASE_URL`), which the app
   needs to start. A folder already downloaded is never overwritten. Run numbers are the global `review.runs.run_no`.
-- **Hotspot tests:** `/hotspot-tests` lists the versioned scan areas, pair-only review runs and Parquets under
+- **Hotspot tests:** `/hotspot-tests` is the scene index of the test runs (pair candidates only, reviewed as real
+  pair or not); `/hotspot-tests/areas` lists the versioned scan areas and the Parquets under
   `hotspot-tests/findings/`. The app reads these private objects using its AWS credentials and downloads review
   images from `hotspot-tests/reviews/`; it does not make the bucket public.
 

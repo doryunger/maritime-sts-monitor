@@ -27,6 +27,7 @@ export interface SceneRow {
   created: string | null;
   status: string;
   review: string;
+  candidates?: number;
 }
 
 export interface LocalScene {
@@ -211,6 +212,7 @@ export interface HotspotTestArea {
   reference_bbox: [number, number, number, number];
   min_shore_distance_m: number;
   sources: string[];
+  lookback_days: number;
   rationale: string;
 }
 
@@ -233,6 +235,13 @@ export const api = {
   runs: () => fetch("/api/runs").then((r) => json<RunSummary[]>(r)),
   scenes: async (etag?: string | null, signal?: AbortSignal) => {
     const response = await fetch("/api/scenes", { headers: etag ? { "If-None-Match": etag } : {}, signal });
+    return {
+      rows: response.status === 304 ? null : await json<SceneRow[]>(response),
+      etag: response.headers.get("ETag"),
+    };
+  },
+  hotspotTestScenes: async (etag?: string | null, signal?: AbortSignal) => {
+    const response = await fetch("/api/hotspot-tests/scenes", { headers: etag ? { "If-None-Match": etag } : {}, signal });
     return {
       rows: response.status === 304 ? null : await json<SceneRow[]>(response),
       etag: response.headers.get("ETag"),

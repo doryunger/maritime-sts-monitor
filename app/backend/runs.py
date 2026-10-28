@@ -226,10 +226,17 @@ def read_scene_index(run_key: int) -> dict:
         count[0] += 1
         count[1] += hull["id"] in flags
         count[2] += hull["final_verdict"] == "unresolved"
-    return {"runs": invocations, "last_event": iso(last_event), "scenes": scenes, "review": review}
+    pair_review = {}
+    for hull in hulls:
+        if hull["verdict"] in ("pair", "possible_pair"):
+            count = pair_review.setdefault(hull["scene_id"], [0, 0, 0])
+            count[0] += 1
+            count[1] += hull["id"] in flags
+            count[2] += hull["final_verdict"] == "unresolved"
+    return {"runs": invocations, "last_event": iso(last_event), "scenes": scenes, "review": review, "pair_review": pair_review}
 
 
-def scene_rows() -> list[dict]:
+def scene_rows(test: bool = False) -> list[dict]:
     out = []
     with SCENE_LOCK:
         registered = registry.listing()
@@ -246,8 +253,11 @@ def scene_rows() -> list[dict]:
             snapshot = hit[1]
             run_status = status_of(snapshot["runs"], snapshot["last_event"])
             for scene in snapshot["scenes"]:
+                if scene["site"].startswith("test_") != test:
+                    continue
                 status = scene_status(scene["status"], run_status)
-                listed, reviewed, unresolved = snapshot["review"].get(scene["scene_id"], (0, 0, 0))
+                counts = snapshot["pair_review" if test else "review"]
+                listed, reviewed, unresolved = counts.get(scene["scene_id"], (0, 0, 0))
                 waiting = status in ("running", "stopped") or run_status == "running"
                 review = "waiting for run" if waiting else review_of(
                     status, reviewed, listed, unresolved
@@ -256,7 +266,7 @@ def scene_rows() -> list[dict]:
                     "run": no, "area": scene["site"], "source": scene["source"],
                     "scene_id": scene["scene_id"], "captured": scene["capture_utc"],
                     "created": scene["updated_utc"], "status": status, "review": review,
-                })
+                } | ({"candidates": listed} if test else {}))
     return out
 
 

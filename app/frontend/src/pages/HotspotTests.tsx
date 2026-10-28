@@ -1,114 +1,166 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { api, HotspotTestArea, HotspotTestParquet, label, RunSummary, when } from "../api";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { api, label, SceneRow, sceneTag, when } from "../api";
 
-function size(value: number): string {
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-}
+type Key = "run" | "area" | "source" | "captured" | "created" | "status" | "candidates" | "review";
+
+const COLUMNS: { key: Key; title: string }[] = [
+  { key: "run", title: "Run" },
+  { key: "area", title: "Area" },
+  { key: "source", title: "Source" },
+  { key: "captured", title: "Captured" },
+  { key: "created", title: "Created" },
+  { key: "status", title: "Run status" },
+  { key: "candidates", title: "Pair candidates" },
+  { key: "review", title: "Review status" },
+];
+
+const KEYS = COLUMNS.map((c) => c.key);
+const PAGE_SIZE = 30;
+
+const sortValue = (r: SceneRow, k: Key): string | number => (k === "run" ? r.run : k === "candidates" ? r.candidates ?? 0 : r[k] ?? "");
 
 export default function HotspotTests() {
-  const [areas, setAreas] = useState<HotspotTestArea[] | null>(null);
-  const [runs, setRuns] = useState<RunSummary[] | null>(null);
-  const [parquets, setParquets] = useState<HotspotTestParquet[] | null>(null);
+  const [rows, setRows] = useState<SceneRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(true);
+  const [checked, setChecked] = useState<string | null>(null);
+  const [showEmpty, setShowEmpty] = useState(false);
+  const [params, setParams] = useSearchParams();
+  const go = useNavigate();
+  const fromUrl = params.get("sort") as Key | null;
+  const sort: { key: Key; dir: 1 | -1 } =
+    fromUrl && KEYS.includes(fromUrl) ? { key: fromUrl, dir: params.get("dir") === "asc" ? 1 : -1 } : { key: "captured", dir: -1 };
+  const area = params.get("area") || "";
+
+  const update = (next: Record<string, string>) => {
+    const copy = new URLSearchParams(params);
+    for (const [k, v] of Object.entries(next)) {
+      if (v) copy.set(k, v);
+      else copy.delete(k);
+    }
+    setParams(copy, { replace: true });
+  };
 
   useEffect(() => {
-    let active = true;
+    let etag: string | null = null;
+    let pending = false;
+    const controller = new AbortController();
     const refresh = async () => {
+      if (pending || controller.signal.aborted) return;
+      pending = true;
+      setRefreshing(true);
       try {
-        const [nextAreas, nextRuns, nextParquets] = await Promise.all([
-          api.hotspotTestAreas(),
-          api.hotspotTestRuns(),
-          api.hotspotTestParquets(),
-        ]);
-        if (!active) return;
-        setAreas(nextAreas);
-        setRuns(nextRuns.sort((a, b) => b.run - a.run));
-        setParquets(nextParquets.sort((a, b) => b.last_modified.localeCompare(a.last_modified)));
+        const result = await api.hotspotTestScenes(etag, controller.signal);
+        if (controller.signal.aborted) return;
+        etag = result.etag;
+        if (result.rows) setRows(result.rows);
+        setChecked(new Date().toISOString());
         setError(null);
       } catch (e) {
-        if (active) setError((e as Error).message);
+        if (!controller.signal.aborted) setError((e as Error).message);
+      } finally {
+        pending = false;
+        if (!controller.signal.aborted) setRefreshing(false);
       }
     };
+    const visibleRefresh = () => { if (document.visibilityState === "visible") void refresh(); };
     void refresh();
-    const timer = window.setInterval(refresh, 60000);
+    const timer = window.setInterval(visibleRefresh, 15000);
+    window.addEventListener("focus", visibleRefresh);
+    document.addEventListener("visibilitychange", visibleRefresh);
     return () => {
-      active = false;
+      controller.abort();
       window.clearInterval(timer);
+      window.removeEventListener("focus", visibleRefresh);
+      document.removeEventListener("visibilitychange", visibleRefresh);
     };
   }, []);
 
-  if (!areas || !runs || !parquets) {
-    return <section><h1>Hotspot tests</h1>{error ? <p className="error">Could not load test results: {error}</p> : <p className="muted">Loading test results…</p>}</section>;
-  }
+  const areas = useMemo(() => [...new Set((rows ?? []).map((r) => r.area))].sort(), [rows]);
+  const sorted = useMemo(() => {
+    if (!rows) return [];
+    return rows
+      .filter((r) => !area || r.area === area)
+      .sort((a, b) => {
+        const x = sortValue(a, sort.key), y = sortValue(b, sort.key);
+        const tie = a.run - b.run || a.captured.localeCompare(b.captured) || a.scene_id.localeCompare(b.scene_id);
+        return (x < y ? -1 : x > y ? 1 : tie) * sort.dir;
+      });
+  }, [rows, area, sort.key, sort.dir]);
 
-  const areaLabels = Object.fromEntries(areas.map((area) => [area.name, area.label]));
+  const matching = showEmpty ? sorted : sorted.filter((r) => (r.candidates ?? 0) > 0 || r.status === "failed");
+  const requested = Number(params.get("page"));
+  const pages = Math.max(1, Math.ceil(matching.length / PAGE_SIZE));
+  const page = Number.isInteger(requested) && requested >= 1 ? Math.min(requested, pages) : 1;
+  const visible = matching.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const toggle = (key: Key) => update({ sort: key, dir: sort.key === key && sort.dir === -1 ? "asc" : sort.key === key ? "desc" : "asc", page: "1" });
+  const open = (r: SceneRow) => go(`/hotspot-tests/runs/${r.run}?scene=${encodeURIComponent(r.scene_id)}`);
+
+  if (error && !rows) return <p className="error">Could not load test runs: {error}</p>;
+  if (!rows) return <p className="muted">Loading test runs…</p>;
 
   return (
     <section>
       <h1>Hotspot tests</h1>
-      <p className="muted">Exploratory pair findings only. These scans do not query AIS or publish to the regular findings feed.</p>
-      {error && <p className="error">Some data could not refresh: {error}</p>}
-      <h2>Scan areas</h2>
-      <div className="wrap">
-        <table>
-          <thead><tr><th>Area</th><th>Version</th><th>Scan bounds W, S, E, N</th><th>Reference bounds</th><th>Why it is included</th></tr></thead>
-          <tbody>
-            {areas.map((area) => (
-              <tr key={area.name}>
-                <td>{area.label}</td>
-                <td className="n">{area.area_version}</td>
-                <td className="mono">{area.bbox.join(", ")}</td>
-                <td className="mono">{area.reference_bbox.join(", ")}</td>
-                <td>{area.rationale}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {error && <p className="error">Could not refresh: {error}. The previous list is unchanged.</p>}
+      <p className="muted">
+        One row per scanned scene in the exploratory areas. Open a row to review its pair candidates and mark each as a real pair or not.
+        Scan bounds and the findings Parquets are on the <Link to="/hotspot-tests/areas">areas page</Link>.
+      </p>
+      <div className="table-options">
+        <label>
+          Area{" "}
+          <select value={area} onChange={(e) => update({ area: e.target.value, page: "1" })}>
+            <option value="">All areas</option>
+            {areas.map((a) => <option key={a} value={a}>{label(a.replace(/^test_/, ""))}</option>)}
+          </select>
+        </label>
+        <label><input type="checkbox" checked={showEmpty} onChange={(e) => { setShowEmpty(e.target.checked); update({ page: "1" }); }} /> Show scenes with no pair candidates</label>
+        <span className="muted small">Showing {matching.length} of {sorted.length} scenes</span>
+        <span className="muted small">{refreshing ? "Checking for updates..." : checked ? `Updated ${when(checked)}` : ""}</span>
       </div>
-      <h2>Scan runs</h2>
-      {runs.length ? (
+      {matching.length ? (
         <div className="wrap">
-          <table>
-            <thead><tr><th>Run</th><th>Area</th><th>Captured</th><th>Status</th><th>Scenes</th><th>Pair candidates</th><th>Review</th></tr></thead>
+          <table className="runs">
+            <thead>
+              <tr>
+                {COLUMNS.map((c) => (
+                  <th key={c.key} aria-sort={sort.key === c.key ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
+                    <button className="sort" onClick={() => toggle(c.key)}>
+                      {c.title}
+                      <span className="arrow">{sort.key === c.key ? (sort.dir === 1 ? "▲" : "▼") : ""}</span>
+                    </button>
+                  </th>
+                ))}
+              </tr>
+            </thead>
             <tbody>
-              {runs.map((run) => {
-                const pairs = (run.run_verdicts?.pair || 0) + (run.run_verdicts?.possible_pair || 0);
-                return (
-                  <tr key={run.run}>
-                    <td className="mono"><Link to={`/hotspot-tests/runs/${run.run}`}>{run.run}</Link></td>
-                    <td>{areaLabels[run.area || ""] || label(run.area)}</td>
-                    <td className="mono">{run.captured?.[0] ? when(run.captured[0]) : "—"}</td>
-                    <td><span className={`status s-${run.status}`}>{run.status}</span></td>
-                    <td className="n">{run.scenes ?? 0}{run.scenes_failed ? ` (${run.scenes_failed} failed)` : ""}</td>
-                    <td className="n">{pairs}</td>
-                    <td><span className={`status r-${(run.review || "nothing to review").replace(/ /g, "-")}`}>{run.review || "nothing to review"}</span></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : <p className="muted">No hotspot-test scenes have completed yet.</p>}
-      <h2>Findings Parquets</h2>
-      {parquets.length ? (
-        <div className="wrap">
-          <table>
-            <thead><tr><th>Object key</th><th>Size</th><th>Updated</th></tr></thead>
-            <tbody>
-              {parquets.map((item) => (
-                <tr key={item.key}>
-                  <td className="mono"><a href={api.hotspotTestParquet(item.key)}>{item.key}</a></td>
-                  <td className="n">{size(item.size)}</td>
-                  <td className="mono">{when(item.last_modified)}</td>
+              {visible.map((r) => (
+                <tr key={`${r.run}-${r.scene_id}`} onClick={() => open(r)} tabIndex={0} onKeyDown={(e) => e.key === "Enter" && open(r)}>
+                  <td className="mono">{r.run}</td>
+                  <td>{label(r.area.replace(/^test_/, ""))}</td>
+                  <td>{r.source.toUpperCase()} <span className="muted mono small" title={r.scene_id}>{sceneTag(r.scene_id)}</span></td>
+                  <td className="mono">{when(r.captured)}</td>
+                  <td className="mono">{when(r.created)}</td>
+                  <td><span className={`status s-${r.status}`}>{r.status}</span></td>
+                  <td className="n">{r.candidates ?? 0}</td>
+                  <td><span className={`status r-${r.review.replace(/ /g, "-")}`}>{r.review}</span></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      ) : <p className="muted">No findings Parquets have been written yet.</p>}
+      ) : (
+        <p className="muted">{sorted.length ? "No scenes with pair candidates yet. Tick the box to see every scanned scene." : "No hotspot-test scenes have been processed yet."}</p>
+      )}
+      {matching.length > PAGE_SIZE && <div className="table-options">
+        <button onClick={() => update({ page: String(page - 1) })} disabled={page <= 1}>Previous</button>
+        <span className="small">Page {page} of {pages}</span>
+        <button onClick={() => update({ page: String(page + 1) })} disabled={page >= pages}>Next</button>
+        <span className="muted small">Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, matching.length)} of {matching.length}</span>
+      </div>}
+      <p className="muted small">Captured: satellite capture time. Created: when processing of that scene finished. Pair candidates: pair and possible-pair detections only.</p>
     </section>
   );
 }

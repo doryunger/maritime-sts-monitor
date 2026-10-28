@@ -57,3 +57,24 @@ def test_the_test_pair_counts_ignore_live_runs_and_duplicate_hulls(both):
     counts = runs.hotspot_test_pair_counts()
     assert list(counts) == [test.run_no]
     assert counts[test.run_no] == {"run_pair": 1, "run_possible_pair": 1, "pair": 1, "possible_pair": 1}
+
+
+def test_the_test_scene_index_counts_pair_candidates_only_and_stays_out_of_the_live_index(both):
+    client, live, test = both
+    rows = client.get("/api/hotspot-tests/scenes").json()
+    assert [(r["area"], r["scene_id"], r["candidates"]) for r in rows] == [("test_east_of_sohar", "probe", 2)]
+    assert rows[0]["review"] == "not started"
+    assert [r["scene_id"] for r in client.get("/api/scenes").json()] == ["live"]
+    etag = client.get("/api/hotspot-tests/scenes").headers["etag"]
+    assert client.get("/api/hotspot-tests/scenes", headers={"If-None-Match": etag}).status_code == 304
+
+
+def test_reviewing_candidates_moves_the_scene_to_done_and_accepts_real_and_not_a_pair(both):
+    client, live, test = both
+    base = f"/api/hotspot-tests/runs/{test.run_no}/flags"
+    assert client.put(f"{base}/probe__p", json={"status": "ok"}).status_code == 200
+    real = client.put(f"{base}/probe__q", json={"status": "wrong_verdict", "correct_verdict": "pair"})
+    assert real.status_code == 200 and real.json()["final_verdict"] == "pair"
+    assert client.get("/api/hotspot-tests/scenes").json()[0]["review"] == "done"
+    rejected = client.put(f"{base}/probe__p", json={"status": "wrong_verdict", "correct_verdict": "single"})
+    assert rejected.status_code == 200 and rejected.json()["final_verdict"] == "single"

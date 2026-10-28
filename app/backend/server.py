@@ -32,9 +32,7 @@ def list_runs():
     return [row for row in runs.summaries() if not (row.get("area") or "").startswith("test_")]
 
 
-@app.get("/api/scenes")
-def list_scenes(if_none_match: str | None = Header(default=None)):
-    rows = [row for row in runs.scene_rows() if not row["area"].startswith("test_")]
+def scene_response(rows: list[dict], if_none_match: str | None) -> Response:
     payload = json.dumps(rows, ensure_ascii=False, separators=(",", ":")).encode()
     etag = '"' + hashlib.sha256(payload).hexdigest() + '"'
     headers = {"ETag": etag, "Cache-Control": "private, no-cache"}
@@ -42,6 +40,16 @@ def list_scenes(if_none_match: str | None = Header(default=None)):
     if etag in tags or "*" in tags:
         return Response(status_code=304, headers=headers)
     return Response(payload, media_type="application/json", headers=headers)
+
+
+@app.get("/api/scenes")
+def list_scenes(if_none_match: str | None = Header(default=None)):
+    return scene_response(runs.scene_rows(), if_none_match)
+
+
+@app.get("/api/hotspot-tests/scenes")
+def list_hotspot_test_scenes(if_none_match: str | None = Header(default=None)):
+    return scene_response(runs.scene_rows(test=True), if_none_match)
 
 
 @app.get("/api/jobs")

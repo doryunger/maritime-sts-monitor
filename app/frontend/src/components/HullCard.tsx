@@ -12,6 +12,11 @@ const LABELS: [string, string][] = [
   ["is_pair", "Pair"],
 ];
 const NAMES: Record<string, string> = { pair: "Pair", single: "Single" };
+const TEST_CHOICES: [string, string][] = [
+  ["pair", "Real pair"],
+  ["single", "Not a pair"],
+  ["unclear", "Can't tell"],
+];
 
 interface Props {
   run: number;
@@ -42,6 +47,19 @@ export default function HullCard({ run, hull, flag, onSaved, focused, version, h
   const choose = (v: string) => {
     setStatus(v);
     if (v === "wrong_verdict" && alternatives.length === 1) setFix(alternatives[0]);
+  };
+  const testChoice = status === "other" ? "unclear" : status === "ok" ? "pair" : status === "wrong_verdict" ? (fix === "pair" ? "pair" : "single") : "";
+  const chooseTest = (v: string) => {
+    if (v === "pair" && hull.verdict === "pair") {
+      setStatus("ok");
+      setFix("");
+    } else if (v === "unclear") {
+      setStatus("other");
+      setFix("");
+    } else {
+      setStatus("wrong_verdict");
+      setFix(v);
+    }
   };
   const dirty = status !== (flag?.status ?? "") || (fix || "") !== (flag?.correct_verdict ?? "") || note.trim() !== (flag?.note ?? "");
   const name = `q-${hull.id}`;
@@ -203,14 +221,21 @@ export default function HullCard({ run, hull, flag, onSaved, focused, version, h
       </dl>
       <div className="qa">
         <div className="opts" role="radiogroup" aria-label="QA flag">
-          {options.map(([v, t]) => (
-            <label key={v}>
-              <input type="radio" name={name} value={v} checked={status === v} onChange={() => choose(v)} />
-              {v === "wrong_verdict" && alternatives.length === 1 ? `${t}: ${NAMES[alternatives[0]]}` : t}
-            </label>
-          ))}
+          {hotspotTest
+            ? TEST_CHOICES.map(([v, t]) => (
+              <label key={v}>
+                <input type="radio" name={name} value={v} checked={testChoice === v} onChange={() => chooseTest(v)} />
+                {t}
+              </label>
+            ))
+            : options.map(([v, t]) => (
+              <label key={v}>
+                <input type="radio" name={name} value={v} checked={status === v} onChange={() => choose(v)} />
+                {v === "wrong_verdict" && alternatives.length === 1 ? `${t}: ${NAMES[alternatives[0]]}` : t}
+              </label>
+            ))}
         </div>
-        {status === "wrong_verdict" && alternatives.length > 1 && (
+        {!hotspotTest && status === "wrong_verdict" && alternatives.length > 1 && (
           <div className="opts fix" role="radiogroup" aria-label="Correct verdict">
             <span className="muted small">Correct verdict:</span>
             {alternatives.map((v) => (
@@ -221,9 +246,9 @@ export default function HullCard({ run, hull, flag, onSaved, focused, version, h
             ))}
           </div>
         )}
-        <textarea rows={2} placeholder="What looks wrong? (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
+        <textarea rows={2} placeholder={hotspotTest ? "Notes (optional)" : "What looks wrong? (optional)"} value={note} onChange={(e) => setNote(e.target.value)} />
         <div className="row">
-          <button className="save" disabled={!ready || !dirty || state === "Saving…"} onClick={save}>Save flag</button>
+          <button className="save" disabled={!ready || !dirty || state === "Saving…"} onClick={save}>{hotspotTest ? "Save review" : "Save flag"}</button>
           <span className={`small ${dirty && !state ? "warn" : "muted"}`}>{state || (dirty ? "Unsaved changes" : flag ? `Saved ${when(flag.updated_utc)}` : "")}</span>
         </div>
       </div>

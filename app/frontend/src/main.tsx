@@ -5,6 +5,7 @@ import Runs from "./pages/Runs";
 import Run from "./pages/Run";
 import Jobs from "./pages/Jobs";
 import HotspotTests from "./pages/HotspotTests";
+import HotspotTestAreas from "./pages/HotspotTestAreas";
 import "./styles.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -19,6 +20,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           <Route path="/" element={<Runs />} />
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/hotspot-tests" element={<HotspotTests />} />
+          <Route path="/hotspot-tests/areas" element={<HotspotTestAreas />} />
           <Route path="/hotspot-tests/runs/:no/*" element={<Run hotspotTest />} />
           <Route path="/runs/:no/*" element={<Run />} />
         </Routes>

@@ -74,8 +74,10 @@ not added to the live S3 hot-spot list or AIS collection. New test areas queue s
 
 Attempt artifacts and review images use `hotspot-tests/artifacts/` and `hotspot-tests/reviews/`. Pair and
 possible-pair GeoParquets, including empty files for dates with no pair labels, use
-`hotspot-tests/findings/<date>/<area>/<source>/<job_id>.parquet`. The authenticated `/hotspot-tests` page shows
-the active bounds, runs and findings Parquets; its review cards contain only pair candidates. Caddy routes the
+`hotspot-tests/findings/<date>/<area>/<source>/<job_id>.parquet`. The authenticated `/hotspot-tests` page is a scene
+index like the Runs page (one row per scanned scene, area filter, pair-candidate counts, review status); a row opens
+the run's pair and possible-pair candidates, each marked Real pair, Not a pair or Can't tell. Scan bounds and the
+Parquet files are on `/hotspot-tests/areas`. Caddy routes the
 hotspot DNS name to the app, which reads the private S3 bucket through its AWS identity.
 
 ## Processing
