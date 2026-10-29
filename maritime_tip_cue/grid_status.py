@@ -70,8 +70,8 @@ def decide(scans, rules):
 def load_scans(rows, rules):
     scans = rows(
         "SELECT g.tile_id,g.round,g.date_no,g.source,g.scene,g.scene_time,g.queued_utc,g.status,g.pairs,g.hulls,"
-        "rs.status AS result_status,rs.counts,rs.run_no,rs.updated_utc "
-        "FROM processing.grid_scans g LEFT JOIN LATERAL "
+        "j.status AS job_status,rs.status AS result_status,rs.counts,rs.run_no,rs.updated_utc "
+        "FROM processing.grid_scans g LEFT JOIN processing.jobs j ON j.job_id=g.job_id LEFT JOIN LATERAL "
         "(SELECT s.status,s.counts,s.updated_utc,r.run_no FROM review.scenes s JOIN review.runs r ON r.run_key=s.run_key "
         "WHERE s.site=g.site AND s.scene_id=g.scene ORDER BY s.run_key DESC LIMIT 1) rs ON true "
         "ORDER BY g.tile_id,g.round,g.date_no"
@@ -98,7 +98,7 @@ def progress(scans, visit, rules):
         status = "processed"
         stamps = [scan["updated_utc"] for scan in done if scan["updated_utc"]]
         finished = visit["decided_utc"] if closed_early else max(stamps, default=None)
-    elif done:
+    elif any(scan["job_status"] == "running" for scan in scans if scan["status"] != "done"):
         status = "processing"
     else:
         status = "waiting"

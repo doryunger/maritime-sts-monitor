@@ -10,14 +10,15 @@ const HEIGHT = (NORTH + 2) * SCALE;
 const LEGEND: { swatch: string; title: string; statuses: string[] }[] = [
   { swatch: "scanned_pairs", title: "Scanned, pairs", statuses: ["scanned_pairs"] },
   { swatch: "scanned_no_pairs", title: "Scanned, no pairs", statuses: ["scanned_no_pairs"] },
-  { swatch: "processing", title: "Pending", statuses: ["waiting", "processing"] },
+  { swatch: "waiting", title: "Waiting", statuses: ["waiting"] },
+  { swatch: "processing", title: "Processing", statuses: ["processing"] },
   { swatch: "failed", title: "Failed", statuses: ["failed"] },
 ];
 const NAMES: Record<string, string> = {
   scanned_pairs: "Processed, pairs",
   scanned_no_pairs: "Processed, no pairs",
-  processing: "Pending (second scene due)",
-  waiting: "Pending (waiting)",
+  processing: "Processing",
+  waiting: "Waiting",
   no_imagery: "No imagery",
   failed: "Failed",
   unscanned: "Unscanned",

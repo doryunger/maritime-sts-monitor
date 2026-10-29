@@ -169,4 +169,29 @@ def test_grid_with_one_empty_scene_has_no_finish_date_until_its_second_scene_is_
     pgdb.execute("UPDATE review.scenes SET counts = jsonb_set(counts, '{verdicts}', '{\"single\": 3}') WHERE scene_id='probe'")
     pgdb.commit()
     grid = client.get("/api/hotspot-tests/grid/runs").json()[0]["grids"][0]
-    assert (grid["status"], grid["pairs"], grid["finished"]) == ("processing", 0, None)
+    assert (grid["status"], grid["pairs"], grid["finished"]) == ("waiting", 0, None)
+
+
+def test_only_a_grid_with_a_running_job_is_processing(both, pgdb, monkeypatch):
+    client, live, test = both
+    from maritime_tip_cue import grid_status
+
+    monkeypatch.setattr(
+        grid_status,
+        "load_rules",
+        lambda: {"max_scans_per_day": 50, "first_dates_per_day": 25, "dates_per_tile": 2, "min_hulls_for_second_date": None, "hit_verdicts": ["pair", "possible_pair"]},
+    )
+    pgdb.execute(
+        "INSERT INTO processing.grid_scans (tile_id,round,date_no,site,source,scene,scene_time,job_id,queued_utc,status) VALUES "
+        "('T1',1,1,'test_grid_T1','s1','a','2026-10-20T05:00:00Z','j1','2026-10-29T10:00:00Z','queued'),"
+        "('T2',1,1,'test_grid_T2','s1','b','2026-10-20T05:00:00Z','j2','2026-10-29T10:01:00Z','queued')"
+    )
+    for job_id, status in (("j1", "running"), ("j2", "dispatched")):
+        pgdb.execute(
+            "INSERT INTO processing.jobs (job_id,site,source,created_utc,manifest_json,manifest_sha256,status) "
+            "VALUES (%s,'x','s1',now(),'{}',%s,%s)",
+            (job_id, job_id, status),
+        )
+    pgdb.commit()
+    grids = {grid["tile_id"]: grid["status"] for grid in client.get("/api/hotspot-tests/grid/runs").json()[0]["grids"]}
+    assert grids == {"T1": "processing", "T2": "waiting"}
