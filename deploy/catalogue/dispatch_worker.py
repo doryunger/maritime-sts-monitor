@@ -92,12 +92,16 @@ def run_session(
         seconds = max(0, round(clock() - started))
         after = settle(queue_counts, cfg, sleep)
         progress = after["completed"] - before["completed"]
-        state["no_progress_sessions"] = 0 if progress > 0 else state["no_progress_sessions"] + 1
+        deferred = exit_code == worker_host.GPU_BUSY_EXIT
+        if progress > 0:
+            state["no_progress_sessions"] = 0
+        elif not deferred:
+            state["no_progress_sessions"] += 1
         state["sessions"] = [s for s in state["sessions"] if s["started"] + s["seconds"] > clock() - 86400]
         state["sessions"].append({"started": started, "seconds": seconds, "exit": exit_code, "progress": progress})
         save_state(directory, state)
         return {
-            "action": "ran",
+            "action": "deferred" if deferred else "ran",
             "exit": exit_code,
             "seconds": seconds,
             "progress": progress,

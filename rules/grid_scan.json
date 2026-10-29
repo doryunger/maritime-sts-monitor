@@ -1,0 +1,52 @@
+{
+  "basis": "Random grid scan of the sea between the four live hot spots (decision 2026-10-30, user). Each round visits every tile of hotspot-tests/grid.json once in random order. A tile gets one random scene; if that scene finds no pair it gets a second scene on another date; a pair on the first ends the visit.",
+  "first_dates_per_day": {
+    "value": 25,
+    "unit": "tiles",
+    "basis": "User decision 2026-10-30: 25 random tiles a day get their first scene."
+  },
+  "max_scans_per_day": {
+    "value": 50,
+    "unit": "scenes",
+    "basis": "User decision 2026-10-30: at most 50 scenes queued per UTC day, first and second dates together; second dates are queued before new first dates."
+  },
+  "dates_per_tile": {
+    "value": 2,
+    "unit": "scenes",
+    "basis": "User decision 2026-10-30: a second date is taken only when the first finds no pair."
+  },
+  "window_days": {
+    "value": 30,
+    "unit": "days",
+    "basis": "User decision 2026-10-30: scenes are drawn at random from the last 30 days."
+  },
+  "window_max_days": {
+    "value": 60,
+    "unit": "days",
+    "basis": "User decision 2026-10-30: when the 30-day window holds no usable scene the window widens to 60 days and no further."
+  },
+  "source_order": {
+    "value": ["s1", "s2"],
+    "basis": "S1 first: the live sites give 3.7 to 6.1 pairs per S1 scene against 1.0 to 1.65 per S2 scene (docs/feasibility.md, predicting pair locations), so one empty S1 scene is far stronger evidence than one empty S2 scene. S2 is used when a tile has no usable S1 scene in the window. S2 cloud limit is scene.s2_max_cloud_pct in sts_graph.json."
+  },
+  "hit_verdicts": {
+    "value": ["pair", "possible_pair"],
+    "basis": "Run verdicts of the scene that count as a pair for the visit decision. These are automatic labels: a hit marks the tile a candidate for review, not a confirmed pair (run 91 was a haze false pair)."
+  },
+  "min_hulls_for_second_date": {
+    "value": null,
+    "basis": "tbd",
+    "unit": "checked hulls",
+    "note": "A first scene below this many checked hulls would close the tile as quiet without a second date. Left null until the hull counts of the first scenes show where to cut."
+  },
+  "min_shore_distance_m": {
+    "value": 2000,
+    "unit": "m",
+    "basis": "Same shore mask as every hot spot and test area (decision 2026-10-19)."
+  },
+  "result_wait_days": {
+    "value": 3,
+    "unit": "days",
+    "basis": "A queued scene with no review result after this many days is reported as stuck in the status output; it is not retried automatically."
+  }
+}

@@ -23,6 +23,16 @@ def digest(value):
     return hashlib.sha256(canonical_bytes(value)).hexdigest()
 
 
+def load_rules():
+    raw_rules = json.loads(rules_mod.RULES_PATH.read_text(encoding="utf-8"))
+    rules = {
+        group: {key: entry["value"] for key, entry in body.items() if isinstance(entry, dict) and "value" in entry}
+        for group, body in raw_rules.items()
+        if isinstance(body, dict)
+    }
+    return raw_rules, rules
+
+
 def utc_now():
     return datetime.now(UTC).isoformat()
 
@@ -744,12 +754,7 @@ def scan(db, cfg, backfill=False, first_scene=False):
             "INSERT INTO processing.scans (scan_id,started_utc,status) VALUES (%s,%s,'running')", (scan_id, started_at)
         )
     try:
-        raw_rules = json.loads(rules_mod.RULES_PATH.read_text(encoding="utf-8"))
-        rules = {
-            group: {key: entry["value"] for key, entry in body.items() if isinstance(entry, dict) and "value" in entry}
-            for group, body in raw_rules.items()
-            if isinstance(body, dict)
-        }
+        raw_rules, rules = load_rules()
         sites = hotspots.load() + hotspot_tests.load()
         if not sites:
             raise ValueError("Shared hot-spot list is empty")
@@ -848,7 +853,11 @@ def write_log(cfg, summary):
 
 
 def status(db):
-    latest = one(db, "SELECT summary_json FROM processing.scans ORDER BY started_utc DESC LIMIT 1")
+    latest = one(
+        db,
+        "SELECT summary_json FROM processing.scans WHERE summary_json->>'grid_scan' IS NULL "
+        "ORDER BY started_utc DESC LIMIT 1",
+    )
     result = {"last_scan": latest["summary_json"] if latest else None, "jobs": counts(db), "sites": []}
     for site in hotspots.load() + hotspot_tests.load():
         channels = []

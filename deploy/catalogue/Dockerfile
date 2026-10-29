@@ -9,5 +9,6 @@ COPY maritime_tip_cue /app/maritime_tip_cue
 COPY config.yaml /app/config.yaml
 COPY rules /app/rules
 COPY hotspot-tests/areas.json /app/hotspot-tests/areas.json
+COPY hotspot-tests/grid.json /app/hotspot-tests/grid.json
 RUN mkdir -p /app/data
 ENTRYPOINT ["python"]

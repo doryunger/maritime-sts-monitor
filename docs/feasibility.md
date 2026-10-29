@@ -1203,3 +1203,30 @@ Mumbai's seven completed S2 tiles contain six pair tile-rows but only four disti
 The four live sites' recent control runs found Fujairah 16 pair / 0 possible pair among 734 checked; Sohar 16 / 2 among 332; Johor East 0 / 1 among 137; and Malaysia EOPL 1 / 1 among 145. Their scene counts and sampled dates differ (Fujairah 6 S1 and 5 S2 scenes; Sohar 4 S1 scenes and its S2 scene failed on missing XML; Johor East 3 S1 scene rows; EOPL 4 S1 scene rows). These are raw run totals, not matched rates. The current Mumbai S2 labels cannot be compared directly to a week of control runs, especially while visual confirmation and one tile are outstanding. Keep all four sites in the comparison set; do not transfer a rule or threshold based on one region.
 
 **Decision:** none of the new areas is ready to add to the live hot-spot list. Mumbai is the strongest next review target because the image screen returned four distinct, though uncertain, S2 pair locations and independent reporting places sanctioned-vessel transfers in the broader area. Retry the eighth S2 tile outside the network-restricted sandbox, complete missing S1 coverage, inspect the historical event-date scenes (Mumbai Apr/Nov 2025 and Feb 2026; Ras Isa Nov 2024 and Jun 2025; Malé Mar 2022), and run matched windows across all four controls before judging recurrence. Ras Isa and Malé's current sampled S2 tiles did not return pair labels; this does not rule out activity on other dates. Preserve the survey boxes and observed scene footprints separately from the four live boxes until repeated, visually supported activity and AIS coverage are established.
+
+## Predicting pair locations from AIS and detector density (measured 2026-10-28)
+
+Backtest on the stored Postgres review data (5,480 checked hulls after keeping the latest run per scene and hull; final verdict is the QA-corrected one). Scripts and the hull dump are in the session scratchpad, not in this repo. The four test areas ran no AIS matching, so the AIS check covers the live sites only.
+
+**One-sided AIS does not predict pairs.** Of 154 final pairs, 110 had no AIS match, 39 had one slot and 5 had both. Pair rate among checked hulls with no AIS match is 3.9% (110 of 2,812); among hulls matched to a stationary AIS vessel (speed under 1 kn) it is 1.8% (44 of 2,387). The matched hulls are mostly ships at anchor, and the pairs are mostly dark.
+
+**Detector density predicts, loosely.** Checked hulls per scene against pairs per scene on S1: off_sohar 83 / 6.1, fujairah_outer 153 / 3.7, malaysia_eopl 122 / 2.0, johor_east_scs 55 / 0.83. Pair share of checked hulls is 1.5 to 7.4% and differs by site, so density is necessary, not sufficient. The test areas carry 2 to 20 checked hulls per S1 scene (east_of_sohar 11, mumbai_outer 8, ras_isa_fso 2) and found 0 real pairs. S1 has no speed estimate; on S2 the share of large near-stationary hulls is 36 to 90% by site and does not separate them.
+
+Limits: scenes cover part of a box, so per-area normalisation is rough; test areas have 1 to 12 scenes each; mumbai_nearshore is dense (16 to 29 hulls per 1000 km2) but is a 700 km2 box mostly in a port approach.
+
+### Jurisdiction and infrastructure around known pairs (measured 2026-10-28)
+
+Same hull table, live sites only, one entry per 0.005 degree cell (pair if any hull in it is a final pair), compared with all other checked cells of the same site. Boundaries are Marine Regions EEZ, 12 nm, 24 nm, internal waters and boundary lines (WFS, free download); ports are the NGA World Port Index; anchorages, piers, oil storage and platforms are OSM. Computed on the GPU worker image from files kept outside the repo. AUC is the chance a pair cell is nearer to the feature than a control cell (0.5 is no signal).
+
+| Site | Pair cells | Pairs inside 12 nm (controls) | Strongest features (AUC) |
+|---|---|---|---|
+| fujairah_outer | 62 | 54 of 62 (59%) | distance to 12 nm limit 0.72, oil-terminal port 0.70 |
+| off_sohar | 46 | 44 of 46 (63%) | oil storage 0.83, pier 0.82, port 0.81, oil-terminal port 0.81, anchorage 0.77 |
+| malaysia_eopl | 14 | 14 of 14 (70%) | large or medium port 0.70, harbour 0.69, EEZ boundary line 0.68 |
+| johor_east_scs | 5 | 0 of 5 (14%) | nothing consistent (5 cells) |
+
+Reading: pairs sit inside a state's territorial sea close to oil terminals, piers and anchorages, not beyond the 12 or 24 nm limits. Distance to the 24 nm limit and to EEZ lines does not point the same way across sites (24 nm AUC 0.67, 0.34, 0.53, 0.57). Infrastructure proximity leans the same way at three sites and is strong only at off_sohar. EOPL and Johor have 14 and 5 pair cells, too few to separate from chance. A political or enforcement driver is not testable with static boundaries; this measures only where pairs fall relative to them.
+
+## Scene grid between the four hot spots (built 2026-10-30)
+
+Grid for the random scan ([planner](../maritime_tip_cue/context/hotspot_tests.md#grid-scan)): Sentinel-2-sized 109.8 km UTM squares with at least half sea inside the box spanned by the four live hot spots (56.3 to 106.5 E, 0.3 to 25.8 N), kept only when Planetary Computer listed an S1 GRD or an S2 L2A acquisition over them in 1 to 29 October 2026. Of 1,069 sea tiles, 515 had neither and are dropped (the open Arabian Sea and central Bay of Bengal; 8 of 8 sampled by centre-point query confirmed empty). 554 remain: 272 with both sensors, 281 S2 only, 1 S1 only; 21 touch a live hot spot and are left out, giving the 533 in `hotspot-tests/grid.json`. S1 over the area is IW only (929 of 932 items). A single pass needs about 97 S1 scenes (greedy cover of the 272 S1 tiles) or 533 S2 scenes. Coverage is a 29-day snapshot and the planner searches the live catalogue, so it does not rely on it. The builder, coverage dumps and map are outside this repo in `~/projects/maritime-sts-analysis/2026-10-30-scene-grid/`; it needs `mgrs`, `shapely`, `pyproj` and Natural Earth 50 m land.

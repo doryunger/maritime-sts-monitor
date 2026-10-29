@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[2]
 MANAGER_IMAGE = "maritime-sts-manager"
+GPU_BUSY_EXIT = 75
 
 
 def read_env(path):
@@ -39,6 +40,9 @@ def load_settings(env_path):
         "image": get("WORKER_IMAGE", "maritime-sts-gpu-worker:test"),
         "ready_timeout": int(get("EC2_READY_TIMEOUT_SECONDS", "1200")),
         "poll_seconds": get("WAKE_POLL_SECONDS", "20"),
+        "gpu_free_container": get("WORKER_GPU_FREE_CONTAINER"),
+        "gpu_min_free_mib": int(get("WORKER_GPU_MIN_FREE_MIB", "5376")),
+        "gpu_idle_minutes": int(get("WORKER_GPU_IDLE_MINUTES", "15")),
     }
     if not settings["private_ip"] or not settings["status_url"] or not settings["remote_dir"]:
         raise RuntimeError("WORKER_PRIVATE_IP, WORKER_WAKE_STATUS_URL and WORKER_REMOTE_DIR must be configured")
@@ -97,6 +101,36 @@ def manager_json(env_path, module, *args):
     raise RuntimeError(f"Manager ledger lock stayed held: {last_error}")
 
 
+GPU_GUARD = (
+    "free() { nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits | head -1; }; "
+    'need=__NEED__; c=__CONTAINER__; idle=__IDLE__; '
+    'if [ "$(free)" -ge "$need" ]; then exit 0; fi; '
+    'echo "gpu_guard: only $(free) MiB free, need $need"; '
+    "if ! docker inspect -f '{{.State.Running}}' \"$c\" 2>/dev/null | grep -q true; then "
+    'echo "gpu_guard: $c is not running, something else holds the GPU"; exit __BUSY__; fi; '
+    'logs=$(docker logs --since ${idle}m "$c" 2>&1); '
+    "beats=$(printf '%s\\n' \"$logs\" | grep -c '\"event\": \"heartbeat\"'); "
+    "busy=$(printf '%s\\n' \"$logs\" | grep '\"event\": \"heartbeat\"' | grep -vc '\"requests\": 0, \"open_websockets\": 0'); "
+    "opened=$(printf '%s\\n' \"$logs\" | grep -c '\"event\": \"ws_open\"'); "
+    'if [ "$beats" -lt $((idle - 5)) ] || [ "$busy" -gt 0 ] || [ "$opened" -gt 0 ]; then '
+    'echo "gpu_guard: $c not provably idle for ${idle} min (heartbeats=$beats busy=$busy ws_open=$opened), deferring"; '
+    "exit __BUSY__; fi; "
+    'echo "gpu_guard: $c idle for ${idle} min, restarting it to free GPU memory"; '
+    'docker restart "$c" >/dev/null || exit __BUSY__; sleep 15; '
+    'if [ "$(free)" -lt "$need" ]; then echo "gpu_guard: still only $(free) MiB free after restart"; exit __BUSY__; fi; '
+    'echo "gpu_guard: $(free) MiB free after restart"'
+)
+
+
+def gpu_guard_script(container, min_free_mib, idle_minutes):
+    return (
+        GPU_GUARD.replace("__NEED__", str(int(min_free_mib)))
+        .replace("__CONTAINER__", shlex.quote(container))
+        .replace("__IDLE__", str(int(idle_minutes)))
+        .replace("__BUSY__", str(GPU_BUSY_EXIT))
+    )
+
+
 def remote_worker_command(settings, worker_args, container_name=None, max_seconds=None):
     image = settings["image"]
     s3_preflight = (
@@ -110,6 +144,10 @@ def remote_worker_command(settings, worker_args, container_name=None, max_second
         '-v "$PWD/data:/app/data" '
         f"--entrypoint python {shlex.quote(image)} -c {shlex.quote(s3_preflight)}"
     )
+    guard = ""
+    if settings.get("gpu_free_container"):
+        script = gpu_guard_script(settings["gpu_free_container"], settings["gpu_min_free_mib"], settings["gpu_idle_minutes"])
+        guard = f"( {script} ) && "
     name = f"--name {shlex.quote(container_name)} " if container_name else ""
     run = (
         f"docker run --rm {name}--gpus all --shm-size=15g "
@@ -121,6 +159,7 @@ def remote_worker_command(settings, worker_args, container_name=None, max_second
     head = (
         f"cd {shlex.quote(settings['remote_dir'])} && test -f config.local.yaml && "
         "test -d /opt/ai2-models && nvidia-smi >/dev/null && "
+        f"{guard}"
         "df -Pk / | awk 'NR==2 { exit !($4 >= 3145728) }' && "
         f"docker image inspect {shlex.quote(image)} >/dev/null && {preflight} && "
     )
@@ -128,9 +167,7 @@ def remote_worker_command(settings, worker_args, container_name=None, max_second
         return head + run
     quoted = shlex.quote(container_name)
     cleanup = f"docker rm -f {quoted} >/dev/null 2>&1"
-    return (
-        f"{head}{cleanup}; timeout -k 60 {int(max_seconds)} {run}; code=$?; {cleanup}; exit $code"
-    )
+    return f"{head}{{ {cleanup}; timeout -k 60 {int(max_seconds)} {run}; code=$?; {cleanup}; exit $code; }}"
 
 
 def run_remote(settings, remote_command, wake_timeout=None, session_timeout=None):

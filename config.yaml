@@ -41,6 +41,11 @@ hotspot_tests:
   artifacts_prefix: hotspot-tests/artifacts/
   reviews_prefix: hotspot-tests/reviews/
 
+grid_scan:
+  grid_path: hotspot-tests/grid.json
+  rules_path: rules/grid_scan.json
+  land_path: hotspot-tests/grid_land.json
+
 worker:
   path: data/worker
   attempt_wait_seconds: 120

@@ -102,6 +102,15 @@ local and EC2 work never overlap on a job; pause the dispatcher anyway to keep E
 the local machine is about to take. `max_seconds_per_scene` is left unset in the root config so local runs
 are not killed by a GPU-sized limit.
 
+GPU guard (2026-10-29): the worker's T4 (15.4 GB) is shared with another project's idle demo app whose process keeps its
+PyTorch allocator cache (9.8 GB on 10-28, 12.5 GB on 10-29), leaving less than the detector's ~4.8 GB peak; the detector
+then fails in torchvision `roi_align` and the breaker opens. With `WORKER_GPU_FREE_CONTAINER` set, the remote command
+first checks free GPU memory (`WORKER_GPU_MIN_FREE_MIB`, 5376: the S2 detector's measured peak reserved memory is 4.76 GB, 4,540 MiB). If it is low and that container's last
+`WORKER_GPU_IDLE_MINUTES` (15) of heartbeat log lines show no requests, no open websockets and no `ws_open`
+event, with at least idle-5 heartbeats seen, the container is restarted; otherwise the session exits 75 and is recorded as
+`deferred` without counting toward the breaker (it still counts toward the daily worker-seconds cap). The remote
+command now stops when any pre-step fails: before, `head` was followed by `;`, so a failed preflight still ran the worker.
+
 Scenes processed in the earlier hand-run passes (runs 2-9) are not in the catalogue ledger: 29 of the 47
 scenes in the ready and failed jobs on 2026-10-22 already have a `checked` row in a local run. Rerunning them
 through the queue is what writes their receipts, so the ledger and Redis stay the single record.

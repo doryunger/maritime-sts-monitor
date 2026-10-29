@@ -14,6 +14,14 @@
   --ok: #2e8b57;
   --warn: #b9770e;
   --hl: #fff6e5;
+  --g-unscanned: #e3e6ea;
+  --g-progress: #f2c94c;
+  --g-candidate: #c0392b;
+  --g-cold: #4a6fa5;
+  --g-quiet: #9fb7d6;
+  --g-noimg: #aeb4bb;
+  --g-failed: #1b1f24;
+  --g-land: #d9d4c7;
   --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: light;
@@ -29,6 +37,14 @@
     --accent: #5b9bf0;
     --accent-ink: #0b1220;
     --hl: #2e2818;
+    --g-unscanned: #343b46;
+    --g-progress: #d4a72c;
+    --g-candidate: #e05a49;
+    --g-cold: #5b86c9;
+    --g-quiet: #46608a;
+    --g-noimg: #59616c;
+    --g-failed: #e6e9ee;
+    --g-land: #2a2f37;
     color-scheme: dark;
   }
 }
@@ -144,3 +160,22 @@ summary { cursor: pointer; padding: 4px 0; }
 .modal h2 { margin: 0 0 8px; font-size: 16px; }
 .modal ul { margin: 8px 0; padding-left: 20px; }
 .modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+
+.grid-scan { margin: 0 0 1.5rem; }
+.grid-head { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; align-items: baseline; margin-bottom: 0.5rem; }
+.grid-map { width: 100%; height: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+.grid-map .land { fill: var(--g-land); stroke: var(--line); stroke-width: 0.4; }
+.grid-map .tile { stroke: var(--bg); stroke-width: 0.3; cursor: pointer; }
+.grid-map .tile.selected { stroke: var(--fg); stroke-width: 1.2; }
+.grid-map .live { fill: none; stroke: var(--pair); stroke-width: 1; pointer-events: none; }
+.grid-map .live-label { fill: var(--pair); font-size: 7px; pointer-events: none; }
+.tile.unscanned, .swatch.unscanned { fill: var(--g-unscanned); background: var(--g-unscanned); }
+.tile.in_progress, .swatch.in_progress { fill: var(--g-progress); background: var(--g-progress); }
+.tile.candidate, .swatch.candidate { fill: var(--g-candidate); background: var(--g-candidate); }
+.tile.cold, .tile.no_second_date, .swatch.cold, .swatch.no_second_date { fill: var(--g-cold); background: var(--g-cold); }
+.tile.quiet, .swatch.quiet { fill: var(--g-quiet); background: var(--g-quiet); }
+.tile.no_imagery, .swatch.no_imagery { fill: var(--g-noimg); background: var(--g-noimg); }
+.tile.failed, .swatch.failed { fill: var(--g-failed); background: var(--g-failed); }
+.grid-legend { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; margin: 0.5rem 0; font-size: 0.85rem; }
+.swatch { display: inline-block; width: 0.8rem; height: 0.8rem; border: 1px solid var(--line); vertical-align: -0.1rem; }
+.grid-detail { margin: 0.5rem 0; }

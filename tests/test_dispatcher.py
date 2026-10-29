@@ -79,7 +79,7 @@ def test_breaker_opens_after_repeated_sessions_without_progress(tmp_path):
     def worker(max_seconds):
         calls.append(max_seconds)
         clock.value += 1000
-        return 75
+        return 2
 
     for _ in range(3):
         assert session(tmp_path, queue, worker, clock)["action"] == "ran"
@@ -141,7 +141,7 @@ def test_remote_command_has_runtime_limit_and_container_cleanup():
     command = worker_host.remote_worker_command(settings, "drain", "sts-worker-drain", 3600)
     assert "timeout -k 60 3600 docker run" in command
     assert command.count("docker rm -f sts-worker-drain") == 2
-    assert command.endswith("exit $code")
+    assert command.endswith("exit $code; }")
 
 
 def test_hung_session_is_terminated_and_reported_as_timeout(monkeypatch):
@@ -191,3 +191,85 @@ def test_does_not_wake_while_jobs_are_claimed_elsewhere(tmp_path):
     queue.counts["claimed"] = 1
     result = session(tmp_path, queue, lambda s: calls.append(s) or 0, Clock())
     assert result["reason"] == "jobs are being processed elsewhere" and calls == []
+
+
+def guard_env(tmp_path, free_after_restart, logs, running="true"):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    state = tmp_path / "free"
+    state.write_text("2800")
+    (tmp_path / "logs").write_text(logs)
+    (tmp_path / "calls").write_text("")
+    (bin_dir / "nvidia-smi").write_text(f"#!/bin/bash\ncat {state}\n")
+    (bin_dir / "docker").write_text(
+        "#!/bin/bash\n"
+        f'echo "$1" >> {tmp_path / "calls"}\n'
+        f'case "$1" in inspect) echo {running};; logs) cat {tmp_path / "logs"};; '
+        f"restart) echo {free_after_restart} > {state};; esac\n"
+    )
+    (bin_dir / "sleep").write_text("#!/bin/bash\n")
+    for name in ("nvidia-smi", "docker", "sleep"):
+        (bin_dir / name).chmod(0o755)
+    return bin_dir, state
+
+
+def run_guard(tmp_path, bin_dir):
+    script = worker_host.gpu_guard_script("demo-app", 6144, 15)
+    env = {"PATH": f"{bin_dir}:/usr/bin:/bin"}
+    result = subprocess.run(["bash", "-c", f"( {script} )"], capture_output=True, text=True, env=env)
+    return result.returncode, result.stdout, (tmp_path / "calls").read_text().split()
+
+
+IDLE = '2026 INFO usage_log: usage {"event": "heartbeat", "requests": 0, "open_websockets": 0, "tiles_inferred": 0}\n' * 15
+BUSY = IDLE + '2026 INFO usage_log: usage {"event": "heartbeat", "requests": 4, "open_websockets": 1, "tiles_inferred": 9}\n'
+OPENED = IDLE + '2026 INFO usage_log: usage {"event": "ws_open", "at": "x"}\n'
+
+
+def test_guard_does_nothing_when_enough_gpu_memory_is_free(tmp_path):
+    bin_dir, state = guard_env(tmp_path, 14000, IDLE)
+    state.write_text("9000")
+    assert run_guard(tmp_path, bin_dir)[::2] == (0, [])
+
+
+def test_guard_restarts_an_idle_demo_and_proceeds(tmp_path):
+    bin_dir, _ = guard_env(tmp_path, 14000, IDLE)
+    code, out, calls = run_guard(tmp_path, bin_dir)
+    assert code == 0 and calls == ["inspect", "logs", "restart"] and "restarting" in out
+
+
+@pytest.mark.parametrize("logs", [BUSY, OPENED, IDLE[: len(IDLE) // 3], ""])
+def test_guard_never_restarts_a_demo_that_is_not_provably_idle(tmp_path, logs):
+    bin_dir, _ = guard_env(tmp_path, 14000, logs)
+    code, out, calls = run_guard(tmp_path, bin_dir)
+    assert code == worker_host.GPU_BUSY_EXIT and "restart" not in calls and "deferring" in out
+
+
+def test_guard_defers_when_the_demo_is_not_the_holder(tmp_path):
+    bin_dir, _ = guard_env(tmp_path, 14000, IDLE, running="false")
+    code, out, calls = run_guard(tmp_path, bin_dir)
+    assert code == worker_host.GPU_BUSY_EXIT and "restart" not in calls
+
+
+def test_guard_defers_when_restart_does_not_free_enough(tmp_path):
+    bin_dir, _ = guard_env(tmp_path, 3000, IDLE)
+    code, out, calls = run_guard(tmp_path, bin_dir)
+    assert code == worker_host.GPU_BUSY_EXIT and calls[-1] == "restart" and "still only" in out
+
+
+def test_remote_command_runs_the_guard_before_the_worker_and_stops_when_it_defers():
+    settings = {"image": "img:1", "remote_dir": "/srv/w", "gpu_free_container": "demo-app", "gpu_min_free_mib": 6144, "gpu_idle_minutes": 15}
+    command = worker_host.remote_worker_command(settings, "drain", "sts-worker-drain", 3600)
+    assert command.index("gpu_guard") < command.index("docker image inspect") < command.index("timeout -k 60")
+    assert command.index("&& { docker rm -f") > command.index("gpu_guard")
+    plain = worker_host.remote_worker_command({"image": "img:1", "remote_dir": "/srv/w"}, "drain", "sts-worker-drain", 3600)
+    assert "gpu_guard" not in plain
+
+
+def test_deferred_session_is_recorded_but_never_opens_the_breaker(tmp_path):
+    clock = Clock()
+    for _ in range(5):
+        result = session(tmp_path, Queue(), lambda s: worker_host.GPU_BUSY_EXIT, clock)
+        assert result["action"] == "deferred" and result["no_progress_sessions"] == 0
+        clock.value += 600
+    assert dispatch.load_state(tmp_path)["no_progress_sessions"] == 0
+    assert len(dispatch.load_state(tmp_path)["sessions"]) == 5

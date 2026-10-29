@@ -133,6 +133,10 @@ failure. None of steps 1-3 wakes EC2.
 7. Only then `systemctl enable --now sts-worker-dispatcher.timer`, and pause the dispatcher whenever the local
    runner is processing (it also skips while any job is claimed).
 
+GPU guard settings in the host `.env`: `WORKER_GPU_FREE_CONTAINER` (name of the container to restart when it is idle and holds
+the GPU; empty disables the guard), `WORKER_GPU_MIN_FREE_MIB` (default 5376), `WORKER_GPU_IDLE_MINUTES` (default 15). Design and
+limits: `maritime_tip_cue/context/catalogue.md` `## Worker dispatcher`.
+
 ## Queue operation
 
 The manager records every attempt in the Postgres ledger. Workers heartbeat every configured interval while holding a
@@ -186,3 +190,16 @@ validation. The exact control-host IAM additions are in the [app deployment guid
 
 See [component rationale](../../maritime_tip_cue/context/catalogue.md) for discovery, task grouping, retries
 and publication boundaries.
+
+## Random grid scan
+
+`sts-grid-scan.timer` runs `python -m maritime_tip_cue.grid_scan plan` hourly at minute 20 UTC in the manager image. It resolves finished scans, closes or extends tiles and queues up to 25 first scenes and 50 scenes a day in total; the dispatcher and worker then process the jobs like any other. Install after rebuilding the manager image:
+
+```bash
+sudo docker build -f deploy/catalogue/Dockerfile -t maritime-sts-manager .
+sudo docker run --rm --network host --user 1000:1000 --env-file .env -e STS_CONFIG_PATH=/app/config.yaml maritime-sts-manager -m maritime_tip_cue.pg init
+sudo cp deploy/catalogue/sts-grid-scan.service deploy/catalogue/sts-grid-scan.timer /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now sts-grid-scan.timer
+```
+
+`plan --dry-run` prints the tiles and scenes it would queue without writing. `status` prints the round, tile counts by status and today's budget; `export` prints every tile with its status for a map. Pause with `sudo systemctl stop sts-grid-scan.timer`; queued scenes still run.

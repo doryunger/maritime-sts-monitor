@@ -44,6 +44,8 @@ started through `run-scenes.cmd`; the local launcher can resume the interrupted 
 5. Stop the EC2 instance after the pending batch is finished and results are durable. Verify restart recovery,
    handoff failures and shutdown behavior, including the maximum-runtime safeguard, before unattended use.
 
+The random grid scan ([design](maritime_tip_cue/context/hotspot_tests.md#grid-scan), [grid](hotspot-tests/grid.json)) samples 25 tiles a day of the 533 between the four hot spots, 2 scenes at most per tile, to find new pair areas; its status map is on the app's hotspot-test page.
+
 ## Stages
 
 | # | Stage | Machine | Work | Done when | Status |

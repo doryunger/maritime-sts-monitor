@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, label, SceneRow, sceneTag, when } from "../api";
+import GridMap from "../components/GridMap";
 
 type Key = "run" | "area" | "source" | "captured" | "created" | "status" | "candidates" | "review";
 
@@ -108,6 +109,7 @@ export default function HotspotTests() {
         One row per scanned scene in the exploratory areas. Open a row to review its pair candidates and mark each as a real pair or not.
         Scan bounds and the findings Parquets are on the <Link to="/hotspot-tests/areas">areas page</Link>.
       </p>
+      <GridMap />
       <div className="table-options">
         <label>
           Area{" "}

@@ -1,0 +1,10 @@
+[Unit]
+Description=Plan random grid scans hourly
+
+[Timer]
+OnCalendar=*-*-* *:20:00 UTC
+Persistent=true
+Unit=sts-grid-scan.service
+
+[Install]
+WantedBy=timers.target

@@ -244,6 +244,19 @@ create table if not exists processing.job_scenes (
 );
 create index if not exists job_scenes_by_scene on processing.job_scenes (site, source, scene);
 
+create table if not exists processing.grid_scans (
+    tile_id text not null, round integer not null, date_no integer not null, site text not null, source text not null,
+    scene text not null, scene_time timestamptz not null, job_id text not null, queued_utc timestamptz not null,
+    status text not null, pairs integer, hulls integer, resolved_utc timestamptz,
+    primary key (tile_id, round, date_no)
+);
+create index if not exists grid_scans_by_status on processing.grid_scans (status);
+
+create table if not exists processing.grid_visits (
+    tile_id text not null, round integer not null, outcome text not null, decided_utc timestamptz not null,
+    primary key (tile_id, round)
+);
+
 create or replace view review.run_lineage as
 select r.run_key, r.run_no, r.origin, r.folder, r.attempt_id, a.attempt_no, a.status as attempt_status,
     j.job_id, j.status as job_status, j.scan_id, j.site, j.source

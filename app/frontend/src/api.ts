@@ -203,6 +203,34 @@ export interface SyncState {
   last_finished: SyncRequest | null;
 }
 
+export interface GridScan {
+  round: number;
+  date_no: number;
+  source: string;
+  scene: string;
+  scene_time: string;
+  status: string;
+  pairs: number | null;
+  hulls: number | null;
+  run_no: number | null;
+}
+
+export interface GridTile {
+  id: string;
+  bbox: [number, number, number, number];
+  status: string;
+  round: number | null;
+  scans: GridScan[];
+}
+
+export interface GridSummary {
+  round: number;
+  tiles: number;
+  by_status: Record<string, number>;
+  today: { scans: number; max_scans: number; firsts: number; max_firsts: number };
+  queued_waiting_for_result: number;
+}
+
 export interface HotspotTestArea {
   name: string;
   label: string;
@@ -254,6 +282,8 @@ export const api = {
     return json<SyncState>(response);
   },
   run: (n: number) => fetch(`/api/runs/${n}`).then((r) => json<RunDetail>(r)),
+  hotspotTestGrid: () => fetch("/api/hotspot-tests/grid").then((r) => json<{ summary: GridSummary; tiles: GridTile[] }>(r)),
+  hotspotTestGridLand: () => fetch("/api/hotspot-tests/grid/land").then((r) => json<{ rings: [number, number][][] }>(r)),
   hotspotTestAreas: () => fetch("/api/hotspot-tests/areas").then((r) => json<HotspotTestArea[]>(r)),
   hotspotTestRuns: () => fetch("/api/hotspot-tests/runs").then((r) => json<RunSummary[]>(r)),
   hotspotTestRun: (n: number) => fetch(`/api/hotspot-tests/runs/${n}`).then((r) => json<RunDetail>(r)),

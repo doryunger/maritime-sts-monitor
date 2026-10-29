@@ -1,0 +1,12 @@
+[Unit]
+Description=STS random grid scan planner
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/home/ubuntu/maritime-sts-monitor/.env
+ExecStart=/usr/bin/docker run --rm --network host --user 1000:1000 --env-file /home/ubuntu/maritime-sts-monitor/.env -e STS_CONFIG_PATH=/app/config.yaml -v /home/ubuntu/maritime-sts-monitor/data:/app/data maritime-sts-manager -m maritime_tip_cue.grid_scan plan
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
