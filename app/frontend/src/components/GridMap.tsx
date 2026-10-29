@@ -7,7 +7,16 @@ const NORTH = 28;
 const SCALE = 10;
 const WIDTH = (109 - WEST) * SCALE;
 const HEIGHT = (NORTH + 2) * SCALE;
-const ORDER = ["candidate", "in_progress", "cold", "quiet", "no_second_date", "no_imagery", "failed", "unscanned"];
+const ORDER = ["scanned_pairs", "scanned_no_pairs", "queued", "no_imagery", "failed", "unscanned"];
+const NAMES: Record<string, string> = {
+  scanned_pairs: "Scanned, pairs",
+  scanned_no_pairs: "Scanned, no pairs",
+  queued: "Queued",
+  no_imagery: "No imagery",
+  failed: "Failed",
+  unscanned: "Unscanned",
+};
+const name = (status: string) => NAMES[status] ?? label(status);
 const LIVE: [string, [number, number, number, number]][] = [
   ["Fujairah", [56.3, 24.8, 57.2, 25.8]],
   ["Sohar", [56.6, 24.2, 57.6, 24.9]],
@@ -82,7 +91,7 @@ export default function GridMap() {
             height={(t.bbox[3] - t.bbox[1]) * SCALE}
             onClick={() => setSelected(t.id === selected ? null : t.id)}
           >
-            <title>{`${t.id}: ${label(t.status)}${t.scans.length ? ` (${t.scans.length} scene${t.scans.length > 1 ? "s" : ""})` : ""}`}</title>
+            <title>{`${t.id}: ${name(t.status)}${t.scans.length ? ` (${t.scans.length} scene${t.scans.length > 1 ? "s" : ""})` : ""}`}</title>
           </rect>
         ))}
         {LIVE.map(([name, b]) => (
@@ -94,12 +103,12 @@ export default function GridMap() {
       </svg>
       <div className="grid-legend">
         {ORDER.filter((k) => summary.by_status[k]).map((k) => (
-          <span key={k}><i className={`swatch ${k}`} /> {label(k)} ({summary.by_status[k]})</span>
+          <span key={k}><i className={`swatch ${k}`} /> {name(k)} ({summary.by_status[k]})</span>
         ))}
       </div>
       {chosen ? (
         <div className="grid-detail">
-          <strong>{chosen.id}</strong> · {label(chosen.status)}{chosen.round ? ` · round ${chosen.round}` : ""}
+          <strong>{chosen.id}</strong> · {name(chosen.status)}{chosen.decision ? ` (closed: ${label(chosen.decision)})` : ""}{chosen.round ? ` · round ${chosen.round}` : ""}
           {chosen.scans.length ? (
             <table className="runs">
               <thead><tr><th>Date</th><th>Source</th><th>Captured</th><th>State</th><th>Hulls</th><th>Pairs</th><th>Review</th></tr></thead>
@@ -122,7 +131,7 @@ export default function GridMap() {
           )}
         </div>
       ) : (
-        <p className="muted small">Select a tile for its scenes. Pair labels are automatic: a candidate tile still needs a review.</p>
+        <p className="muted small">Select a tile for its scenes. Pair labels are automatic: a tile with pairs still needs a review.</p>
       )}
     </div>
   );

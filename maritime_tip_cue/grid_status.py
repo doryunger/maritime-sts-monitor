@@ -47,18 +47,38 @@ def isoformat(value):
     return value.isoformat() if hasattr(value, "isoformat") else value
 
 
-def tile_states(rows, grid):
+def count_hits(counts, rules):
+    verdicts = (counts or {}).get("verdicts") or {}
+    return sum(verdicts.get(name, 0) for name in rules["hit_verdicts"])
+
+
+DECISION_STATUS = {
+    "candidate": "scanned_pairs",
+    "cold": "scanned_no_pairs",
+    "quiet": "scanned_no_pairs",
+    "no_second_date": "scanned_no_pairs",
+    "no_imagery": "no_imagery",
+    "failed": "failed",
+}
+
+
+def tile_states(rows, grid, rules):
     visits = rows(
         "SELECT DISTINCT ON (tile_id) tile_id,round,outcome FROM processing.grid_visits ORDER BY tile_id,round DESC"
     )
     scans = rows(
         "SELECT g.tile_id,g.round,g.date_no,g.source,g.scene,g.scene_time,g.status,g.pairs,g.hulls,"
-        "(SELECT r.run_no FROM review.scenes s JOIN review.runs r ON r.run_key=s.run_key "
-        "WHERE s.site=g.site AND s.scene_id=g.scene ORDER BY s.run_key DESC LIMIT 1) AS run_no "
-        "FROM processing.grid_scans g ORDER BY g.tile_id,g.round,g.date_no"
+        "rs.status AS result_status,rs.counts,rs.run_no "
+        "FROM processing.grid_scans g LEFT JOIN LATERAL "
+        "(SELECT s.status,s.counts,r.run_no FROM review.scenes s JOIN review.runs r ON r.run_key=s.run_key "
+        "WHERE s.site=g.site AND s.scene_id=g.scene ORDER BY s.run_key DESC LIMIT 1) rs ON true "
+        "ORDER BY g.tile_id,g.round,g.date_no"
     )
     by_tile = {}
     for scan in scans:
+        if scan["status"] == "queued" and scan["result_status"] == "checked":
+            counts = scan["counts"] or {}
+            scan["status"], scan["pairs"], scan["hulls"] = "done", count_hits(counts, rules), counts.get("checked", 0)
         by_tile.setdefault(scan["tile_id"], []).append(scan)
     visited = {row["tile_id"]: row for row in visits}
     states = []
@@ -67,10 +87,21 @@ def tile_states(rows, grid):
         latest_round = max((scan["round"] for scan in tile_scans), default=None)
         round_scans = [scan for scan in tile_scans if scan["round"] == latest_round]
         visit = visited.get(tile_id)
+        decision = None
         if visit is not None and (not round_scans or visit["round"] >= latest_round):
-            status, round_no = visit["outcome"], visit["round"]
+            decision, round_no = visit["outcome"], visit["round"]
+            status = DECISION_STATUS.get(decision, decision)
         elif round_scans:
-            status, round_no = "in_progress", latest_round
+            round_no = latest_round
+            done = [scan for scan in round_scans if scan["status"] == "done"]
+            if any(scan["pairs"] for scan in done):
+                status = "scanned_pairs"
+            elif done:
+                status = "scanned_no_pairs"
+            elif any(scan["status"] == "failed" for scan in round_scans):
+                status = "failed"
+            else:
+                status = "queued"
         else:
             status, round_no = "unscanned", None
         states.append(
@@ -78,9 +109,14 @@ def tile_states(rows, grid):
                 "id": tile_id,
                 "bbox": tile["bbox"],
                 "status": status,
+                "decision": decision,
                 "round": round_no,
                 "scans": [
-                    {key: isoformat(value) for key, value in scan.items() if key != "tile_id"} for scan in round_scans
+                    {
+                        key: isoformat(scan[key])
+                        for key in ("round", "date_no", "source", "scene", "scene_time", "status", "pairs", "hulls", "run_no")
+                    }
+                    for scan in round_scans
                 ],
             }
         )

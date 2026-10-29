@@ -73,8 +73,9 @@ def list_hotspot_test_areas():
 
 @app.get("/api/hotspot-tests/grid")
 def get_hotspot_test_grid():
-    states = grid_status.tile_states(runs.query, grid_status.load_grid())
-    return {"summary": grid_status.summary(runs.query, states, grid_status.load_rules()), "tiles": states}
+    rules = grid_status.load_rules()
+    states = grid_status.tile_states(runs.query, grid_status.load_grid(), rules)
+    return {"summary": grid_status.summary(runs.query, states, rules), "tiles": states}
 
 
 @app.get("/api/hotspot-tests/grid/land")

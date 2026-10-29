@@ -86,7 +86,7 @@ def test_grid_endpoint_reports_tile_status_and_links_finished_scans_to_their_run
 
     grid = {name: {"id": name, "bbox": [i, 0.0, i + 1.0, 1.0]} for i, name in enumerate(("T1", "T2", "T3"))}
     monkeypatch.setattr(grid_status, "load_grid", lambda: grid)
-    monkeypatch.setattr(grid_status, "load_rules", lambda: {"max_scans_per_day": 50, "first_dates_per_day": 25})
+    monkeypatch.setattr(grid_status, "load_rules", lambda: {"max_scans_per_day": 50, "first_dates_per_day": 25, "hit_verdicts": ["pair", "possible_pair"]})
     pgdb.execute(
         "INSERT INTO processing.grid_scans (tile_id,round,date_no,site,source,scene,scene_time,job_id,queued_utc,status,pairs,hulls) "
         "VALUES ('T1',1,1,'test_east_of_sohar','s2','probe',now(),'j1',now(),'done',1,4),"
@@ -96,9 +96,9 @@ def test_grid_endpoint_reports_tile_status_and_links_finished_scans_to_their_run
     pgdb.commit()
     doc = client.get("/api/hotspot-tests/grid").json()
     states = {tile["id"]: tile for tile in doc["tiles"]}
-    assert {key: tile["status"] for key, tile in states.items()} == {"T1": "candidate", "T2": "in_progress", "T3": "unscanned"}
+    assert {key: tile["status"] for key, tile in states.items()} == {"T1": "scanned_pairs", "T2": "queued", "T3": "unscanned"}
     assert states["T1"]["scans"][0]["run_no"] == test.run_no and states["T2"]["scans"][0]["run_no"] is None
-    assert doc["summary"]["by_status"] == {"candidate": 1, "in_progress": 1, "unscanned": 1}
+    assert doc["summary"]["by_status"] == {"scanned_pairs": 1, "queued": 1, "unscanned": 1}
     assert doc["summary"]["today"] == {"scans": 2, "max_scans": 50, "firsts": 2, "max_firsts": 25}
     assert doc["summary"]["queued_waiting_for_result"] == 1
 
@@ -107,3 +107,22 @@ def test_grid_land_endpoint_serves_the_coastline(both):
     client, live, test = both
     rings = client.get("/api/hotspot-tests/grid/land").json()["rings"]
     assert rings and all(len(ring) >= 3 for ring in rings)
+
+
+def test_grid_map_shows_a_finished_scene_before_the_planner_resolves_it(both, pgdb, monkeypatch):
+    client, live, test = both
+    from maritime_tip_cue import grid_status
+
+    grid = {name: {"id": name, "bbox": [i, 0.0, i + 1.0, 1.0]} for i, name in enumerate(("T1", "T2"))}
+    monkeypatch.setattr(grid_status, "load_grid", lambda: grid)
+    monkeypatch.setattr(grid_status, "load_rules", lambda: {"max_scans_per_day": 50, "first_dates_per_day": 25, "hit_verdicts": ["pair", "possible_pair"]})
+    pgdb.execute(
+        "INSERT INTO processing.grid_scans (tile_id,round,date_no,site,source,scene,scene_time,job_id,queued_utc,status) "
+        "VALUES ('T1',1,1,'test_east_of_sohar','s2','probe',now(),'j1',now(),'queued'),"
+        "('T2',1,1,'test_east_of_sohar','s2','probe',now(),'j2',now(),'queued')"
+    )
+    pgdb.execute("UPDATE processing.grid_scans SET scene='absent' WHERE tile_id='T2'")
+    pgdb.commit()
+    tiles = {tile["id"]: tile for tile in client.get("/api/hotspot-tests/grid").json()["tiles"]}
+    assert tiles["T1"]["status"] in ("scanned_pairs", "scanned_no_pairs") and tiles["T1"]["scans"][0]["status"] == "done"
+    assert tiles["T1"]["scans"][0]["hulls"] is not None and tiles["T2"]["status"] == "queued"

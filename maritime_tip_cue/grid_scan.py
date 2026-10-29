@@ -64,11 +64,6 @@ def find_scene(site, now, rules, scene_rules, used_scenes, used_days, rng):
     return None, None
 
 
-def count_hits(counts, rules):
-    verdicts = counts.get("verdicts") or {}
-    return sum(verdicts.get(name, 0) for name in rules["hit_verdicts"])
-
-
 def db_rows(db):
     return lambda sql, params=(): catalogue.rows(db, sql, params)
 
@@ -86,7 +81,7 @@ def resolve_results(db, now, rules, dry_run, summary):
         key = (scan["tile_id"], scan["round"], scan["date_no"])
         if result is not None and result["status"] == "checked":
             counts = result["counts"] or {}
-            pairs, hulls = count_hits(counts, rules), counts.get("checked", 0)
+            pairs, hulls = grid_status.count_hits(counts, rules), counts.get("checked", 0)
             summary["resolved"].append({"tile": scan["tile_id"], "date_no": scan["date_no"], "pairs": pairs, "hulls": hulls})
             if not dry_run:
                 db.execute(
@@ -258,12 +253,13 @@ def run(db, now=None, rng=None, dry_run=False):
 
 
 def tile_states(db, grid):
-    return grid_status.tile_states(db_rows(db), grid)
+    return grid_status.tile_states(db_rows(db), grid, load_rules())
 
 
 def status(db):
     rows = db_rows(db)
-    return grid_status.summary(rows, grid_status.tile_states(rows, load_grid()), load_rules())
+    rules = load_rules()
+    return grid_status.summary(rows, grid_status.tile_states(rows, load_grid(), rules), rules)
 
 
 def main():

@@ -161,7 +161,7 @@ def test_plan_queues_random_tiles_then_second_date_only_without_a_hit(pgdb, smal
     done = grid_scan.run(pgdb, now=NOW + timedelta(hours=2), rng=random.Random(7))
     assert done["queued"] == []
     states = {state["id"]: state["status"] for state in grid_scan.tile_states(pgdb, small_grid)}
-    assert states[tile_hit] == "candidate" and states[tile_miss] == "in_progress"
+    assert states[tile_hit] == "scanned_pairs" and states[tile_miss] == "scanned_no_pairs"
     assert grid_scan.status(pgdb)["today"]["scans"] == 3
 
 
@@ -170,9 +170,9 @@ def test_plan_closes_tile_cold_after_second_empty_scene_and_starts_a_new_round(p
         grid_scan.run(pgdb, now=NOW + timedelta(hours=hour), rng=random.Random(hour))
         for row in pgdb.execute("SELECT site, scene FROM processing.grid_scans WHERE status='queued'").fetchall():
             finish(pgdb, row[0], row[1], pairs=0)
-    states = {state["id"]: state["status"] for state in grid_scan.tile_states(pgdb, small_grid)}
-    assert set(states.values()) <= {"cold", "in_progress", "unscanned", "candidate"}
-    assert "cold" in states.values()
+    states = grid_scan.tile_states(pgdb, small_grid)
+    assert {state["status"] for state in states} <= {"scanned_no_pairs", "queued", "unscanned"}
+    assert any(state["decision"] == "cold" and state["status"] == "scanned_no_pairs" for state in states)
     seen = {tuple(row) for row in pgdb.execute("SELECT tile_id, scene FROM processing.grid_scans").fetchall()}
     assert len(seen) == pgdb.execute("SELECT COUNT(*) FROM processing.grid_scans").fetchone()[0]
 

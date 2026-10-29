@@ -219,6 +219,7 @@ export interface GridTile {
   id: string;
   bbox: [number, number, number, number];
   status: string;
+  decision: string | null;
   round: number | null;
   scans: GridScan[];
 }
