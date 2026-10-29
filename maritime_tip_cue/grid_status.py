@@ -52,33 +52,70 @@ def count_hits(counts, rules):
     return sum(verdicts.get(name, 0) for name in rules["hit_verdicts"])
 
 
-DECISION_STATUS = {
-    "candidate": "scanned_pairs",
-    "cold": "scanned_no_pairs",
-    "quiet": "scanned_no_pairs",
-    "no_second_date": "scanned_no_pairs",
-    "no_imagery": "no_imagery",
-    "failed": "failed",
-}
+def decide(scans, rules):
+    if any(scan["status"] == "done" and scan["pairs"] for scan in scans):
+        return "candidate"
+    if any(scan["status"] == "failed" for scan in scans):
+        return "failed"
+    if any(scan["status"] != "done" for scan in scans):
+        return None
+    if len(scans) >= rules["dates_per_tile"]:
+        return "cold"
+    floor = rules["min_hulls_for_second_date"]
+    if floor is not None and (scans[-1]["hulls"] or 0) < floor:
+        return "quiet"
+    return "second"
 
 
-def tile_states(rows, grid, rules):
-    visits = rows(
-        "SELECT DISTINCT ON (tile_id) tile_id,round,outcome FROM processing.grid_visits ORDER BY tile_id,round DESC"
-    )
+def load_scans(rows, rules):
     scans = rows(
-        "SELECT g.tile_id,g.round,g.date_no,g.source,g.scene,g.scene_time,g.status,g.pairs,g.hulls,"
-        "rs.status AS result_status,rs.counts,rs.run_no "
+        "SELECT g.tile_id,g.round,g.date_no,g.source,g.scene,g.scene_time,g.queued_utc,g.status,g.pairs,g.hulls,"
+        "rs.status AS result_status,rs.counts,rs.run_no,rs.updated_utc "
         "FROM processing.grid_scans g LEFT JOIN LATERAL "
-        "(SELECT s.status,s.counts,r.run_no FROM review.scenes s JOIN review.runs r ON r.run_key=s.run_key "
+        "(SELECT s.status,s.counts,s.updated_utc,r.run_no FROM review.scenes s JOIN review.runs r ON r.run_key=s.run_key "
         "WHERE s.site=g.site AND s.scene_id=g.scene ORDER BY s.run_key DESC LIMIT 1) rs ON true "
         "ORDER BY g.tile_id,g.round,g.date_no"
     )
-    by_tile = {}
     for scan in scans:
         if scan["status"] == "queued" and scan["result_status"] == "checked":
             counts = scan["counts"] or {}
             scan["status"], scan["pairs"], scan["hulls"] = "done", count_hits(counts, rules), counts.get("checked", 0)
+    return scans
+
+
+MAP_STATUS = {"waiting": "waiting", "processing": "processing", "failed": "failed"}
+
+
+def progress(scans, visit, rules):
+    scans = sorted(scans, key=lambda scan: scan["date_no"])
+    done = [scan for scan in scans if scan["status"] == "done"]
+    outcome = decide(scans, rules)
+    closed_early = visit is not None and visit["outcome"] == "no_second_date"
+    finished = None
+    if outcome == "failed":
+        status = "failed"
+    elif outcome in ("candidate", "cold", "quiet") or closed_early:
+        status = "processed"
+        stamps = [scan["updated_utc"] for scan in done if scan["updated_utc"]]
+        finished = visit["decided_utc"] if closed_early else max(stamps, default=None)
+    elif done:
+        status = "processing"
+    else:
+        status = "waiting"
+    return {
+        "status": status,
+        "pairs": sum(scan["pairs"] or 0 for scan in done),
+        "finished": finished,
+        "decision": visit["outcome"] if visit is not None else outcome,
+    }
+
+
+def tile_states(rows, grid, rules):
+    visits = rows(
+        "SELECT DISTINCT ON (tile_id) tile_id,round,outcome,decided_utc FROM processing.grid_visits ORDER BY tile_id,round DESC"
+    )
+    by_tile = {}
+    for scan in load_scans(rows, rules):
         by_tile.setdefault(scan["tile_id"], []).append(scan)
     visited = {row["tile_id"]: row for row in visits}
     states = []
@@ -88,20 +125,16 @@ def tile_states(rows, grid, rules):
         round_scans = [scan for scan in tile_scans if scan["round"] == latest_round]
         visit = visited.get(tile_id)
         decision = None
-        if visit is not None and (not round_scans or visit["round"] >= latest_round):
-            decision, round_no = visit["outcome"], visit["round"]
-            status = DECISION_STATUS.get(decision, decision)
+        if visit is not None and (not round_scans or visit["round"] > latest_round):
+            decision, round_no, status = visit["outcome"], visit["round"], visit["outcome"]
         elif round_scans:
             round_no = latest_round
-            done = [scan for scan in round_scans if scan["status"] == "done"]
-            if any(scan["pairs"] for scan in done):
-                status = "scanned_pairs"
-            elif done:
-                status = "scanned_no_pairs"
-            elif any(scan["status"] == "failed" for scan in round_scans):
-                status = "failed"
+            state = progress(round_scans, visit if visit is not None and visit["round"] == latest_round else None, rules)
+            decision = state["decision"]
+            if state["status"] == "processed":
+                status = "scanned_pairs" if state["pairs"] else "scanned_no_pairs"
             else:
-                status = "queued"
+                status = MAP_STATUS[state["status"]]
         else:
             status, round_no = "unscanned", None
         states.append(
@@ -121,6 +154,47 @@ def tile_states(rows, grid, rules):
             }
         )
     return states
+
+
+def scan_runs(rows, rules):
+    visits = {
+        (row["tile_id"], row["round"]): row
+        for row in rows("SELECT tile_id,round,outcome,decided_utc FROM processing.grid_visits")
+    }
+    groups = {}
+    for scan in load_scans(rows, rules):
+        groups.setdefault((scan["tile_id"], scan["round"]), []).append(scan)
+    days = {}
+    for (tile_id, round_no), scans in groups.items():
+        first = min(scans, key=lambda scan: scan["date_no"])
+        state = progress(scans, visits.get((tile_id, round_no)), rules)
+        reviewed = next((scan for scan in scans if scan["status"] == "done" and scan["pairs"]), None)
+        days.setdefault(first["queued_utc"].astimezone(UTC).date().isoformat(), []).append(
+            {
+                "tile_id": tile_id,
+                "status": state["status"],
+                "finished": isoformat(state["finished"]),
+                "pairs": state["pairs"],
+                "run_no": reviewed["run_no"] if reviewed else None,
+                "scene": reviewed["scene"] if reviewed else None,
+            }
+        )
+    runs = []
+    for number, day in enumerate(sorted(days), 1):
+        grids = sorted(days[day], key=lambda grid: grid["tile_id"])
+        runs.append(
+            {
+                "run": number,
+                "day": day,
+                "tiles": len(grids),
+                "with_pairs": sum(bool(grid["pairs"]) for grid in grids),
+                "waiting": sum(grid["status"] == "waiting" for grid in grids),
+                "processing": sum(grid["status"] == "processing" for grid in grids),
+                "processed": sum(grid["status"] == "processed" for grid in grids),
+                "grids": grids,
+            }
+        )
+    return runs
 
 
 def summary(rows, states, rules, now=None):

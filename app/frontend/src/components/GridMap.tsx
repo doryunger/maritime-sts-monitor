@@ -1,17 +1,23 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { api, GridSummary, GridTile, label, when } from "../api";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { api, GridScan, GridSummary, GridTile, label } from "../api";
 
 const WEST = 53;
 const NORTH = 28;
 const SCALE = 10;
 const WIDTH = (109 - WEST) * SCALE;
 const HEIGHT = (NORTH + 2) * SCALE;
-const ORDER = ["scanned_pairs", "scanned_no_pairs", "queued", "no_imagery", "failed", "unscanned"];
+const LEGEND: { swatch: string; title: string; statuses: string[] }[] = [
+  { swatch: "scanned_pairs", title: "Scanned, pairs", statuses: ["scanned_pairs"] },
+  { swatch: "scanned_no_pairs", title: "Scanned, no pairs", statuses: ["scanned_no_pairs"] },
+  { swatch: "processing", title: "Pending", statuses: ["waiting", "processing"] },
+  { swatch: "failed", title: "Failed", statuses: ["failed"] },
+];
 const NAMES: Record<string, string> = {
-  scanned_pairs: "Scanned, pairs",
-  scanned_no_pairs: "Scanned, no pairs",
-  queued: "Queued",
+  scanned_pairs: "Processed, pairs",
+  scanned_no_pairs: "Processed, no pairs",
+  processing: "Pending (second scene due)",
+  waiting: "Pending (waiting)",
   no_imagery: "No imagery",
   failed: "Failed",
   unscanned: "Unscanned",
@@ -32,8 +38,8 @@ export default function GridMap() {
   const [summary, setSummary] = useState<GridSummary | null>(null);
   const [land, setLand] = useState<[number, number][][]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [checked, setChecked] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const go = useNavigate();
 
   useEffect(() => {
     api.hotspotTestGridLand().then((d) => setLand(d.rings)).catch(() => setLand([]));
@@ -48,7 +54,6 @@ export default function GridMap() {
         if (!alive) return;
         setTiles(data.tiles);
         setSummary(data.summary);
-        setChecked(new Date().toISOString());
         setError(null);
       } catch (e) {
         if (alive) setError((e as Error).message);
@@ -62,21 +67,15 @@ export default function GridMap() {
     };
   }, []);
 
-  const chosen = useMemo(() => (tiles ?? []).find((t) => t.id === selected) ?? null, [tiles, selected]);
+  const chosen = tiles?.find((t) => t.id === selected) ?? null;
+  const open = (s: GridScan) => s.pairs && s.run_no && go(`/hotspot-tests/runs/${s.run_no}?scene=${encodeURIComponent(s.scene)}`);
+  const result = (s: GridScan) => (s.status === "failed" ? "Failed" : s.status !== "done" ? "Pending" : s.pairs ? (s.pairs === 1 ? "1 pair" : `${s.pairs} pairs`) : "No pairs");
 
   if (error && !tiles) return <p className="error">Could not load the grid scan: {error}</p>;
   if (!tiles || !summary) return <p className="muted">Loading the grid scan…</p>;
 
   return (
-    <div className="grid-scan">
-      <div className="grid-head">
-        <strong>Grid scan, round {summary.round}</strong>
-        <span className="muted small">
-          Today {summary.today.scans}/{summary.today.max_scans} scenes ({summary.today.firsts}/{summary.today.max_firsts} first dates) ·{" "}
-          {summary.queued_waiting_for_result} waiting for a result · {checked ? `Updated ${when(checked)}` : ""}
-        </span>
-      </div>
-      {error && <p className="error">Could not refresh: {error}. The map shows the previous state.</p>}
+    <div className="grid-body">
       <svg className="grid-map" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label="Grid scan status map">
         {land.map((ring, i) => (
           <polygon key={i} className="land" points={ring.map(([lon, lat]) => `${px(lon)},${py(lat)}`).join(" ")} />
@@ -85,13 +84,13 @@ export default function GridMap() {
           <rect
             key={t.id}
             className={`tile ${t.status}${t.id === selected ? " selected" : ""}`}
+            onClick={() => setSelected(t.id === selected ? null : t.id)}
             x={px(t.bbox[0])}
             y={py(t.bbox[3])}
             width={(t.bbox[2] - t.bbox[0]) * SCALE}
             height={(t.bbox[3] - t.bbox[1]) * SCALE}
-            onClick={() => setSelected(t.id === selected ? null : t.id)}
           >
-            <title>{`${t.id}: ${name(t.status)}${t.scans.length ? ` (${t.scans.length} scene${t.scans.length > 1 ? "s" : ""})` : ""}`}</title>
+            <title>{`${t.id}: ${name(t.status)}`}</title>
           </rect>
         ))}
         {LIVE.map(([name, b]) => (
@@ -101,38 +100,31 @@ export default function GridMap() {
           </g>
         ))}
       </svg>
+      <div className="grid-side">
       <div className="grid-legend">
-        {ORDER.filter((k) => summary.by_status[k]).map((k) => (
-          <span key={k}><i className={`swatch ${k}`} /> {name(k)} ({summary.by_status[k]})</span>
-        ))}
+        {LEGEND.map((entry) => ({ ...entry, count: entry.statuses.reduce((n, k) => n + (summary.by_status[k] ?? 0), 0) }))
+          .filter((entry) => entry.count > 0)
+          .map((entry) => (
+            <span key={entry.swatch}><i className={`swatch ${entry.swatch}`} /> {entry.title} ({entry.count})</span>
+          ))}
       </div>
-      {chosen ? (
+      {chosen && chosen.scans.length > 0 && (
         <div className="grid-detail">
-          <strong>{chosen.id}</strong> · {name(chosen.status)}{chosen.decision ? ` (closed: ${label(chosen.decision)})` : ""}{chosen.round ? ` · round ${chosen.round}` : ""}
-          {chosen.scans.length ? (
-            <table className="runs">
-              <thead><tr><th>Date</th><th>Source</th><th>Captured</th><th>State</th><th>Hulls</th><th>Pairs</th><th>Review</th></tr></thead>
-              <tbody>
-                {chosen.scans.map((s) => (
-                  <tr key={s.date_no}>
-                    <td>{s.date_no}</td>
-                    <td>{s.source.toUpperCase()}</td>
-                    <td>{when(s.scene_time)}</td>
-                    <td>{label(s.status)}</td>
-                    <td>{s.hulls ?? "–"}</td>
-                    <td>{s.pairs ?? "–"}</td>
-                    <td>{s.run_no ? <Link to={`/hotspot-tests/runs/${s.run_no}?scene=${encodeURIComponent(s.scene)}`}>Run {s.run_no}</Link> : "–"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <span className="muted small"> · not scanned yet</span>
-          )}
+          <strong>{chosen.id}</strong>
+          <table>
+            <tbody>
+              {chosen.scans.map((s) => (
+                <tr key={s.date_no} className={s.pairs ? "has-pairs" : ""} onClick={() => open(s)} tabIndex={s.pairs ? 0 : undefined} onKeyDown={(e) => e.key === "Enter" && open(s)}>
+                  <td>{s.scene_time.slice(0, 10)}</td>
+                  <td>{s.source.toUpperCase()}</td>
+                  <td>{result(s)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      ) : (
-        <p className="muted small">Select a tile for its scenes. Pair labels are automatic: a tile with pairs still needs a review.</p>
       )}
+      </div>
     </div>
   );
 }

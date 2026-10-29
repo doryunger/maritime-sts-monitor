@@ -54,6 +54,13 @@ small table or a short list only when it carries real data. Skip the background,
 and the fallback options unless asked. Put long material (plans, research) in a repo file and link
 to it rather than pasting it into chat.
 
+## UI text
+
+Text in the UI costs the reader effort, so keep it to the minimum: labels, values and links only. No intro
+paragraphs, hints, footnotes or status lines, and no data nobody asked to see. Before adding a sentence or a number
+to a page ask whether the reader needs it to act; if not, drop it. Explanations belong in the component's `context/`
+note, not on the page.
+
 ## Git commits
 
 **Single author only: Dor Yunger <dor.yunger@gmail.com>** (git user.name/user.email, configured

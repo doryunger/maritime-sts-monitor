@@ -1,5 +1,5 @@
 {
-  "basis": "Random grid scan of the sea between the four live hot spots (decision 2026-10-30, user). Each round visits every tile of hotspot-tests/grid.json once in random order. A tile gets one random scene; if that scene finds no pair it gets a second scene on another date; a pair on the first ends the visit.",
+  "basis": "Random grid scan of the sea between the four live hot spots (decision 2026-10-30, user). Each round visits every tile of hotspot-tests/grid.json once in random order. A tile is finished before the next one starts: its two scenes (different days) are queued together, and a pair on the first one marks the tile processed at once.",
   "first_dates_per_day": {
     "value": 25,
     "unit": "tiles",
@@ -8,12 +8,17 @@
   "max_scans_per_day": {
     "value": 50,
     "unit": "scenes",
-    "basis": "User decision 2026-10-30: at most 50 scenes queued per UTC day, first and second dates together; second dates are queued before new first dates."
+    "basis": "User decision 2026-10-30: at most 50 scenes queued per UTC day, which is 25 tiles of two scenes."
   },
   "dates_per_tile": {
     "value": 2,
     "unit": "scenes",
-    "basis": "User decision 2026-10-30: a second date is taken only when the first finds no pair."
+    "basis": "User decision 2026-10-30: each tile gets two scenes on different days, queued together so a tile is finished before the next starts. A pair on the first scene finishes the tile; its second scene may already be queued and then runs without being needed."
+  },
+  "grids_in_flight": {
+    "value": 2,
+    "unit": "tiles",
+    "basis": "2026-10-30: the worker takes jobs in the order Redis returns them (ties by job id), so queuing every tile at once spreads a tile's two scenes across the whole queue. At most this many tiles are queued and unfinished at a time, the planner runs every ten minutes to top up, so a tile's scenes run together and the queue never runs dry (2 tiles are about 35 minutes of worker time)."
   },
   "window_days": {
     "value": 30,
@@ -26,11 +31,17 @@
     "basis": "User decision 2026-10-30: when the 30-day window holds no usable scene the window widens to 60 days and no further."
   },
   "source_order": {
-    "value": ["s1", "s2"],
+    "value": [
+      "s1",
+      "s2"
+    ],
     "basis": "S1 first: the live sites give 3.7 to 6.1 pairs per S1 scene against 1.0 to 1.65 per S2 scene (docs/feasibility.md, predicting pair locations), so one empty S1 scene is far stronger evidence than one empty S2 scene. S2 is used when a tile has no usable S1 scene in the window. S2 cloud limit is scene.s2_max_cloud_pct in sts_graph.json."
   },
   "hit_verdicts": {
-    "value": ["pair", "possible_pair"],
+    "value": [
+      "pair",
+      "possible_pair"
+    ],
     "basis": "Run verdicts of the scene that count as a pair for the visit decision. These are automatic labels: a hit marks the tile a candidate for review, not a confirmed pair (run 91 was a haze false pair)."
   },
   "min_hulls_for_second_date": {

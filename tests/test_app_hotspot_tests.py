@@ -96,9 +96,9 @@ def test_grid_endpoint_reports_tile_status_and_links_finished_scans_to_their_run
     pgdb.commit()
     doc = client.get("/api/hotspot-tests/grid").json()
     states = {tile["id"]: tile for tile in doc["tiles"]}
-    assert {key: tile["status"] for key, tile in states.items()} == {"T1": "scanned_pairs", "T2": "queued", "T3": "unscanned"}
+    assert {key: tile["status"] for key, tile in states.items()} == {"T1": "scanned_pairs", "T2": "waiting", "T3": "unscanned"}
     assert states["T1"]["scans"][0]["run_no"] == test.run_no and states["T2"]["scans"][0]["run_no"] is None
-    assert doc["summary"]["by_status"] == {"scanned_pairs": 1, "queued": 1, "unscanned": 1}
+    assert doc["summary"]["by_status"] == {"scanned_pairs": 1, "waiting": 1, "unscanned": 1}
     assert doc["summary"]["today"] == {"scans": 2, "max_scans": 50, "firsts": 2, "max_firsts": 25}
     assert doc["summary"]["queued_waiting_for_result"] == 1
 
@@ -125,4 +125,48 @@ def test_grid_map_shows_a_finished_scene_before_the_planner_resolves_it(both, pg
     pgdb.commit()
     tiles = {tile["id"]: tile for tile in client.get("/api/hotspot-tests/grid").json()["tiles"]}
     assert tiles["T1"]["status"] in ("scanned_pairs", "scanned_no_pairs") and tiles["T1"]["scans"][0]["status"] == "done"
-    assert tiles["T1"]["scans"][0]["hulls"] is not None and tiles["T2"]["status"] == "queued"
+    assert tiles["T1"]["scans"][0]["hulls"] is not None and tiles["T2"]["status"] == "waiting"
+
+
+def test_grid_runs_endpoint_lists_one_row_per_grid_with_its_finish_date(both, pgdb, monkeypatch):
+    client, live, test = both
+    from maritime_tip_cue import grid_status
+
+    monkeypatch.setattr(
+        grid_status,
+        "load_rules",
+        lambda: {"max_scans_per_day": 50, "first_dates_per_day": 25, "dates_per_tile": 2, "min_hulls_for_second_date": None, "hit_verdicts": ["pair", "possible_pair"]},
+    )
+    pgdb.execute(
+        "INSERT INTO processing.grid_scans (tile_id,round,date_no,site,source,scene,scene_time,job_id,queued_utc,status) VALUES "
+        "('T1',1,1,'test_east_of_sohar','s2','probe','2026-10-18T05:00:00Z','j1','2026-10-29T10:00:00Z','queued'),"
+        "('T2',1,1,'test_grid_T2','s1','absent','2026-10-20T05:00:00Z','j2','2026-10-29T10:01:00Z','queued'),"
+        "('T3',1,1,'test_grid_T3','s1','absent2','2026-10-21T05:00:00Z','j3','2026-10-30T10:00:00Z','queued')"
+    )
+    pgdb.commit()
+    doc = client.get("/api/hotspot-tests/grid/runs").json()
+    assert [(run["run"], run["day"], run["tiles"]) for run in doc] == [(1, "2026-10-29", 2), (2, "2026-10-30", 1)]
+    t1, t2 = doc[0]["grids"]
+    assert (t1["tile_id"], t1["status"], t1["pairs"], t1["run_no"]) == ("T1", "processed", 2, test.run_no)
+    assert t1["finished"] is not None and t1["scene"] == "probe"
+    assert (t2["tile_id"], t2["status"], t2["pairs"], t2["finished"], t2["run_no"]) == ("T2", "waiting", 0, None, None)
+    assert (doc[0]["with_pairs"], doc[0]["processed"], doc[0]["waiting"]) == (1, 1, 1)
+
+
+def test_grid_with_one_empty_scene_has_no_finish_date_until_its_second_scene_is_done(both, pgdb, monkeypatch):
+    client, live, test = both
+    from maritime_tip_cue import grid_status
+
+    monkeypatch.setattr(
+        grid_status,
+        "load_rules",
+        lambda: {"max_scans_per_day": 50, "first_dates_per_day": 25, "dates_per_tile": 2, "min_hulls_for_second_date": None, "hit_verdicts": ["pair", "possible_pair"]},
+    )
+    pgdb.execute(
+        "INSERT INTO processing.grid_scans (tile_id,round,date_no,site,source,scene,scene_time,job_id,queued_utc,status) VALUES "
+        "('T1',1,1,'test_east_of_sohar','s2','probe','2026-10-18T05:00:00Z','j1','2026-10-29T10:00:00Z','queued')"
+    )
+    pgdb.execute("UPDATE review.scenes SET counts = jsonb_set(counts, '{verdicts}', '{\"single\": 3}') WHERE scene_id='probe'")
+    pgdb.commit()
+    grid = client.get("/api/hotspot-tests/grid/runs").json()[0]["grids"][0]
+    assert (grid["status"], grid["pairs"], grid["finished"]) == ("processing", 0, None)

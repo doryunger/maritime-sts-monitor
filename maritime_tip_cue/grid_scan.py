@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from maritime_tip_cue import catalogue, grid_status, passes
-from maritime_tip_cue.grid_status import load_grid, load_rules
+from maritime_tip_cue.grid_status import decide, load_grid, load_rules
 
 SITE_PREFIX = "test_grid_"
 
@@ -27,22 +27,6 @@ def budget(rules, scans_today, firsts_today):
     return room, max(min(rules["first_dates_per_day"] - firsts_today, room), 0)
 
 
-def decide(scans, rules):
-    if any(scan["status"] == "failed" for scan in scans):
-        return "failed"
-    if any(scan["status"] != "done" for scan in scans):
-        return None
-    last = scans[-1]
-    if last["pairs"]:
-        return "candidate"
-    if len(scans) >= rules["dates_per_tile"]:
-        return "cold"
-    floor = rules["min_hulls_for_second_date"]
-    if floor is not None and (last["hulls"] or 0) < floor:
-        return "quiet"
-    return "second"
-
-
 def pick_scene(found, rules, used_scenes, used_days, rng):
     for source in rules["source_order"]:
         pool = [
@@ -55,13 +39,26 @@ def pick_scene(found, rules, used_scenes, used_days, rng):
     return None
 
 
-def find_scene(site, now, rules, scene_rules, used_scenes, used_days, rng):
+def find_scenes(site, now, rules, scene_rules, used_scenes, used_days, rng, count):
+    used_scenes, used_days = set(used_scenes), set(used_days)
+    picked = []
     for days in dict.fromkeys((rules["window_days"], rules["window_max_days"])):
         found = passes.find(now - timedelta(days=days), now, [site], rules=scene_rules)
-        row = pick_scene(found, rules, used_scenes, used_days, rng)
-        if row is not None:
-            return row, days
-    return None, None
+        while len(picked) < count:
+            row = pick_scene(found, rules, used_scenes, used_days, rng)
+            if row is None:
+                break
+            picked.append((row, days))
+            used_scenes.add(row["scene"])
+            used_days.add(row["time"][:10])
+        if len(picked) >= count:
+            break
+    return picked
+
+
+def find_scene(site, now, rules, scene_rules, used_scenes, used_days, rng):
+    picked = find_scenes(site, now, rules, scene_rules, used_scenes, used_days, rng, 1)
+    return picked[0] if picked else (None, None)
 
 
 def db_rows(db):
@@ -126,20 +123,25 @@ def record_visit(db, tile_id, round_no, outcome, now, dry_run):
         )
 
 
-def queue_scene(db, scan_id, tile, site, row, round_no, date_no, now, raw_rules, dry_run):
-    job_id = catalogue.make_manifest(site, [catalogue.serialize_scene(row)], raw_rules)["job_id"]
+def queue_scenes(db, scan_id, tile, site, picks, round_no, first_date_no, now, raw_rules, dry_run):
+    jobs = [
+        (first_date_no + offset, row, catalogue.make_manifest(site, [catalogue.serialize_scene(row)], raw_rules)["job_id"])
+        for offset, row in enumerate(picks)
+    ]
     if dry_run:
-        return job_id
+        return [job_id for _, _, job_id in jobs]
     with catalogue.tx(db):
-        catalogue.record_channel(db, scan_id, site, row["source"], [row], raw_rules, False)
-        if catalogue.one(db, "SELECT 1 FROM processing.jobs WHERE job_id=%s", (job_id,)) is None:
-            raise RuntimeError(f"No job was created for {row['scene']} on tile {tile['id']}")
-        db.execute(
-            "INSERT INTO processing.grid_scans (tile_id,round,date_no,site,source,scene,scene_time,job_id,queued_utc,status) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'queued')",
-            (tile["id"], round_no, date_no, site["name"], row["source"], row["scene"], row["time"], job_id, now),
-        )
-    return job_id
+        for source in dict.fromkeys(row["source"] for _, row, _ in jobs):
+            catalogue.record_channel(db, scan_id, site, source, [row for _, row, _ in jobs if row["source"] == source], raw_rules, False)
+        for date_no, row, job_id in jobs:
+            if catalogue.one(db, "SELECT 1 FROM processing.jobs WHERE job_id=%s", (job_id,)) is None:
+                raise RuntimeError(f"No job was created for {row['scene']} on tile {tile['id']}")
+            db.execute(
+                "INSERT INTO processing.grid_scans (tile_id,round,date_no,site,source,scene,scene_time,job_id,queued_utc,status) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'queued')",
+                (tile["id"], round_no, date_no, site["name"], row["source"], row["scene"], row["time"], job_id, now),
+            )
+    return [job_id for _, _, job_id in jobs]
 
 
 def used_by_tile(db, tile_id):
@@ -176,6 +178,7 @@ def run(db, now=None, rng=None, dry_run=False):
         resolve_results(db, now, rules, dry_run, summary)
         round_no = grid_status.current_round(db_rows(db))
         pending_second = []
+        in_flight = 0
         for tile_id, scans in open_tiles(db, round_no).items():
             outcome = decide(scans, rules)
             if outcome == "second":
@@ -183,6 +186,9 @@ def run(db, now=None, rng=None, dry_run=False):
             elif outcome is not None:
                 record_visit(db, tile_id, round_no, outcome, now, dry_run)
                 summary["decided"].append({"tile": tile_id, "outcome": outcome})
+            else:
+                in_flight += 1
+        in_flight += len(pending_second)
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         today = catalogue.one(
             db,
@@ -206,13 +212,15 @@ def run(db, now=None, rng=None, dry_run=False):
                     record_visit(db, tile_id, round_no, "no_second_date", now, dry_run)
                     summary["decided"].append({"tile": tile_id, "outcome": "no_second_date"})
                     continue
-                job_id = queue_scene(db, scan_id, tile, site, row, round_no, len(scans) + 1, now, raw_rules, dry_run)
+                (job_id,) = queue_scenes(db, scan_id, tile, site, [row], round_no, len(scans) + 1, now, raw_rules, dry_run)
             except Exception as error:
                 summary["errors"].append({"tile": tile_id, "error": str(error)})
                 continue
             queued += 1
             summary["queued"].append({"tile": tile_id, "date_no": len(scans) + 1, "source": row["source"], "scene": row["scene"], "time": row["time"], "window_days": days, "job_id": job_id})
+        room_left = room - queued
         _, firsts_allowed = budget(rules, today["scans"] + queued, today["firsts"])
+        firsts_allowed = min(firsts_allowed, max(rules["grids_in_flight"] - in_flight, 0))
         touched = {row["tile_id"] for row in catalogue.rows(db, "SELECT tile_id FROM processing.grid_scans WHERE round=%s", (round_no,))}
         touched |= {row["tile_id"] for row in catalogue.rows(db, "SELECT tile_id FROM processing.grid_visits WHERE round=%s", (round_no,))}
         pool = [tile_id for tile_id in grid if tile_id not in touched]
@@ -221,6 +229,7 @@ def run(db, now=None, rng=None, dry_run=False):
             pool = list(grid)
         summary["round"] = round_no
         summary["pool"] = len(pool)
+        summary["in_flight"] = in_flight
         draws, firsts = 0, 0
         for tile_id in rng.sample(pool, len(pool)):
             if firsts >= firsts_allowed or draws >= 4 * max(firsts_allowed, 1):
@@ -230,17 +239,21 @@ def run(db, now=None, rng=None, dry_run=False):
             site = site_for(tile, rules)
             used_scenes, used_days = used_by_tile(db, tile_id)
             try:
-                row, days = find_scene(site, now, rules, scene_rules, used_scenes, used_days, rng)
-                if row is None:
+                picks = find_scenes(site, now, rules, scene_rules, used_scenes, used_days, rng, rules["dates_per_tile"])
+                if not picks:
                     record_visit(db, tile_id, round_no, "no_imagery", now, dry_run)
                     summary["no_imagery"].append(tile_id)
                     continue
-                job_id = queue_scene(db, scan_id, tile, site, row, round_no, 1, now, raw_rules, dry_run)
+                if len(picks) > room_left:
+                    break
+                job_ids = queue_scenes(db, scan_id, tile, site, [row for row, _ in picks], round_no, 1, now, raw_rules, dry_run)
+                for date_no, ((row, days), job_id) in enumerate(zip(picks, job_ids), 1):
+                    summary["queued"].append({"tile": tile_id, "date_no": date_no, "source": row["source"], "scene": row["scene"], "time": row["time"], "window_days": days, "job_id": job_id})
+                room_left -= len(picks)
             except Exception as error:
                 summary["errors"].append({"tile": tile_id, "error": str(error)})
                 continue
             firsts += 1
-            summary["queued"].append({"tile": tile_id, "date_no": 1, "source": row["source"], "scene": row["scene"], "time": row["time"], "window_days": days, "job_id": job_id})
     summary["ended_utc"] = datetime.now(UTC).isoformat()
     summary["status"] = "failed" if summary["errors"] else "ok"
     if not dry_run:

@@ -78,6 +78,11 @@ def get_hotspot_test_grid():
     return {"summary": grid_status.summary(runs.query, states, rules), "tiles": states}
 
 
+@app.get("/api/hotspot-tests/grid/runs")
+def get_hotspot_test_grid_runs():
+    return grid_status.scan_runs(runs.query, grid_status.load_rules())
+
+
 @app.get("/api/hotspot-tests/grid/land")
 def get_hotspot_test_grid_land():
     return {"rings": grid_status.load_land()}

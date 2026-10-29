@@ -232,6 +232,26 @@ export interface GridSummary {
   queued_waiting_for_result: number;
 }
 
+export interface GridRunEntry {
+  tile_id: string;
+  status: "waiting" | "processing" | "processed" | "failed";
+  finished: string | null;
+  pairs: number;
+  run_no: number | null;
+  scene: string | null;
+}
+
+export interface GridRun {
+  run: number;
+  day: string;
+  tiles: number;
+  with_pairs: number;
+  waiting: number;
+  processing: number;
+  processed: number;
+  grids: GridRunEntry[];
+}
+
 export interface HotspotTestArea {
   name: string;
   label: string;
@@ -284,6 +304,7 @@ export const api = {
   },
   run: (n: number) => fetch(`/api/runs/${n}`).then((r) => json<RunDetail>(r)),
   hotspotTestGrid: () => fetch("/api/hotspot-tests/grid").then((r) => json<{ summary: GridSummary; tiles: GridTile[] }>(r)),
+  hotspotTestGridRuns: () => fetch("/api/hotspot-tests/grid/runs").then((r) => json<GridRun[]>(r)),
   hotspotTestGridLand: () => fetch("/api/hotspot-tests/grid/land").then((r) => json<{ rings: [number, number][][] }>(r)),
   hotspotTestAreas: () => fetch("/api/hotspot-tests/areas").then((r) => json<HotspotTestArea[]>(r)),
   hotspotTestRuns: () => fetch("/api/hotspot-tests/runs").then((r) => json<RunSummary[]>(r)),

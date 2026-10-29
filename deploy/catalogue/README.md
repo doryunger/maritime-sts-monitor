@@ -193,7 +193,7 @@ and publication boundaries.
 
 ## Random grid scan
 
-`sts-grid-scan.timer` runs `python -m maritime_tip_cue.grid_scan plan` hourly at minute 20 UTC in the manager image. It resolves finished scans, closes or extends tiles and queues up to 25 first scenes and 50 scenes a day in total; the dispatcher and worker then process the jobs like any other. Install after rebuilding the manager image:
+`sts-grid-scan.timer` runs `python -m maritime_tip_cue.grid_scan plan` every ten minutes (minutes 08, 18, 28, 38, 48, 58 UTC, clear of the catalogue and AIS runs) in the manager image. It resolves finished scans, closes tiles and keeps at most `grids_in_flight` (2) tiles queued and unfinished, each with its two scenes queued together, up to 25 tiles and 50 scenes a day; the dispatcher and worker then process the jobs like any other. Install after rebuilding the manager image:
 
 ```bash
 sudo docker build -f deploy/catalogue/Dockerfile -t maritime-sts-manager .
