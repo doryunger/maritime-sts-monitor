@@ -195,3 +195,37 @@ def test_only_a_grid_with_a_running_job_is_processing(both, pgdb, monkeypatch):
     pgdb.commit()
     grids = {grid["tile_id"]: grid["status"] for grid in client.get("/api/hotspot-tests/grid/runs").json()[0]["grids"]}
     assert grids == {"T1": "processing", "T2": "waiting"}
+
+
+def test_the_map_accumulates_results_across_rounds(both, pgdb, monkeypatch):
+    client, live, test = both
+    from maritime_tip_cue import grid_status
+
+    grid = {name: {"id": name, "bbox": [i, 0.0, i + 1.0, 1.0]} for i, name in enumerate(("T1", "T2", "T3", "T4"))}
+    monkeypatch.setattr(grid_status, "load_grid", lambda: grid)
+    monkeypatch.setattr(
+        grid_status,
+        "load_rules",
+        lambda: {"max_scans_per_day": 50, "first_dates_per_day": 25, "dates_per_tile": 2, "min_hulls_for_second_date": None, "hit_verdicts": ["pair", "possible_pair"]},
+    )
+    pgdb.execute(
+        "INSERT INTO processing.grid_scans (tile_id,round,date_no,site,source,scene,scene_time,job_id,queued_utc,status,pairs,hulls) VALUES "
+        "('T1',1,1,'test_east_of_sohar','s2','probe','2026-10-18T05:00:00Z','a1','2026-10-20T10:00:00Z','done',1,4),"
+        "('T1',2,1,'test_grid_T1','s1','x1','2026-10-21T05:00:00Z','a2','2026-10-29T10:00:00Z','queued',NULL,NULL),"
+        "('T2',1,1,'test_grid_T2','s1','y1','2026-10-18T05:00:00Z','b1','2026-10-20T10:00:00Z','done',0,5),"
+        "('T2',1,2,'test_grid_T2','s1','y2','2026-10-19T05:00:00Z','b2','2026-10-20T10:00:00Z','done',0,5),"
+        "('T2',2,1,'test_grid_T2','s1','y3','2026-10-21T05:00:00Z','b3','2026-10-29T10:00:00Z','queued',NULL,NULL),"
+        "('T3',1,1,'test_grid_T3','s1','z1','2026-10-18T05:00:00Z','c1','2026-10-20T10:00:00Z','done',0,5),"
+        "('T3',1,2,'test_grid_T3','s1','z2','2026-10-19T05:00:00Z','c2','2026-10-20T10:00:00Z','done',0,5),"
+        "('T3',2,1,'test_grid_T3','s1','z3','2026-10-21T05:00:00Z','c3','2026-10-29T10:00:00Z','queued',NULL,NULL)"
+    )
+    pgdb.execute(
+        "INSERT INTO processing.jobs (job_id,site,source,created_utc,manifest_json,manifest_sha256,status) "
+        "VALUES ('c3','x','s1',now(),'{}','c3','running')"
+    )
+    pgdb.commit()
+    tiles = {tile["id"]: tile for tile in client.get("/api/hotspot-tests/grid").json()["tiles"]}
+    assert tiles["T1"]["status"] == "scanned_pairs" and len(tiles["T1"]["scans"]) == 2
+    assert tiles["T2"]["status"] == "scanned_no_pairs"
+    assert tiles["T3"]["status"] == "processing"
+    assert tiles["T4"]["status"] == "unscanned"

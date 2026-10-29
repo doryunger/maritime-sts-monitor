@@ -111,32 +111,42 @@ def progress(scans, visit, rules):
 
 
 def tile_states(rows, grid, rules):
-    visits = rows(
-        "SELECT DISTINCT ON (tile_id) tile_id,round,outcome,decided_utc FROM processing.grid_visits ORDER BY tile_id,round DESC"
-    )
+    visits = {
+        (row["tile_id"], row["round"]): row
+        for row in rows("SELECT tile_id,round,outcome,decided_utc FROM processing.grid_visits ORDER BY round")
+    }
+    latest_visit = {}
+    for (tile_id, _), visit in visits.items():
+        latest_visit[tile_id] = visit
     by_tile = {}
     for scan in load_scans(rows, rules):
         by_tile.setdefault(scan["tile_id"], []).append(scan)
-    visited = {row["tile_id"]: row for row in visits}
     states = []
     for tile_id, tile in grid.items():
         tile_scans = by_tile.get(tile_id, [])
-        latest_round = max((scan["round"] for scan in tile_scans), default=None)
-        round_scans = [scan for scan in tile_scans if scan["round"] == latest_round]
-        visit = visited.get(tile_id)
-        decision = None
-        if visit is not None and (not round_scans or visit["round"] > latest_round):
-            decision, round_no, status = visit["outcome"], visit["round"], visit["outcome"]
-        elif round_scans:
-            round_no = latest_round
-            state = progress(round_scans, visit if visit is not None and visit["round"] == latest_round else None, rules)
-            decision = state["decision"]
-            if state["status"] == "processed":
-                status = "scanned_pairs" if state["pairs"] else "scanned_no_pairs"
+        decision, round_no = None, None
+        if tile_scans:
+            by_round = {}
+            for scan in tile_scans:
+                by_round.setdefault(scan["round"], []).append(scan)
+            states_by_round = {no: progress(group, visits.get((tile_id, no)), rules) for no, group in by_round.items()}
+            round_no = max(by_round)
+            current = states_by_round[round_no]
+            decision = current["decision"]
+            processed = [state for state in states_by_round.values() if state["status"] == "processed"]
+            if any(state["pairs"] for state in processed):
+                status = "scanned_pairs"
+            elif current["status"] == "processing":
+                status = "processing"
+            elif processed:
+                status = "scanned_no_pairs"
             else:
-                status = MAP_STATUS[state["status"]]
+                status = current["status"]
+        elif tile_id in latest_visit:
+            visit = latest_visit[tile_id]
+            decision, round_no, status = visit["outcome"], visit["round"], visit["outcome"]
         else:
-            status, round_no = "unscanned", None
+            status = "unscanned"
         states.append(
             {
                 "id": tile_id,
@@ -149,7 +159,7 @@ def tile_states(rows, grid, rules):
                         key: isoformat(scan[key])
                         for key in ("round", "date_no", "source", "scene", "scene_time", "status", "pairs", "hulls", "run_no")
                     }
-                    for scan in round_scans
+                    for scan in tile_scans
                 ],
             }
         )

@@ -7,6 +7,7 @@ const NORTH = 28;
 const SCALE = 10;
 const WIDTH = (109 - WEST) * SCALE;
 const HEIGHT = (NORTH + 2) * SCALE;
+const INERT = ["unscanned", "no_imagery"];
 const LEGEND: { swatch: string; title: string; statuses: string[] }[] = [
   { swatch: "scanned_pairs", title: "Scanned, pairs", statuses: ["scanned_pairs"] },
   { swatch: "scanned_no_pairs", title: "Scanned, no pairs", statuses: ["scanned_no_pairs"] },
@@ -84,14 +85,14 @@ export default function GridMap() {
         {tiles.map((t) => (
           <rect
             key={t.id}
-            className={`tile ${t.status}${t.id === selected ? " selected" : ""}`}
-            onClick={() => setSelected(t.id === selected ? null : t.id)}
+            className={`tile ${t.status}${INERT.includes(t.status) ? " inert" : ""}${t.id === selected ? " selected" : ""}`}
+            onClick={INERT.includes(t.status) ? undefined : () => setSelected(t.id === selected ? null : t.id)}
             x={px(t.bbox[0])}
             y={py(t.bbox[3])}
             width={(t.bbox[2] - t.bbox[0]) * SCALE}
             height={(t.bbox[3] - t.bbox[1]) * SCALE}
           >
-            <title>{`${t.id}: ${name(t.status)}`}</title>
+            {!INERT.includes(t.status) && <title>{`${t.id}: ${name(t.status)}`}</title>}
           </rect>
         ))}
         {LIVE.map(([name, b]) => (

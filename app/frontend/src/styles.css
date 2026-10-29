@@ -168,6 +168,8 @@ summary { cursor: pointer; padding: 4px 0; }
 .grid-map { flex: 0 1 560px; width: 100%; max-width: 560px; height: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
 .grid-map .land { fill: var(--g-land); stroke: var(--line); stroke-width: 0.4; }
 .grid-map .tile { stroke: var(--bg); stroke-width: 0.3; cursor: pointer; }
+.grid-map .tile.inert { cursor: default; pointer-events: none; }
+.grid-map .tile:not(.inert):hover { stroke: var(--fg); stroke-width: 1; }
 .grid-map .tile.selected { stroke: var(--fg); stroke-width: 1.2; }
 .grid-map .live { fill: none; stroke: var(--pair); stroke-width: 1; pointer-events: none; }
 .grid-map .live-label { fill: var(--pair); font-size: 7px; pointer-events: none; }
