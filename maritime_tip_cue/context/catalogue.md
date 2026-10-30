@@ -202,6 +202,6 @@ Idle was tied to the refinery wake-service, which stops the instance after 3 min
 STS session sends it none, so it stopped running jobs, and a leftover keep-alive loop pinging it kept the instance up
 for four days (2026-10-26 to 2026-10-30). The stop is now one process-independent script (`worker_idle.py`): it
 looks at the worker's CPU and GPU use, not at who started it, and the dispatcher and one-scene runner never stop the
-instance. 5 quiet checks of 3 minutes match the CloudWatch rule (CPU under 5 percent for 15 minutes); a single quiet
-check would stop a drain during a scene download. The refinery wake-service's own idle stop is disabled with
+instance. 3 quiet checks of 3 minutes (about 9 minutes; the CloudWatch rule of 15 minutes stays as the slower backstop); a
+single quiet check would stop a drain during a scene download. The refinery wake-service's own idle stop is disabled with
 `IDLE_STOP_MINUTES=0` so there is one stopper.

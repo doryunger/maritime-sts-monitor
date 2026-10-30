@@ -1,5 +1,5 @@
 {
-  "basis": "GPU worker idle stop, independent of any process (decision 2026-10-30, user): a check every 3 minutes finds out whether the worker is up, reads its CPU and GPU use over SSH and stops it when nothing runs. Thresholds follow the CloudWatch rule the user set (CPU under 5 percent for 15 minutes).",
+  "basis": "GPU worker idle stop, independent of any process (decision 2026-10-30, user): a check every 3 minutes finds out whether the worker is up, reads its CPU and GPU use over SSH and stops it when nothing runs. The CPU and GPU limits follow the CloudWatch rule the user set (CPU under 5 percent).",
   "check_every_minutes": {
     "value": 3,
     "unit": "minutes",
@@ -16,9 +16,9 @@
     "basis": "Same limit as the CPU; the detector and the refinery demo both show 100 percent GPU while working (2026-10-30 boot warm-up)."
   },
   "quiet_checks_to_stop": {
-    "value": 5,
+    "value": 3,
     "unit": "checks",
-    "basis": "5 checks of 3 minutes is the 15 minutes of the user's CloudWatch rule. A scene download or a gap between scenes in a drain stays quiet for a few minutes, so a single quiet check would stop a running job."
+    "basis": "User decision 2026-10-31: 3 checks of 3 minutes (about 9 minutes) instead of the 5 (15 minutes) first taken from the CloudWatch rule, which stays as the slower backstop. A scene download or a gap between scenes in a drain can stay quiet for a few minutes, so one quiet check would stop a running job."
   },
   "sample_seconds": {
     "value": 10,
