@@ -94,13 +94,15 @@ paths or credentials. No EC2 start/stop calls or remote command transport are im
 
 Progress is measured as growth of the Redis `completed` set, not exit codes: a drain can exit 0 after only
 failing jobs. Three consecutive sessions with no growth open the breaker, so a systematic fault (bad image,
-unreachable archive) costs at most three bounded sessions instead of waking the instance every ten minutes
+unreachable archive) costs at most three bounded sessions instead of waking the instance every few minutes
 indefinitely. Termination is layered because killing the SSH client alone leaves the remote container running:
 remote `timeout` plus a named container removed before and after, the local wake script killed at the session
 limit, and the worker's own abort inside the container. The local launcher claims from the same Redis, so
 local and EC2 work never overlap on a job; pause the dispatcher anyway to keep EC2 from being woken for jobs
 the local machine is about to take. `max_seconds_per_scene` is left unset in the root config so local runs
 are not killed by a GPU-sized limit.
+
+Idle gaps (2026-10-30): `drain_jobs` took one snapshot of the ready jobs, so jobs the grid planner queued while a session ran waited for the next session, and each 4-job session (about 30 minutes) was followed by the 10-minute timer wait plus an instance wake: about 30% of the wall time between 01:24 and 03:39 UTC was idle at a median detector time of 6.7 minutes per scene (S1 7 to 10, S2 3 to 5). The drain now re-reads the ready jobs after each pass and ends when none are new, still attempting each job once per session, and the timer fires two minutes after the previous run. A GPU deferral backs the dispatcher off for 15 minutes (`DISPATCH_DEFER_BACKOFF_SECONDS`), otherwise a busy demo would be woken for every two-minute tick. Costs: a longer session keeps the instance up for the whole day's work instead of stopping between sessions (about 6 h of work for 50 scenes, so roughly 6 h of instance time against about 8.5 h of wall time before), and the GPU guard only runs at session start, so demo traffic during a long session can still take GPU memory.
 
 GPU guard (2026-10-29): the worker's T4 (15.4 GB) is shared with another project's idle demo app whose process keeps its
 PyTorch allocator cache (9.8 GB on 10-28, 12.5 GB on 10-29), leaving less than the detector's ~4.8 GB peak; the detector

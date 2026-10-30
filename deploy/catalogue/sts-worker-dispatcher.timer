@@ -1,9 +1,9 @@
 [Unit]
-Description=Check for ready STS jobs every ten minutes
+Description=Check for ready STS jobs every two minutes
 
 [Timer]
 OnBootSec=5min
-OnUnitInactiveSec=10min
+OnUnitInactiveSec=2min
 Unit=sts-worker-dispatcher.service
 
 [Install]

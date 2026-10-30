@@ -18,6 +18,7 @@ def limits():
         "max_no_progress_sessions": int(os.environ.get("DISPATCH_MAX_NO_PROGRESS_SESSIONS", "3")),
         "max_seconds_per_day": int(os.environ.get("DISPATCH_MAX_SECONDS_PER_DAY", str(12 * 3600))),
         "settle_seconds": int(os.environ.get("DISPATCH_SETTLE_SECONDS", "180")),
+        "defer_backoff_seconds": int(os.environ.get("DISPATCH_DEFER_BACKOFF_SECONDS", "900")),
     }
 
 
@@ -55,6 +56,8 @@ def decide(counts, state, now, cfg, paused):
         return False, "no-progress breaker open; inspect failures then run with --reset"
     if counts["ready"] == 0:
         return False, "no ready jobs"
+    if state.get("deferred_until", 0) > now:
+        return False, "backing off after a GPU deferral"
     if counts["claimed"] > 0:
         return False, "jobs are being processed elsewhere"
     if seconds_last_day(state, now) >= cfg["max_seconds_per_day"]:
@@ -97,6 +100,7 @@ def run_session(
             state["no_progress_sessions"] = 0
         elif not deferred:
             state["no_progress_sessions"] += 1
+        state["deferred_until"] = clock() + cfg["defer_backoff_seconds"] if deferred else 0
         state["sessions"] = [s for s in state["sessions"] if s["started"] + s["seconds"] > clock() - 86400]
         state["sessions"].append({"started": started, "seconds": seconds, "exit": exit_code, "progress": progress})
         save_state(directory, state)

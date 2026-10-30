@@ -86,7 +86,7 @@ status handler is polled.
 
 ## Automatic worker dispatch
 
-`sts-worker-dispatcher.timer` runs `dispatch_worker.py` every ten minutes on the Ubuntu host. It reads
+`sts-worker-dispatcher.timer` runs `dispatch_worker.py` two minutes after the previous run ends, on the Ubuntu host. It reads
 `queue-status` from the job manager and does nothing, without touching the wake handler, unless at least one
 job is ready (delayed retries do not count). When jobs are ready it holds `data/dispatcher/dispatcher.lock`,
 wakes EC2 through the existing handler, and runs `worker drain` over SSH in a named container with a remote

@@ -16,6 +16,10 @@ done
 docker image prune -f >/dev/null
 docker builder prune -f --keep-storage "${KEEP_CACHE_GB}GB" >/dev/null
 after=$(free_gb)
+if [ "$after" -lt "$MIN_FREE_GB" ]; then
+    docker builder prune -af >/dev/null
+    after=$(free_gb)
+fi
 echo "disk-maintenance: free ${before}G -> ${after}G; before: ${usage_before}; after: $(usage)"
 if [ "$after" -lt "$MIN_FREE_GB" ]; then
     echo "disk-maintenance: WARNING only ${after}G free after cleanup, below ${MIN_FREE_GB}G; remove unused images or grow the volume" >&2

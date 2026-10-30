@@ -579,23 +579,28 @@ def drain_jobs(client, bucket: str) -> list[dict]:
     if not settings()["worker"]["queue"].get("max_seconds_per_scene"):
         raise RuntimeError("drain requires worker.queue.max_seconds_per_scene in the worker config")
     results = []
-    for job_id in task_queue.ready_ids():
-        owner = f"{os.uname().nodename if hasattr(os, 'uname') else 'worker'}:{uuid.uuid4().hex}"
-        manifest = task_queue.claim(job_id=job_id, owner=owner)
-        if manifest is None:
-            continue
-        result = {"job_key": job_id, "job_id": job_id, "site": manifest["site"]["name"]}
-        receipt = None
-        try:
-            receipt = run_job(client, bucket, manifest, queue_owner=owner)
-            result.update(status=receipt["status"], run_no=receipt["run_no"], error=receipt.get("error"))
-        except Exception as error:
-            if receipt is None:
-                task_queue.fail_with_result(job_id, owner, manifest, error)
-            result.update(status="failed", error=f"{type(error).__name__}: {error}")
-        results.append(result)
-        print(json.dumps(result), flush=True)
-    return results
+    attempted = set()
+    while True:
+        pending = [job_id for job_id in task_queue.ready_ids() if job_id not in attempted]
+        if not pending:
+            return results
+        for job_id in pending:
+            attempted.add(job_id)
+            owner = f"{os.uname().nodename if hasattr(os, 'uname') else 'worker'}:{uuid.uuid4().hex}"
+            manifest = task_queue.claim(job_id=job_id, owner=owner)
+            if manifest is None:
+                continue
+            result = {"job_key": job_id, "job_id": job_id, "site": manifest["site"]["name"]}
+            receipt = None
+            try:
+                receipt = run_job(client, bucket, manifest, queue_owner=owner)
+                result.update(status=receipt["status"], run_no=receipt["run_no"], error=receipt.get("error"))
+            except Exception as error:
+                if receipt is None:
+                    task_queue.fail_with_result(job_id, owner, manifest, error)
+                result.update(status="failed", error=f"{type(error).__name__}: {error}")
+            results.append(result)
+            print(json.dumps(result), flush=True)
 
 
 def main() -> int:

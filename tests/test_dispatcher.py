@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "deploy" / "catalog
 dispatch = importlib.import_module("dispatch_worker")
 worker_host = importlib.import_module("worker_host")
 
-CFG = {"max_session_seconds": 3600, "max_no_progress_sessions": 3, "max_seconds_per_day": 7200, "settle_seconds": 60}
+CFG = {"max_session_seconds": 3600, "max_no_progress_sessions": 3, "max_seconds_per_day": 7200, "settle_seconds": 60, "defer_backoff_seconds": 900}
 
 
 class Queue:
@@ -270,6 +270,17 @@ def test_deferred_session_is_recorded_but_never_opens_the_breaker(tmp_path):
     for _ in range(5):
         result = session(tmp_path, Queue(), lambda s: worker_host.GPU_BUSY_EXIT, clock)
         assert result["action"] == "deferred" and result["no_progress_sessions"] == 0
-        clock.value += 600
+        clock.value += 1000
     assert dispatch.load_state(tmp_path)["no_progress_sessions"] == 0
     assert len(dispatch.load_state(tmp_path)["sessions"]) == 5
+
+
+def test_a_deferral_backs_the_dispatcher_off_so_a_busy_gpu_is_not_woken_every_two_minutes(tmp_path):
+    clock, calls = Clock(), []
+    first = session(tmp_path, Queue(), lambda s: calls.append(s) or worker_host.GPU_BUSY_EXIT, clock)
+    assert first["action"] == "deferred"
+    clock.value += 120
+    blocked = session(tmp_path, Queue(), lambda s: calls.append(s) or 0, clock)
+    assert blocked["action"] == "skip" and "backing off" in blocked["reason"] and len(calls) == 1
+    clock.value += 900
+    assert session(tmp_path, Queue(), lambda s: calls.append(s) or 0, clock)["action"] == "ran"

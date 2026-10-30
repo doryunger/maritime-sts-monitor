@@ -194,11 +194,12 @@ Install on the worker (the checkout is `~/maritime-sts-monitor-worker-test`; the
 
 ```bash
 cd ~/maritime-sts-monitor-worker-test
-chmod +x deploy/gpu-worker/disk-maintenance.sh
 sudo cp deploy/gpu-worker/sts-disk-maintenance.service deploy/gpu-worker/sts-disk-maintenance.timer /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now sts-disk-maintenance.timer
 journalctl -u sts-disk-maintenance --no-pager | tail
 ```
+
+The unit runs the script with `bash` because a copied checkout loses the executable bit: the first scheduled runs (2026-10-29 19:38 and 2026-10-30 01:38 UTC) failed with `Permission denied` and nothing was cleaned. When free space is still under `MIN_FREE_GB` after the normal pass it also drops the whole unused build cache.
 
 The instance is stopped most of the time, so the timer fires 15 minutes after boot and every 6 hours while awake. After
 a manual image build run `sudo systemctl start sts-disk-maintenance`. Keep the instance awake with the wake script when
