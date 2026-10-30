@@ -1,0 +1,12 @@
+[Unit]
+Description=Stop the GPU worker when nothing runs on it
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+TimeoutStartSec=10min
+ExecStart=/usr/bin/python3 /home/ubuntu/maritime-sts-monitor/deploy/catalogue/worker_idle.py
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077

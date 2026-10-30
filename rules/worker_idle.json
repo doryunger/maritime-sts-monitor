@@ -1,0 +1,28 @@
+{
+  "basis": "GPU worker idle stop, independent of any process (decision 2026-10-30, user): a check every 3 minutes finds out whether the worker is up, reads its CPU and GPU use over SSH and stops it when nothing runs. Thresholds follow the CloudWatch rule the user set (CPU under 5 percent for 15 minutes).",
+  "check_every_minutes": {
+    "value": 3,
+    "unit": "minutes",
+    "basis": "User decision 2026-10-30; the value lives in deploy/catalogue/sts-worker-idle.timer."
+  },
+  "cpu_busy_percent_max": {
+    "value": 5,
+    "unit": "percent",
+    "basis": "User CloudWatch rule 2026-10-30: CPU below 5 percent counts as quiet."
+  },
+  "gpu_busy_percent_max": {
+    "value": 5,
+    "unit": "percent",
+    "basis": "Same limit as the CPU; the detector and the refinery demo both show 100 percent GPU while working (2026-10-30 boot warm-up)."
+  },
+  "quiet_checks_to_stop": {
+    "value": 5,
+    "unit": "checks",
+    "basis": "5 checks of 3 minutes is the 15 minutes of the user's CloudWatch rule. A scene download or a gap between scenes in a drain stays quiet for a few minutes, so a single quiet check would stop a running job."
+  },
+  "sample_seconds": {
+    "value": 10,
+    "unit": "seconds",
+    "basis": "CPU is averaged over this window on the worker (vmstat); the GPU reading is the highest of three samples a second apart."
+  }
+}

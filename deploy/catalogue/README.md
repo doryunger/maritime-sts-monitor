@@ -4,7 +4,7 @@ The dedicated Lightsail host runs `maritime_tip_cue.catalogue`, `maritime_tip_cu
 GPU worker host runs `maritime_tip_cue.worker`. Each role has its own dependency list, but both require this
 repository's shared `maritime_tip_cue` package source; they are not standalone sparse checkouts yet. The
 scheduled catalogue and manager services do not start or stop EC2; the manual one-scene runner below uses the
-configured wake status handler and keeps it active while the worker command runs.
+worker power module (`maritime_tip_cue.worker_power`) to start EC2 and runs the worker command; the idle check below stops EC2.
 
 ```mermaid
 flowchart LR
@@ -45,9 +45,8 @@ on failure or host reboot. The manager does not start or stop EC2.
 ## One-scene end-to-end run
 
 This command scans configured hot spots for new Sentinel-2 scenes, stops after the first eligible scene,
-stores one single-scene job in the ledger, dispatches it to Redis, polls the configured wake status handler until
-EC2 and private SSH are ready, then runs that exact job over SSH while polling the handler to refresh its idle
-timer. If no new scene is found, it leaves EC2 untouched.
+stores one single-scene job in the ledger, dispatches it to Redis, starts EC2 directly and waits for private SSH, then runs
+that exact job over SSH and leaves the stop to the idle check. If no new scene is found, it leaves EC2 untouched.
 
 Set these deployment values in the Ubuntu host's ignored `.env`:
 
@@ -56,11 +55,11 @@ WORKER_PRIVATE_IP=<WORKER_PRIVATE_IP>
 WORKER_KEY_PATH=/home/ubuntu/.ssh/geogen-key.pem
 WORKER_REMOTE_DIR=/home/ubuntu/maritime-sts-monitor-worker-test
 WORKER_IMAGE=maritime-sts-gpu-worker:test
-WORKER_WAKE_STATUS_URL=<WAKE_STATUS_URL>
+WORKER_INSTANCE_ID=<EC2_INSTANCE_ID>
 ```
 
-The status URL must target the wake service's `/_wake/status` route. Each request refreshes its idle timer; the
-runner polls it while the worker command is active. The Lightsail environment must also provide the existing
+The instance is started and stopped with the control host's AWS credentials, which need `ec2:DescribeInstances`,
+`StartInstances` and `StopInstances` on that instance. The Lightsail environment must also provide the existing
 manager settings. The EC2 host must have the worker image, assets and instance role prepared. The worker role
 must include the results-prefix `s3:ListBucket` permission documented in the worker deployment guide. The
 runner checks this permission before the worker claims its Redis task.
@@ -72,8 +71,8 @@ sudo docker build -f deploy/catalogue/Dockerfile -t maritime-sts-manager .
 sudo python3 deploy/catalogue/run-one-scene.py
 ```
 
-The script waits for the manager to record the result and prints the final job status. It leaves instance
-shutdown to the wake service's idle policy.
+The script waits for the manager to record the result and prints the final job status. It leaves the stop to the
+idle check.
 
 To hand off one already discovered single-scene job, pass its job ID instead of scanning for a new scene:
 
@@ -87,16 +86,15 @@ status handler is polled.
 ## Automatic worker dispatch
 
 `sts-worker-dispatcher.timer` runs `dispatch_worker.py` two minutes after the previous run ends, on the Ubuntu host. It reads
-`queue-status` from the job manager and does nothing, without touching the wake handler, unless at least one
+`queue-status` from the job manager and does nothing, without touching EC2, unless at least one
 job is ready (delayed retries do not count). When jobs are ready it holds `data/dispatcher/dispatcher.lock`,
-wakes EC2 through the existing handler, and runs `worker drain` over SSH in a named container with a remote
-`timeout`, removing the container afterwards. It stops polling the handler when the drain ends, so the wake
-service's idle policy stops the instance.
+starts EC2 directly (no refinery wake service), and runs `worker drain` over SSH in a named container with a remote
+`timeout`, removing the container afterwards. It never stops EC2; the idle check does.
 
 Safeguards, all in `data/dispatcher/state.json` or environment settings:
 
 - `DISPATCH_MAX_SESSION_SECONDS` (default 14400) bounds one session; the SSH client, the remote container and
-  the local wake script are all terminated at the limit.
+  the local SSH process are all terminated at the limit.
 - `DISPATCH_MAX_NO_PROGRESS_SESSIONS` (default 3): that many consecutive sessions that complete no job open a
   breaker and the instance is no longer woken; inspect the failures, then `dispatch_worker.py --reset`.
 - `DISPATCH_MAX_SECONDS_PER_DAY` (default 43200) caps worker time over a rolling 24 hours.
@@ -126,7 +124,7 @@ failure. None of steps 1-3 wakes EC2.
    `nvidia-smi`, `/opt/ai2-models`, 3 GB free disk, instance profile S3 access.
 5. Kill drill (wakes EC2): with one real ready job, run with `DISPATCH_MAX_SESSION_SECONDS=120`. Expect exit 124, no
    `sts-worker-drain` container left on EC2 (`docker ps`), the attempt recorded as `stopped` in `catalogue job-status`,
-   the job back to `retry_wait`, and EC2 stopping by the wake service's idle policy. This spends one retry.
+   the job back to `retry_wait`, and EC2 stopped by the idle check once it has been quiet. This spends one retry.
 6. Live drain with defaults over one S2 and one S1 job from different hot spots: both `succeeded`, five artifacts
    under each attempt prefix and the attempt's run rows in Postgres, `progress` equal to the jobs finished, and
    `catalogue audit` clean afterwards. Repeat until every hot spot and both sensors have succeeded once.
@@ -203,3 +201,14 @@ sudo systemctl daemon-reload && sudo systemctl enable --now sts-grid-scan.timer
 ```
 
 `plan --dry-run` prints the tiles and scenes it would queue without writing. `status` prints the round, tile counts by status and today's budget; `export` prints every tile with its status for a map. Pause with `sudo systemctl stop sts-grid-scan.timer`; queued scenes still run.
+
+## Worker idle check
+
+`sts-worker-idle.timer` runs `worker_idle.py` every three minutes on the Ubuntu host, regardless of which process
+(an STS drain, the refinery demo, a manual run) is using the worker. It reads the instance state through the worker
+power module; a stopped worker resets the count. For a running worker it SSHes in and reads CPU use (`vmstat` over
+`sample_seconds`) and GPU use (highest of three `nvidia-smi` samples). A reading at or above either limit resets the
+quiet count; `quiet_checks_to_stop` quiet checks in a row stop the instance. A worker that cannot be measured is never
+stopped. All thresholds are in [`rules/worker_idle.json`](../../rules/worker_idle.json); state is
+`data/worker_idle/state.json`. `--dry-run` measures and counts but never stops. Install with `sudo cp
+deploy/catalogue/sts-worker-idle.* /etc/systemd/system/` then `systemctl enable --now sts-worker-idle.timer`.

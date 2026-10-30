@@ -1,0 +1,10 @@
+[Unit]
+Description=Check the GPU worker for idleness every three minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=3min
+Unit=sts-worker-idle.service
+
+[Install]
+WantedBy=timers.target

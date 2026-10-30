@@ -3,13 +3,12 @@
 Current EC2 image, queue smoke-test and root-volume resize notes are in [the EC2 deployment record](../../docs/gpu-worker-ec2.md).
 
 This role runs `maritime_tip_cue.worker` and the shared processing pipeline. It does not run the six-hour
-catalogue scan or the always-on job manager. The Ubuntu one-scene orchestration polls the configured
-`/_wake/status` handler until EC2 is ready, then runs one worker command over SSH while continuing to poll the
-handler. Each status request refreshes the wake service's idle timer. The command starts
+catalogue scan or the always-on job manager. The Ubuntu one-scene orchestration starts EC2 directly,
+waits for private SSH, runs one worker command over SSH and stops EC2 afterwards. The command starts
 `worker run --job-id <job_id>` on EC2, which claims that task atomically from Redis and loads its pinned manifest;
 SSH passes only the job ID. The worker renews its claim lease and publishes an attempt-fenced result. The
 manager on the tracker host owns completion and retry transitions. EC2 does not run an idle Redis listener;
-the one-job process starts after the wake handler reports ready.
+the one-job process starts once SSH is reachable.
 
 ## One-scene orchestration from the STS monitor Ubuntu host
 
@@ -18,7 +17,7 @@ Run the complete scan, single-job Redis handoff, wake request and SSH worker pro
 `~/.ssh/geogen-key.pem` and keeps the SSH session open until the selected job finishes. The Ubuntu host key is
 `sts-instance.pem` at `%USERPROFILE%\Downloads\sts-instance.pem`; the EC2 worker key is `geogen-key.pem`.
 
-Set `WORKER_WAKE_STATUS_URL` to the exact wake status route, and keep the worker address and key path in the
+Set `WORKER_INSTANCE_ID` to the worker's instance ID, and keep the worker address and key path in the
 ignored Lightsail `.env`. The runner starts SSH only after the handler reports ready and private port 22 accepts
 connections. The EC2 instance profile provides worker S3 access.
 

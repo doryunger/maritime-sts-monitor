@@ -44,9 +44,7 @@ later scan-one call.
 
 ## EC2 execution
 
-The one-scene runner dispatches one job, then delegates startup and SSH readiness to the wake status handler.
-That handler updates its idle activity timestamp on each GET, so the runner keeps polling every 20 seconds while
-the worker command runs. The runner checks the worker's S3 receipt-list permission before the worker claims the
+The one-scene runner dispatches one job, then starts EC2 itself through `worker_power` and waits for private SSH. The runner checks the worker's S3 receipt-list permission before the worker claims the
 Redis task; this prevents a known IAM denial from consuming a job attempt. The SSH command runs the exact job
 and the runner waits for the manager's durable result. Worker connection settings stay in the ignored Lightsail
 `.env`. Passing `--job-id` targets an eligible existing single-scene job through the manager's targeted `once`
@@ -96,7 +94,7 @@ Progress is measured as growth of the Redis `completed` set, not exit codes: a d
 failing jobs. Three consecutive sessions with no growth open the breaker, so a systematic fault (bad image,
 unreachable archive) costs at most three bounded sessions instead of waking the instance every few minutes
 indefinitely. Termination is layered because killing the SSH client alone leaves the remote container running:
-remote `timeout` plus a named container removed before and after, the local wake script killed at the session
+remote `timeout` plus a named container removed before and after, the local SSH process killed at the session
 limit, and the worker's own abort inside the container. The local launcher claims from the same Redis, so
 local and EC2 work never overlap on a job; pause the dispatcher anyway to keep EC2 from being woken for jobs
 the local machine is about to take. `max_seconds_per_scene` is left unset in the root config so local runs
@@ -197,3 +195,13 @@ ambiguous or unmatched. `verify` re-checks presence, manifest bytes, `job_scenes
   none or several is reported and left null; legacy runs stay null. Run it again after the runs are imported.
   On 2026-10-25 all 54 job runs in the live review store match one attempt each (9 legacy); one succeeded attempt has
   no run yet.
+
+## Worker idle check
+
+Idle was tied to the refinery wake-service, which stops the instance after 3 minutes without requests to itself. An
+STS session sends it none, so it stopped running jobs, and a leftover keep-alive loop pinging it kept the instance up
+for four days (2026-10-26 to 2026-10-30). The stop is now one process-independent script (`worker_idle.py`): it
+looks at the worker's CPU and GPU use, not at who started it, and the dispatcher and one-scene runner never stop the
+instance. 5 quiet checks of 3 minutes match the CloudWatch rule (CPU under 5 percent for 15 minutes); a single quiet
+check would stop a drain during a scene download. The refinery wake-service's own idle stop is disabled with
+`IDLE_STOP_MINUTES=0` so there is one stopper.

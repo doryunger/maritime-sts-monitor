@@ -38,7 +38,7 @@ started through `run-scenes.cmd`; the local launcher can resume the interrupted 
    longer mounts over their project path. One Fujairah S2 job completed end to end: Redis claim, detector run,
    five S3 artifacts and durable `succeeded` status. The T40REN detector finished in 208 seconds, selected the
    Tesla T4, and peaked at 1.49 GB PyTorch allocation. Each worker attempt now aborts on lost lease, unreachable Redis past the lease, or
-   `max_seconds_per_scene` x scenes (needs a worker image rebuild); a session-bounded dispatcher (`deploy/catalogue/dispatch_worker.py`, timer every ten minutes) wakes EC2 only for ready jobs, with session, no-progress and daily caps and a dry run; it is written and unit-tested but not yet installed, and needs the worker image rebuilt first.
+   `max_seconds_per_scene` x scenes (needs a worker image rebuild); a session-bounded dispatcher (`deploy/catalogue/dispatch_worker.py`, timer every ten minutes) starts EC2 directly (not through the refinery wake-service) only for ready jobs, with session, no-progress and daily caps and a dry run; a separate idle check (`deploy/catalogue/worker_idle.py`, every 3 minutes, CPU and GPU over SSH, [rules](rules/worker_idle.json)) is the only thing that stops it; it is written and unit-tested but not yet installed, and needs the worker image rebuilt first.
 4. Execute this repo's detection, pair check, AIS enrichment and publishing on that worker. Record per-scene
    completion and failures durably so interrupted or failed work can be retried without losing completed work.
 5. Stop the EC2 instance after the pending batch is finished and results are durable. Verify restart recovery,

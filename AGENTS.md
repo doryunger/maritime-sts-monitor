@@ -47,6 +47,14 @@ brief current when modules, commands or data paths change.
 `PLAN.md`; a fact lives in one file and others link to it; old narratives that no longer guide
 decisions go to a git tag, with a one-line pointer, not into files agents read.
 
+## GPU worker
+
+When the user asks to stop a process that was run manually on the GPU worker, it means the worker itself
+must not stay up: stop the process and anything keeping the worker awake (keep-alive loops, status polls,
+open sessions), then let it idle-stop. Keep the idle-stop rules in place (`worker_idle.py` with
+`rules/worker_idle.json`, and the CloudWatch low-CPU alarm); never disable, lengthen or work around them. Do not
+start, wake or SSH into the worker without asking first.
+
 ## Reply style
 
 Keep chat replies short and informative: answer first, a few lines at most, no padding. Use one

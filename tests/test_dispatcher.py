@@ -157,10 +157,20 @@ def test_hung_session_is_terminated_and_reported_as_timeout(monkeypatch):
             events.append("terminated")
 
     monkeypatch.setattr(worker_host.subprocess, "Popen", lambda *a, **k: Hung())
-    monkeypatch.setattr(worker_host.shutil, "which", lambda name: "bash")
-    settings = {"key_path": Path("k"), "poll_seconds": "1", "ready_timeout": 10, "status_url": "u", "private_ip": "i"}
+    monkeypatch.setattr(worker_host, "power", lambda settings, action: events.append(action) or "x")
+    monkeypatch.setattr(worker_host, "wait_for_ssh", lambda settings, timeout: True)
+    settings = {"key_path": Path("k"), "poll_seconds": "1", "ready_timeout": 10, "private_ip": "i"}
     assert worker_host.run_remote(settings, "cmd", session_timeout=5) == 124
-    assert events == ["terminated"]
+    assert events == ["start", "terminated"]
+
+
+def test_session_never_stops_the_worker_itself(monkeypatch):
+    events = []
+    monkeypatch.setattr(worker_host, "power", lambda settings, action: events.append(action) or "x")
+    monkeypatch.setattr(worker_host, "wait_for_ssh", lambda settings, timeout: False)
+    settings = {"key_path": Path("k"), "poll_seconds": "1", "ready_timeout": 10, "private_ip": "i"}
+    assert worker_host.run_remote(settings, "cmd", session_timeout=5) == 1
+    assert events == ["start"]
 
 
 def test_waits_for_manager_to_record_the_last_result_before_judging_progress(tmp_path):

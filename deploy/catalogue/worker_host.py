@@ -3,14 +3,17 @@ import json
 import os
 import shlex
 import shutil
+import socket
 import stat
 import subprocess
+import sys
 import time
 from pathlib import Path
-from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[2]
 MANAGER_IMAGE = "maritime-sts-manager"
+POWER_MODULE = "maritime_tip_cue.worker_power"
+SSH_PORT = 22
 GPU_BUSY_EXIT = 75
 
 
@@ -34,7 +37,7 @@ def load_settings(env_path):
     settings = {
         "env_path": env_path,
         "private_ip": get("WORKER_PRIVATE_IP"),
-        "status_url": get("WORKER_WAKE_STATUS_URL"),
+        "instance_id": get("WORKER_INSTANCE_ID"),
         "key_path": Path(get("WORKER_KEY_PATH", "/home/ubuntu/.ssh/geogen-key.pem")).expanduser(),
         "remote_dir": get("WORKER_REMOTE_DIR"),
         "image": get("WORKER_IMAGE", "maritime-sts-gpu-worker:test"),
@@ -44,15 +47,12 @@ def load_settings(env_path):
         "gpu_min_free_mib": int(get("WORKER_GPU_MIN_FREE_MIB", "5376")),
         "gpu_idle_minutes": int(get("WORKER_GPU_IDLE_MINUTES", "15")),
     }
-    if not settings["private_ip"] or not settings["status_url"] or not settings["remote_dir"]:
-        raise RuntimeError("WORKER_PRIVATE_IP, WORKER_WAKE_STATUS_URL and WORKER_REMOTE_DIR must be configured")
+    if not settings["private_ip"] or not settings["instance_id"] or not settings["remote_dir"]:
+        raise RuntimeError("WORKER_PRIVATE_IP, WORKER_INSTANCE_ID and WORKER_REMOTE_DIR must be configured")
     try:
         ipaddress.ip_address(settings["private_ip"])
     except ValueError as error:
         raise RuntimeError("WORKER_PRIVATE_IP must be an IP address") from error
-    parsed = urlparse(settings["status_url"])
-    if parsed.scheme not in ("http", "https") or parsed.path.rstrip("/") != "/_wake/status":
-        raise RuntimeError("WORKER_WAKE_STATUS_URL must point to the /_wake/status endpoint")
     key_path = settings["key_path"]
     if not key_path.is_file():
         raise RuntimeError(f"EC2 key was not found at {key_path}")
@@ -60,8 +60,6 @@ def load_settings(env_path):
         raise RuntimeError(f"EC2 key permissions must be 600: {key_path}")
     if not shutil.which("docker"):
         raise RuntimeError("Docker was not found on PATH")
-    if not (ROOT / "deploy" / "gpu-worker" / "wake-ec2-ubuntu.sh").is_file():
-        raise RuntimeError("The EC2 wake script was not found")
     return settings
 
 
@@ -170,20 +168,42 @@ def remote_worker_command(settings, worker_args, container_name=None, max_second
     return f"{head}{{ {cleanup}; timeout -k 60 {int(max_seconds)} {run}; code=$?; {cleanup}; exit $code; }}"
 
 
-def run_remote(settings, remote_command, wake_timeout=None, session_timeout=None):
-    wake_script = ROOT / "deploy" / "gpu-worker" / "wake-ec2-ubuntu.sh"
-    bash = shutil.which("bash")
-    if not bash:
-        raise RuntimeError("Bash was not found on PATH")
-    env = os.environ.copy()
-    env["WORKER_KEY_PATH"] = str(settings["key_path"])
-    env["POLL_SECONDS"] = settings["poll_seconds"]
-    env["WAKE_TIMEOUT_SECONDS"] = str(wake_timeout or settings["ready_timeout"])
-    process = subprocess.Popen(
-        [bash, str(wake_script), settings["status_url"], settings["private_ip"], "--", remote_command],
-        cwd=ROOT,
-        env=env,
-    )
+def power(settings, action):
+    return manager_json(settings["env_path"], POWER_MODULE, action)["state"]
+
+
+def wait_for_ssh(settings, timeout, sleep=time.sleep, clock=time.time):
+    deadline = clock() + timeout
+    while clock() < deadline:
+        try:
+            with socket.create_connection((settings["private_ip"], SSH_PORT), timeout=3):
+                return True
+        except OSError:
+            sleep(float(settings["poll_seconds"]))
+    return False
+
+
+def ssh_command(settings, remote_command, tty=True):
+    return [
+        "ssh",
+        *(["-tt"] if tty else []),
+        "-i",
+        str(settings["key_path"]),
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "StrictHostKeyChecking=accept-new",
+        "-o",
+        "ServerAliveInterval=20",
+        "-o",
+        "ServerAliveCountMax=120",
+        f"ubuntu@{settings['private_ip']}",
+        remote_command,
+    ]
+
+
+def run_ssh(settings, remote_command, session_timeout):
+    process = subprocess.Popen(ssh_command(settings, remote_command), cwd=ROOT)
     try:
         return process.wait(timeout=session_timeout)
     except subprocess.TimeoutExpired:
@@ -194,3 +214,12 @@ def run_remote(settings, remote_command, wake_timeout=None, session_timeout=None
             process.kill()
             process.wait()
         return 124
+
+
+def run_remote(settings, remote_command, wake_timeout=None, session_timeout=None):
+    timeout = wake_timeout or settings["ready_timeout"]
+    power(settings, "start")
+    if not wait_for_ssh(settings, timeout):
+        print("Private SSH did not become reachable", file=sys.stderr)
+        return 1
+    return run_ssh(settings, remote_command, session_timeout)
