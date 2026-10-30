@@ -51,6 +51,8 @@ cloud and haze beside a ship pass it. A blob under 40 sigma now counts only when
 as cloud and thin haze as water), band ratios and spectral angles (a group of confirmed pairs is as flat as cloud), blob
 solidity and edge sharpness. A plain 45 cut on every blob loses 6 of 17 labelled fixture pairs whose hull B is dim.
 
+Cloud beside the detection (2026-10-31, `cloud_beside_single_min_share`): the dim-blob rule above still passed haze pairs because the haze also widens hull A (runs 91, 240, 212: plateau 10 to 13 sigma, width ratio 3.0 to 3.25, 4 to 40 percent of the ring around the detection is cloud). Candidate, not applied (limit `null`, tbd): when the share of cloud in that ring is at or above the limit the hull would be called single before any hull B search. The 57 confirmed S2 pairs that have a mask all have exactly 0 percent cloud beside them; a limit would lie in the unsampled gap below the smallest false pair (4.2 percent) and needs a replay on stored windows first. Needs the L2A mask, so scenes processed the day they are captured are unaffected.
+
 ## s1object
 Radar outline of one object: dB chips of VH and VV, the object's brightness scale is a high percentile of the
 pixels near the Ai2 point, and the outline is the connected set of pixels within a fixed drop below it. Side-lobe

@@ -470,6 +470,11 @@ def blank_result(verdict: str, reason: str) -> dict:
     }
 
 
+def cloudy_beside(ring_stats: dict, cfg: dict) -> bool:
+    share, limit = ring_stats["cloud_share"], cfg["cloud_beside_single_min_share"]
+    return share is not None and limit is not None and share >= limit
+
+
 def check(win: dict, box: dict, cfg: dict) -> dict:
     base_water = win["water"]
     names = win["shape_bands"]
@@ -513,6 +518,9 @@ def check(win: dict, box: dict, cfg: dict) -> dict:
             f"({ring_stats['cloud_share']:.0%} of the surroundings are cloud)"
         )
         return empty_result(out, "unmeasured")
+    if cloudy_beside(ring_stats, cfg):
+        out["cloud_single_reason"] = f"cloud: {ring_stats['cloud_share']:.0%} of the surroundings are cloud, no hull B search"
+        return empty_result(out, "single")
     if fix.get("at_edge"):
         out["unmeasured_reason"] = "hull A runs out of the image window, so its length and beam are not measured"
         return empty_result(out, "unmeasured")

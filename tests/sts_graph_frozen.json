@@ -326,6 +326,11 @@
       "unit": "cells",
       "basis": "Fewest clear water pixels around the hull; below this the hull is unmeasured for cloud."
     },
+    "cloud_beside_single_min_share": {
+      "value": 1.01,
+      "unit": "share",
+      "basis": "Frozen copy: the rule is disabled here so the fixture verdicts stay as frozen."
+    },
     "max_hull_length_m": {
       "value": 400,
       "unit": "m",

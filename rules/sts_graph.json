@@ -326,6 +326,12 @@
       "unit": "cells",
       "basis": "Fewest clear water pixels around the hull; below this the hull is unmeasured for cloud."
     },
+    "cloud_beside_single_min_share": {
+      "value": null,
+      "unit": "share",
+      "basis": "tbd",
+      "note": "Candidate, not applied: call an S2 hull single without a hull B search when at least this share of the ring around the detection is cloud. In the stored S2 pairs 57 confirmed pairs have 0 percent cloud beside them and the false pairs of runs 91, 240 and 212 have 4, 30 and 40 percent; nothing is sampled between 0 and 4 percent. Needs a replay on stored windows, including Johor and EOPL, before a value is chosen."
+    },
     "max_hull_length_m": {
       "value": 400,
       "unit": "m",
