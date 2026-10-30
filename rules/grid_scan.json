@@ -59,5 +59,10 @@
     "value": 3,
     "unit": "days",
     "basis": "A queued scene with no review result after this many days is reported as stuck in the status output; it is not retried automatically."
+  },
+  "batch_poll_minutes": {
+    "value": 10,
+    "unit": "minutes",
+    "basis": "User decision 2026-10-31: the scan is an ad-hoc batch run by hand, not a timer. The batch planner repeats its step at the 10-minute spacing the retired timer used, until the first_dates_per_day tiles are queued and every tile is decided; max_scans_per_day then counts scenes since the batch started."
   }
 }

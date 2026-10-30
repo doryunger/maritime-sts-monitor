@@ -191,16 +191,16 @@ and publication boundaries.
 
 ## Random grid scan
 
-`sts-grid-scan.timer` runs `python -m maritime_tip_cue.grid_scan plan` every ten minutes (minutes 08, 18, 28, 38, 48, 58 UTC, clear of the catalogue and AIS runs) in the manager image. It resolves finished scans, closes tiles and keeps at most `grids_in_flight` (2) tiles queued and unfinished, each with its two scenes queued together, up to 25 tiles and 50 scenes a day; the dispatcher and worker then process the jobs like any other. Install after rebuilding the manager image:
+The grid scan is an ad-hoc batch started by hand, with no timer: `sudo systemctl start sts-grid-scan.service` runs `python -m maritime_tip_cue.grid_scan batch` in the manager image until 25 random tiles are queued and decided. Every 10 minutes it resolves finished scans, closes tiles and keeps at most `grids_in_flight` (2) tiles queued and unfinished, each with its two scenes queued together (one only if a tile's first scene has a pair), up to 25 tiles and 50 scenes since the batch started; the dispatcher and worker process the jobs like any other. Install after rebuilding the manager image:
 
 ```bash
 sudo docker build -f deploy/catalogue/Dockerfile -t maritime-sts-manager .
 sudo docker run --rm --network host --user 1000:1000 --env-file .env -e STS_CONFIG_PATH=/app/config.yaml maritime-sts-manager -m maritime_tip_cue.pg init
-sudo cp deploy/catalogue/sts-grid-scan.service deploy/catalogue/sts-grid-scan.timer /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now sts-grid-scan.timer
+sudo cp deploy/catalogue/sts-grid-scan.service /etc/systemd/system/
+sudo systemctl daemon-reload
 ```
 
-`plan --dry-run` prints the tiles and scenes it would queue without writing. `status` prints the round, tile counts by status and today's budget; `export` prints every tile with its status for a map. Pause with `sudo systemctl stop sts-grid-scan.timer`; queued scenes still run.
+`plan --dry-run` prints the tiles and scenes it would queue without writing. `status` prints the round, tile counts by status and today's budget; `export` prints every tile with its status for a map. Stop a batch with `sudo systemctl stop sts-grid-scan.service`; queued scenes still run. A scene that never gets a review result keeps its tile open, so the batch waits until it is stopped.
 
 ## Worker idle check
 

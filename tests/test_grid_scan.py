@@ -19,6 +19,7 @@ RULES = {
     "min_hulls_for_second_date": None,
     "min_shore_distance_m": 2000,
     "result_wait_days": 3,
+    "batch_poll_minutes": 10,
 }
 NOW = datetime(2026, 10, 30, 12, 0, tzinfo=UTC)
 
@@ -249,3 +250,27 @@ def test_a_grid_can_mix_an_s1_and_an_s2_scene(pgdb, small_grid, monkeypatch):
     result = grid_scan.run(pgdb, now=NOW, rng=random.Random(1))
     assert result["errors"] == [] and [(item["date_no"], item["source"]) for item in result["queued"]] == [(1, "s1"), (2, "s2")]
     assert pgdb.execute("SELECT COUNT(*) FROM processing.jobs").fetchone()[0] == 2
+
+
+def test_batch_runs_until_the_requested_tiles_are_decided_then_stops(pgdb, small_grid):
+    rules = dict(RULES, grids_in_flight=1)
+    pairs_for = {}
+    sleeps = []
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        for tile in {row[0] for row in pgdb.execute("SELECT tile_id FROM processing.grid_scans").fetchall()}:
+            for _, site, scene_id, _ in tile_scenes(pgdb, tile):
+                if (site, scene_id) not in pairs_for:
+                    pairs_for[(site, scene_id)] = 0
+                    finish(pgdb, site, scene_id, pairs=0)
+
+    import unittest.mock as mock
+
+    with mock.patch.object(grid_scan, "load_rules", lambda: rules):
+        summary = grid_scan.batch(pgdb, rules, sleep=sleep, rng=random.Random(7), clock=lambda: NOW)
+    assert set(sleeps) == {600}
+    queued_tiles = {row[0] for row in pgdb.execute("SELECT tile_id FROM processing.grid_scans").fetchall()}
+    assert len(queued_tiles) == 2
+    assert grid_scan.batch_finished(pgdb, NOW, rules)
+    assert summary["errors"] == []

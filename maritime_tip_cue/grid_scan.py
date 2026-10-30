@@ -2,6 +2,7 @@ import argparse
 import json
 import random
 import sys
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -149,7 +150,7 @@ def used_by_tile(db, tile_id):
     return {row["scene"] for row in found}, {row["scene_time"].astimezone(UTC).date().isoformat() for row in found}
 
 
-def run(db, now=None, rng=None, dry_run=False):
+def run(db, now=None, rng=None, dry_run=False, since=None):
     now = now or datetime.now(UTC)
     rng = rng or random.SystemRandom()
     grid, rules = load_grid(), load_rules()
@@ -189,7 +190,7 @@ def run(db, now=None, rng=None, dry_run=False):
             else:
                 in_flight += 1
         in_flight += len(pending_second)
-        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_start = since or now.replace(hour=0, minute=0, second=0, microsecond=0)
         today = catalogue.one(
             db,
             "SELECT COUNT(*) AS scans, COUNT(*) FILTER (WHERE date_no=1) AS firsts FROM processing.grid_scans "
@@ -265,6 +266,26 @@ def run(db, now=None, rng=None, dry_run=False):
     return summary
 
 
+def batch_finished(db, since, rules):
+    queued = catalogue.one(
+        db, "SELECT COUNT(*) AS firsts FROM processing.grid_scans WHERE date_no=1 AND queued_utc>=%s", (since,)
+    )["firsts"]
+    round_no = grid_status.current_round(db_rows(db))
+    return queued >= rules["first_dates_per_day"] and not open_tiles(db, round_no)
+
+
+def batch(db, rules, sleep=time.sleep, rng=None, clock=None, report=None):
+    clock = clock or (lambda: datetime.now(UTC))
+    since = clock()
+    while True:
+        summary = run(db, now=clock(), rng=rng, since=since)
+        if report:
+            report(summary)
+        if batch_finished(db, since, rules):
+            return summary
+        sleep(rules["batch_poll_minutes"] * 60)
+
+
 def tile_states(db, grid):
     return grid_status.tile_states(db_rows(db), grid, load_rules())
 
@@ -280,6 +301,7 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     plan = sub.add_parser("plan")
     plan.add_argument("--dry-run", action="store_true")
+    sub.add_parser("batch")
     sub.add_parser("status")
     sub.add_parser("export")
     args = parser.parse_args()
@@ -293,6 +315,12 @@ def main():
                 return 0
             print(json.dumps(result, default=str, indent=1))
             return 1 if result["errors"] else 0
+        if args.command == "batch":
+            def report(summary):
+                print(json.dumps({key: len(summary[key]) for key in ("queued", "decided", "errors", "no_imagery")}), flush=True)
+
+            batch(db, load_rules(), report=report)
+            return 0
         if args.command == "status":
             print(json.dumps(status(db), indent=1))
         else:
