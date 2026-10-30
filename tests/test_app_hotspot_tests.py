@@ -167,6 +167,7 @@ def test_grid_with_one_empty_scene_has_no_finish_date_until_its_second_scene_is_
         "('T1',1,1,'test_east_of_sohar','s2','probe','2026-10-18T05:00:00Z','j1','2026-10-29T10:00:00Z','queued')"
     )
     pgdb.execute("UPDATE review.scenes SET counts = jsonb_set(counts, '{verdicts}', '{\"single\": 3}') WHERE scene_id='probe'")
+    pgdb.execute("UPDATE review.hulls SET verdict='single' WHERE scene_id='probe'")
     pgdb.commit()
     grid = client.get("/api/hotspot-tests/grid/runs").json()[0]["grids"][0]
     assert (grid["status"], grid["pairs"], grid["finished"]) == ("waiting", 0, None)

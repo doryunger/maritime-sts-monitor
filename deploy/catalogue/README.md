@@ -200,7 +200,7 @@ sudo cp deploy/catalogue/sts-grid-scan.service /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
 
-`plan --dry-run` prints the tiles and scenes it would queue without writing. `status` prints the round, tile counts by status and today's budget; `export` prints every tile with its status for a map. Stop a batch with `sudo systemctl stop sts-grid-scan.service`; queued scenes still run. A scene that never gets a review result keeps its tile open, so the batch waits until it is stopped.
+`plan --dry-run` prints the tiles and scenes it would queue without writing. `status` prints the round, tile counts by status and today's budget; `export` prints every tile with its status for a map. Stop a batch with `sudo systemctl stop sts-grid-scan.service`; queued scenes still run. Continue one with `grid_scan batch --since <ISO start>`, which counts the 25 tiles from that start (use it after a code deploy, which stops the batch). A scene that never gets a review result keeps its tile open, so the batch waits until it is stopped.
 
 ## Worker idle check
 

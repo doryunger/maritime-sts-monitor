@@ -139,6 +139,11 @@ def finish(pgdb, site, scene_id, pairs, checked=5):
         "INSERT INTO review.scenes (run_key, scene_id, site, source, status, counts) VALUES (%s,%s,%s,'s2','checked',%s)",
         (run_key, scene_id, site, Jsonb({"checked": checked, "verdicts": {"pair": pairs, "single": checked - pairs}})),
     )
+    for number in range(checked):
+        pgdb.execute(
+            "INSERT INTO review.hulls (run_key, scene_id, site, hull_id, verdict) VALUES (%s,%s,%s,%s,%s)",
+            (run_key, scene_id, site, f"h{number}", "pair" if number < pairs else "single"),
+        )
     pgdb.commit()
 
 
@@ -274,3 +279,43 @@ def test_batch_runs_until_the_requested_tiles_are_decided_then_stops(pgdb, small
     assert len(queued_tiles) == 2
     assert grid_scan.batch_finished(pgdb, NOW, rules)
     assert summary["errors"] == []
+
+
+def exclude_hull(pgdb, scene_id, hull_id, status="other"):
+    pgdb.execute(
+        "INSERT INTO review.qa_flags (run_key, hull_id, scene_id, status) "
+        "SELECT run_key, %s, scene_id, %s FROM review.hulls WHERE scene_id=%s AND hull_id=%s",
+        (f"{scene_id}__{hull_id}", status, scene_id, hull_id),
+    )
+    pgdb.commit()
+
+
+def test_a_pair_excluded_by_qa_no_longer_counts_and_the_tile_goes_cold(pgdb, small_grid):
+    first = grid_scan.run(pgdb, now=NOW, rng=random.Random(7))
+    hit, other = sorted({item["tile"] for item in first["queued"]})
+    first_scene, second_scene = tile_scenes(pgdb, hit)
+    finish(pgdb, f"test_grid_{hit}", first_scene[2], pairs=1)
+    finish(pgdb, f"test_grid_{hit}", second_scene[2], pairs=0)
+    closed = grid_scan.run(pgdb, now=NOW + timedelta(days=1), rng=random.Random(7))
+    assert {item["tile"]: item["outcome"] for item in closed["decided"]}[hit] == "candidate"
+    exclude_hull(pgdb, first_scene[2], "h0")
+    later = grid_scan.run(pgdb, now=NOW + timedelta(days=2), rng=random.Random(7))
+    assert {"tile": hit, "from": "candidate", "to": "cold"} in later["reconciled"]
+    states = {state["id"]: state for state in grid_scan.tile_states(pgdb, small_grid)}
+    assert states[hit]["status"] == "scanned_no_pairs" and states[hit]["decision"] == "cold"
+
+
+def test_a_qa_excluded_first_pair_reopens_the_tile_for_its_second_scene(pgdb, small_grid, monkeypatch):
+    monkeypatch.setattr(grid_scan, "load_rules", lambda: dict(RULES, grids_in_flight=1))
+    first = grid_scan.run(pgdb, now=NOW, rng=random.Random(7))
+    (tile,) = {item["tile"] for item in first["queued"]}
+    first_scene = tile_scenes(pgdb, tile)[0]
+    pgdb.execute("DELETE FROM processing.grid_scans WHERE tile_id=%s AND date_no=2", (tile,))
+    pgdb.commit()
+    finish(pgdb, f"test_grid_{tile}", first_scene[2], pairs=1)
+    closed = grid_scan.run(pgdb, now=NOW + timedelta(days=1), rng=random.Random(7))
+    assert {item["tile"]: item["outcome"] for item in closed["decided"]}[tile] == "candidate"
+    exclude_hull(pgdb, first_scene[2], "h0")
+    later = grid_scan.run(pgdb, now=NOW + timedelta(days=2), rng=random.Random(7))
+    assert {"tile": tile, "from": "candidate", "to": "second"} in later["reconciled"]
+    assert [item["date_no"] for item in later["queued"] if item["tile"] == tile] == [2]

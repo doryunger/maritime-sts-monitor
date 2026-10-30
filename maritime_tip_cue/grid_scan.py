@@ -73,13 +73,14 @@ def resolve_results(db, now, rules, dry_run, summary):
     for scan in waiting:
         result = catalogue.one(
             db,
-            "SELECT status,counts FROM review.scenes WHERE site=%s AND scene_id=%s ORDER BY run_key DESC LIMIT 1",
+            f"SELECT s.status,s.counts,{grid_status.qa_pairs_sql(rules)} AS qa_pairs FROM review.scenes s "
+            "WHERE s.site=%s AND s.scene_id=%s ORDER BY s.run_key DESC LIMIT 1",
             (scan["site"], scan["scene"]),
         )
         key = (scan["tile_id"], scan["round"], scan["date_no"])
         if result is not None and result["status"] == "checked":
             counts = result["counts"] or {}
-            pairs, hulls = grid_status.count_hits(counts, rules), counts.get("checked", 0)
+            pairs, hulls = result["qa_pairs"], counts.get("checked", 0)
             summary["resolved"].append({"tile": scan["tile_id"], "date_no": scan["date_no"], "pairs": pairs, "hulls": hulls})
             if not dry_run:
                 db.execute(
@@ -99,6 +100,41 @@ def resolve_results(db, now, rules, dry_run, summary):
                 )
         elif now - scan["queued_utc"] > timedelta(days=rules["result_wait_days"]):
             summary["stuck"].append({"tile": scan["tile_id"], "date_no": scan["date_no"], "job_id": scan["job_id"]})
+
+
+def reconcile(db, rules, summary):
+    rescans = catalogue.rows(
+        db,
+        f"SELECT g.tile_id,g.round,g.date_no,g.pairs,{grid_status.qa_pairs_sql(rules)} AS qa_pairs "
+        "FROM processing.grid_scans g JOIN LATERAL (SELECT run_key,site,scene_id FROM review.scenes s "
+        "WHERE s.site=g.site AND s.scene_id=g.scene ORDER BY s.run_key DESC LIMIT 1) s ON true WHERE g.status='done'",
+    )
+    for scan in rescans:
+        if scan["qa_pairs"] != scan["pairs"]:
+            db.execute(
+                "UPDATE processing.grid_scans SET pairs=%s WHERE tile_id=%s AND round=%s AND date_no=%s",
+                (scan["qa_pairs"], scan["tile_id"], scan["round"], scan["date_no"]),
+            )
+            summary["rechecked"].append({"tile": scan["tile_id"], "date_no": scan["date_no"], "pairs": scan["qa_pairs"]})
+    for visit in catalogue.rows(
+        db, "SELECT tile_id,round,outcome FROM processing.grid_visits WHERE outcome IN ('candidate','cold','quiet')"
+    ):
+        scans = catalogue.rows(
+            db,
+            "SELECT status,pairs,hulls FROM processing.grid_scans WHERE tile_id=%s AND round=%s ORDER BY date_no",
+            (visit["tile_id"], visit["round"]),
+        )
+        outcome = decide(scans, rules)
+        if outcome == visit["outcome"]:
+            continue
+        if outcome in ("candidate", "cold", "quiet"):
+            db.execute(
+                "UPDATE processing.grid_visits SET outcome=%s WHERE tile_id=%s AND round=%s",
+                (outcome, visit["tile_id"], visit["round"]),
+            )
+        else:
+            db.execute("DELETE FROM processing.grid_visits WHERE tile_id=%s AND round=%s", (visit["tile_id"], visit["round"]))
+        summary["reconciled"].append({"tile": visit["tile_id"], "from": visit["outcome"], "to": outcome})
 
 
 def open_tiles(db, round_no):
@@ -162,6 +198,8 @@ def run(db, now=None, rng=None, dry_run=False, since=None):
         "grid_scan": True,
         "dry_run": dry_run,
         "resolved": [],
+        "rechecked": [],
+        "reconciled": [],
         "failed": [],
         "stuck": [],
         "decided": [],
@@ -177,6 +215,8 @@ def run(db, now=None, rng=None, dry_run=False, since=None):
                     (scan_id, now, catalogue.jsonb({"grid_scan": True, "channels": []})),
                 )
         resolve_results(db, now, rules, dry_run, summary)
+        if not dry_run:
+            reconcile(db, rules, summary)
         round_no = grid_status.current_round(db_rows(db))
         pending_second = []
         in_flight = 0
@@ -274,9 +314,9 @@ def batch_finished(db, since, rules):
     return queued >= rules["first_dates_per_day"] and not open_tiles(db, round_no)
 
 
-def batch(db, rules, sleep=time.sleep, rng=None, clock=None, report=None):
+def batch(db, rules, sleep=time.sleep, rng=None, clock=None, report=None, since=None):
     clock = clock or (lambda: datetime.now(UTC))
-    since = clock()
+    since = since or clock()
     while True:
         summary = run(db, now=clock(), rng=rng, since=since)
         if report:
@@ -301,7 +341,8 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     plan = sub.add_parser("plan")
     plan.add_argument("--dry-run", action="store_true")
-    sub.add_parser("batch")
+    batch_parser = sub.add_parser("batch")
+    batch_parser.add_argument("--since")
     sub.add_parser("status")
     sub.add_parser("export")
     args = parser.parse_args()
@@ -319,7 +360,8 @@ def main():
             def report(summary):
                 print(json.dumps({key: len(summary[key]) for key in ("queued", "decided", "errors", "no_imagery")}), flush=True)
 
-            batch(db, load_rules(), report=report)
+            since = datetime.fromisoformat(args.since) if args.since else None
+            batch(db, load_rules(), report=report, since=since)
             return 0
         if args.command == "status":
             print(json.dumps(status(db), indent=1))

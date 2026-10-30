@@ -47,11 +47,6 @@ def isoformat(value):
     return value.isoformat() if hasattr(value, "isoformat") else value
 
 
-def count_hits(counts, rules):
-    verdicts = (counts or {}).get("verdicts") or {}
-    return sum(verdicts.get(name, 0) for name in rules["hit_verdicts"])
-
-
 def decide(scans, rules):
     if any(scan["status"] == "done" and scan["pairs"] for scan in scans):
         return "candidate"
@@ -67,19 +62,30 @@ def decide(scans, rules):
     return "second"
 
 
+def qa_pairs_sql(rules, scene="s"):
+    hits = ",".join("'" + name.replace("'", "''") + "'" for name in rules["hit_verdicts"])
+    return (
+        f"(SELECT COUNT(*) FROM review.findings f WHERE f.run_key={scene}.run_key AND f.scene_id={scene}.scene_id "
+        f"AND f.site={scene}.site AND f.verdict IN ({hits}))"
+    )
+
+
 def load_scans(rows, rules):
     scans = rows(
         "SELECT g.tile_id,g.round,g.date_no,g.source,g.scene,g.scene_time,g.queued_utc,g.status,g.pairs,g.hulls,"
-        "j.status AS job_status,rs.status AS result_status,rs.counts,rs.run_no,rs.updated_utc "
+        "j.status AS job_status,rs.status AS result_status,rs.counts,rs.run_no,rs.updated_utc,rs.qa_pairs "
         "FROM processing.grid_scans g LEFT JOIN processing.jobs j ON j.job_id=g.job_id LEFT JOIN LATERAL "
-        "(SELECT s.status,s.counts,s.updated_utc,r.run_no FROM review.scenes s JOIN review.runs r ON r.run_key=s.run_key "
+        f"(SELECT s.status,s.counts,s.updated_utc,r.run_no,{qa_pairs_sql(rules)} AS qa_pairs "
+        "FROM review.scenes s JOIN review.runs r ON r.run_key=s.run_key "
         "WHERE s.site=g.site AND s.scene_id=g.scene ORDER BY s.run_key DESC LIMIT 1) rs ON true "
         "ORDER BY g.tile_id,g.round,g.date_no"
     )
     for scan in scans:
-        if scan["status"] == "queued" and scan["result_status"] == "checked":
-            counts = scan["counts"] or {}
-            scan["status"], scan["pairs"], scan["hulls"] = "done", count_hits(counts, rules), counts.get("checked", 0)
+        if scan["result_status"] != "checked":
+            continue
+        scan["pairs"] = scan["qa_pairs"]
+        if scan["status"] == "queued":
+            scan["status"], scan["hulls"] = "done", (scan["counts"] or {}).get("checked", 0)
     return scans
 
 
@@ -106,7 +112,7 @@ def progress(scans, visit, rules):
         "status": status,
         "pairs": sum(scan["pairs"] or 0 for scan in done),
         "finished": finished,
-        "decision": visit["outcome"] if visit is not None else outcome,
+        "decision": visit["outcome"] if visit is not None and visit["outcome"] not in ("candidate", "cold") else outcome,
     }
 
 
