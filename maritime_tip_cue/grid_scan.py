@@ -351,7 +351,11 @@ def batch(db, rules, sleep=time.sleep, rng=None, clock=None, report=None, since=
     with catalogue.tx(db):
         drawn = draw_batch(db, since, rules, rng)
     while True:
-        summary = run(db, now=clock(), rng=rng, since=since, drawn=drawn)
+        try:
+            summary = run(db, now=clock(), rng=rng, since=since, drawn=drawn)
+        except BlockingIOError:
+            sleep(rules["batch_poll_minutes"] * 60)
+            continue
         if report:
             report(summary)
         if batch_finished(db, since):

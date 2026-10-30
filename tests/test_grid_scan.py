@@ -341,3 +341,29 @@ def test_a_batch_started_after_cells_were_queued_keeps_them_as_the_first_drawn(p
     (queued,) = {item["tile"] for item in first["queued"]}
     drawn = grid_scan.draw_batch(pgdb, NOW, rules, random.Random(3))
     assert drawn[0] == queued and len(drawn) == 2 and len(set(drawn)) == 2
+
+
+def test_batch_waits_and_retries_when_another_controller_holds_the_ledger_lock(pgdb, small_grid, monkeypatch):
+    rules = dict(RULES, grids_in_flight=2)
+    monkeypatch.setattr(grid_scan, "load_rules", lambda: rules)
+    real_run = grid_scan.run
+    calls = []
+
+    def flaky(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise BlockingIOError("held")
+        return real_run(*args, **kwargs)
+
+    monkeypatch.setattr(grid_scan, "run", flaky)
+    sleeps = []
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        for tile in {row[0] for row in pgdb.execute("SELECT tile_id FROM processing.grid_scans").fetchall()}:
+            for _, site, scene_id, _ in tile_scenes(pgdb, tile):
+                if pgdb.execute("SELECT 1 FROM review.scenes WHERE scene_id=%s", (scene_id,)).fetchone() is None:
+                    finish(pgdb, site, scene_id, pairs=0)
+
+    grid_scan.batch(pgdb, rules, sleep=sleep, rng=random.Random(7), clock=lambda: NOW)
+    assert len(calls) >= 2 and sleeps[0] == 600 and grid_scan.batch_finished(pgdb, NOW)
