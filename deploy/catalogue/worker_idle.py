@@ -11,6 +11,7 @@ from worker_host import ROOT
 RULES_PATH = ROOT / "rules" / "worker_idle.json"
 RULE_NAMES = ("cpu_busy_percent_max", "gpu_busy_percent_max", "quiet_checks_to_stop", "sample_seconds")
 MEASURE_TIMEOUT_SECONDS = 90
+STATUS_MODULE = "maritime_tip_cue.worker_status"
 
 
 def load_rules(path=RULES_PATH):
@@ -79,7 +80,7 @@ def measure(settings, rules):
     return parse_measurement(result.stdout) if result.returncode == 0 else None
 
 
-def run_check(directory, instance_state, measure_worker, stop_worker, rules):
+def run_check(directory, instance_state, measure_worker, stop_worker, rules, record_status=None):
     directory.mkdir(parents=True, exist_ok=True)
     with (directory / "worker_idle.lock").open("a+") as lock:
         try:
@@ -90,6 +91,8 @@ def run_check(directory, instance_state, measure_worker, stop_worker, rules):
         state_name = instance_state()
         measurement = measure_worker() if state_name == "running" else None
         action, quiet_checks = decide(state_name, measurement, state["quiet_checks"], rules)
+        if record_status:
+            record_status(state_name, measurement)
         if action == "stop":
             stop_worker()
         state["quiet_checks"] = quiet_checks
@@ -109,12 +112,22 @@ def main(argv=None):
         if not args.dry_run:
             worker_host.power(settings, "stop")
 
+    def record_status(state_name, measurement):
+        arguments = ["record", "--state", state_name]
+        if measurement:
+            arguments += ["--cpu", str(measurement["cpu"]), "--gpu", str(measurement["gpu"])]
+        try:
+            worker_host.manager_json(env_path, STATUS_MODULE, *arguments)
+        except RuntimeError as error:
+            print(f"worker status not recorded: {error}", file=sys.stderr)
+
     result = run_check(
         state_dir(),
         lambda: worker_host.power(settings, "state"),
         lambda: measure(settings, rules),
         stop_worker,
         rules,
+        record_status,
     )
     print(json.dumps(result, sort_keys=True), flush=True)
     return 0

@@ -257,6 +257,12 @@ create table if not exists processing.grid_visits (
     primary key (tile_id, round)
 );
 
+create table if not exists processing.worker_status (
+    id integer primary key check (id = 1),
+    instance_state text not null, cpu_percent integer, gpu_percent integer, activity text,
+    measured_utc timestamptz not null
+);
+
 create or replace view review.run_lineage as
 select r.run_key, r.run_no, r.origin, r.folder, r.attempt_id, a.attempt_no, a.status as attempt_status,
     j.job_id, j.status as job_status, j.scan_id, j.site, j.source

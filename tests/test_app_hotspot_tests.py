@@ -230,3 +230,14 @@ def test_the_map_accumulates_results_across_rounds(both, pgdb, monkeypatch):
     assert tiles["T2"]["status"] == "scanned_no_pairs"
     assert tiles["T3"]["status"] == "processing"
     assert tiles["T4"]["status"] == "unscanned"
+
+
+def test_worker_status_is_empty_until_the_idle_check_has_recorded_one(both, pgdb):
+    client, live, test = both
+    assert client.get("/api/hotspot-tests/worker").json() is None
+    from maritime_tip_cue import worker_status
+
+    worker_status.record(pgdb, "running", 60, 0, (5, 5))
+    pgdb.commit()
+    body = client.get("/api/hotspot-tests/worker").json()
+    assert (body["state"], body["activity"], body["cpu"], body["gpu"]) == ("running", "preparing imagery", 60, 0)

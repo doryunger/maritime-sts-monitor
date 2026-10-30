@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.backend import auth, queue, runs, s3runs, sync
-from maritime_tip_cue import grid_status, hotspot_tests
+from maritime_tip_cue import grid_status, hotspot_tests, worker_status
 from maritime_tip_cue.config import env, settings
 
 DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
@@ -81,6 +81,11 @@ def get_hotspot_test_grid():
 @app.get("/api/hotspot-tests/grid/runs")
 def get_hotspot_test_grid_runs():
     return grid_status.scan_runs(runs.query, grid_status.load_rules())
+
+
+@app.get("/api/hotspot-tests/worker")
+def get_hotspot_test_worker():
+    return worker_status.read(runs.query)
 
 
 @app.get("/api/hotspot-tests/grid/land")

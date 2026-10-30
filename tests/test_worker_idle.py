@@ -73,3 +73,12 @@ def test_second_check_cannot_run_concurrently(tmp_path):
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
         result = check(tmp_path, "running", {"cpu": 1, "gpu": 0}, [])
     assert result["action"] == "skip"
+
+
+def test_every_check_records_the_worker_status(tmp_path):
+    seen = []
+    worker_idle.run_check(
+        tmp_path, lambda: "running", lambda: {"cpu": 40, "gpu": 0}, lambda: None, RULES, lambda name, m: seen.append((name, m))
+    )
+    worker_idle.run_check(tmp_path, lambda: "stopped", lambda: None, lambda: None, RULES, lambda name, m: seen.append((name, m)))
+    assert seen == [("running", {"cpu": 40, "gpu": 0}), ("stopped", None)]

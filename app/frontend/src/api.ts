@@ -241,6 +241,14 @@ export interface GridRunEntry {
   scene: string | null;
 }
 
+export interface WorkerStatus {
+  state: string;
+  cpu: number | null;
+  gpu: number | null;
+  activity: string | null;
+  measured_utc: string;
+}
+
 export interface GridRun {
   run: number;
   day: string;
@@ -305,6 +313,7 @@ export const api = {
   run: (n: number) => fetch(`/api/runs/${n}`).then((r) => json<RunDetail>(r)),
   hotspotTestGrid: () => fetch("/api/hotspot-tests/grid").then((r) => json<{ summary: GridSummary; tiles: GridTile[] }>(r)),
   hotspotTestGridRuns: () => fetch("/api/hotspot-tests/grid/runs").then((r) => json<GridRun[]>(r)),
+  hotspotTestWorker: () => fetch("/api/hotspot-tests/worker").then((r) => json<WorkerStatus | null>(r)),
   hotspotTestGridLand: () => fetch("/api/hotspot-tests/grid/land").then((r) => json<{ rings: [number, number][][] }>(r)),
   hotspotTestAreas: () => fetch("/api/hotspot-tests/areas").then((r) => json<HotspotTestArea[]>(r)),
   hotspotTestRuns: () => fetch("/api/hotspot-tests/runs").then((r) => json<RunSummary[]>(r)),

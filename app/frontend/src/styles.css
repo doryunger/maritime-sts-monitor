@@ -199,3 +199,7 @@ summary { cursor: pointer; padding: 4px 0; }
 .grid-detail table { table-layout: fixed; max-width: 320px; background: var(--surface); border: 1px solid var(--line); }
 .grid-detail tr.has-pairs { cursor: pointer; font-weight: 600; }
 .grid-detail tr.has-pairs:hover td { background: var(--hl); }
+
+.worker-status { display: flex; flex-wrap: wrap; gap: 0.5rem 2rem; margin: 1rem 0; }
+.worker-status dt { color: var(--muted); font-size: 0.75rem; }
+.worker-status dd { margin: 0; font-weight: 600; }

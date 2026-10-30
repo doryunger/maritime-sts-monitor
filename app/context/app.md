@@ -104,3 +104,5 @@ test areas, run summaries and Parquet keys from the private findings prefix. S3 
 the bucket is not public. Test run detail and flag endpoints filter out singles, unmeasured hulls and duplicate
 roles, and the existing QA cards save only pair-candidate decisions. The regular runs and scene APIs exclude test
 areas so their detector-only results cannot be confused with AIS-enriched findings.
+
+The hotspot-test page shows a worker row between the map and the run table (`/api/hotspot-tests/worker`, one row in `processing.worker_status`). The idle check writes it on every 3-minute check, so it can be about 3 minutes old; the page shows the time of the reading. "Doing" is derived from the same CPU and GPU readings the idle check uses, with the limits in `rules/worker_idle.json`: GPU at or over the limit is detecting, CPU at or over the limit with the GPU quiet is preparing imagery (the download and decoding of a scene, which is all the GPU-idle time of a job: the S2 download and S1 preparation are not separable from outside the worker), both quiet is idle.
