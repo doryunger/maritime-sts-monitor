@@ -127,11 +127,20 @@ def tile_states(rows, grid, rules):
     by_tile = {}
     for scan in load_scans(rows, rules):
         by_tile.setdefault(scan["tile_id"], []).append(scan)
+    drawn = {
+        row["tile_id"]: row["round"]
+        for row in rows(
+            "SELECT tile_id,round FROM processing.grid_draws WHERE batch_utc=(SELECT MAX(batch_utc) FROM processing.grid_draws)"
+        )
+    }
     states = []
     for tile_id, tile in grid.items():
         tile_scans = by_tile.get(tile_id, [])
         decision, round_no = None, None
-        if tile_scans:
+        planned = tile_id in drawn and drawn[tile_id] not in {scan["round"] for scan in tile_scans} and (tile_id, drawn[tile_id]) not in visits
+        if planned:
+            status, round_no = "planned", drawn[tile_id]
+        elif tile_scans:
             by_round = {}
             for scan in tile_scans:
                 by_round.setdefault(scan["round"], []).append(scan)

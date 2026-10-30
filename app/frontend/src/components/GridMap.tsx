@@ -7,10 +7,11 @@ const NORTH = 28;
 const SCALE = 10;
 const WIDTH = (109 - WEST) * SCALE;
 const HEIGHT = (NORTH + 2) * SCALE;
-const INERT = ["unscanned", "no_imagery"];
+const INERT = ["unscanned", "no_imagery", "planned"];
 const LEGEND: { swatch: string; title: string; statuses: string[] }[] = [
   { swatch: "scanned_pairs", title: "Scanned, pairs", statuses: ["scanned_pairs"] },
   { swatch: "scanned_no_pairs", title: "Scanned, no pairs", statuses: ["scanned_no_pairs"] },
+  { swatch: "planned", title: "Planned", statuses: ["planned"] },
   { swatch: "waiting", title: "Waiting", statuses: ["waiting"] },
   { swatch: "processing", title: "Processing", statuses: ["processing"] },
   { swatch: "failed", title: "Failed", statuses: ["failed"] },
@@ -19,6 +20,7 @@ const NAMES: Record<string, string> = {
   scanned_pairs: "Processed, pairs",
   scanned_no_pairs: "Processed, no pairs",
   processing: "Processing",
+  planned: "Planned",
   waiting: "Waiting",
   no_imagery: "No imagery",
   failed: "Failed",

@@ -277,7 +277,7 @@ def test_batch_runs_until_the_requested_tiles_are_decided_then_stops(pgdb, small
     assert set(sleeps) == {600}
     queued_tiles = {row[0] for row in pgdb.execute("SELECT tile_id FROM processing.grid_scans").fetchall()}
     assert len(queued_tiles) == 2
-    assert grid_scan.batch_finished(pgdb, NOW, rules)
+    assert grid_scan.batch_finished(pgdb, NOW)
     assert summary["errors"] == []
 
 
@@ -319,3 +319,25 @@ def test_a_qa_excluded_first_pair_reopens_the_tile_for_its_second_scene(pgdb, sm
     later = grid_scan.run(pgdb, now=NOW + timedelta(days=2), rng=random.Random(7))
     assert {"tile": tile, "from": "candidate", "to": "second"} in later["reconciled"]
     assert [item["date_no"] for item in later["queued"] if item["tile"] == tile] == [2]
+
+
+def test_drawn_cells_show_as_planned_until_they_are_queued(pgdb, small_grid, monkeypatch):
+    rules = dict(RULES, grids_in_flight=1)
+    monkeypatch.setattr(grid_scan, "load_rules", lambda: rules)
+    drawn = grid_scan.draw_batch(pgdb, NOW, rules, random.Random(7))
+    assert len(drawn) == 2 and grid_scan.draw_batch(pgdb, NOW, rules, random.Random(1)) == drawn
+    states = {state["id"]: state["status"] for state in grid_scan.tile_states(pgdb, small_grid)}
+    assert [states[tile] for tile in drawn] == ["planned", "planned"]
+    assert not grid_scan.batch_finished(pgdb, NOW)
+    grid_scan.run(pgdb, now=NOW, rng=random.Random(7), since=NOW, drawn=drawn)
+    states = {state["id"]: state["status"] for state in grid_scan.tile_states(pgdb, small_grid)}
+    assert states[drawn[0]] == "waiting" and states[drawn[1]] == "planned"
+
+
+def test_a_batch_started_after_cells_were_queued_keeps_them_as_the_first_drawn(pgdb, small_grid, monkeypatch):
+    rules = dict(RULES, grids_in_flight=1)
+    monkeypatch.setattr(grid_scan, "load_rules", lambda: rules)
+    first = grid_scan.run(pgdb, now=NOW, rng=random.Random(7), since=NOW)
+    (queued,) = {item["tile"] for item in first["queued"]}
+    drawn = grid_scan.draw_batch(pgdb, NOW, rules, random.Random(3))
+    assert drawn[0] == queued and len(drawn) == 2 and len(set(drawn)) == 2

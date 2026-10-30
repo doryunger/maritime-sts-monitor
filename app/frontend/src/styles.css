@@ -15,6 +15,7 @@
   --warn: #b9770e;
   --hl: #fff6e5;
   --g-unscanned: #e3e6ea;
+  --g-planned: #b9c6dd;
   --g-progress: #f2c94c;
   --g-processing: #2e8b57;
   --g-candidate: #c0392b;
@@ -39,6 +40,7 @@
     --accent-ink: #0b1220;
     --hl: #2e2818;
     --g-unscanned: #343b46;
+    --g-planned: #5a6985;
     --g-progress: #d4a72c;
     --g-processing: #3fb27a;
     --g-candidate: #e05a49;
@@ -174,6 +176,7 @@ summary { cursor: pointer; padding: 4px 0; }
 .grid-map .live { fill: none; stroke: var(--pair); stroke-width: 1; pointer-events: none; }
 .grid-map .live-label { fill: var(--pair); font-size: 7px; pointer-events: none; }
 .tile.unscanned, .swatch.unscanned { fill: var(--g-unscanned); background: var(--g-unscanned); }
+.tile.planned, .swatch.planned { fill: var(--g-planned); background: var(--g-planned); }
 .tile.waiting, .swatch.waiting { fill: var(--g-progress); background: var(--g-progress); }
 .tile.processing, .swatch.processing { fill: var(--g-processing); background: var(--g-processing); }
 .grid-map .tile.processing { stroke: var(--fg); stroke-width: 1; }

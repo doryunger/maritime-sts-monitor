@@ -191,7 +191,7 @@ and publication boundaries.
 
 ## Random grid scan
 
-The grid scan is an ad-hoc batch started by hand, with no timer: `sudo systemctl start sts-grid-scan.service` runs `python -m maritime_tip_cue.grid_scan batch` in the manager image until 25 random tiles are queued and decided. Every 10 minutes it resolves finished scans, closes tiles and keeps at most `grids_in_flight` (2) tiles queued and unfinished, each with its two scenes queued together (one only if a tile's first scene has a pair), up to 25 tiles and 50 scenes since the batch started; the dispatcher and worker process the jobs like any other. Install after rebuilding the manager image:
+The grid scan is an ad-hoc batch started by hand, with no timer: `sudo systemctl start sts-grid-scan.service` runs `python -m maritime_tip_cue.grid_scan batch` in the manager image until 25 random tiles, drawn at the start and shown as Planned on the map, are decided. Every 10 minutes it resolves finished scans, closes tiles and keeps at most `grids_in_flight` (2) tiles queued and unfinished, each with its two scenes queued together (one only if a tile's first scene has a pair), up to 25 tiles and 50 scenes since the batch started; the dispatcher and worker process the jobs like any other. Install after rebuilding the manager image:
 
 ```bash
 sudo docker build -f deploy/catalogue/Dockerfile -t maritime-sts-manager .

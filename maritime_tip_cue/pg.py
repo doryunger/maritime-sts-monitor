@@ -257,6 +257,11 @@ create table if not exists processing.grid_visits (
     primary key (tile_id, round)
 );
 
+create table if not exists processing.grid_draws (
+    batch_utc timestamptz not null, tile_id text not null, round integer not null, position integer not null,
+    primary key (batch_utc, tile_id)
+);
+
 create table if not exists processing.worker_status (
     id integer primary key check (id = 1),
     instance_state text not null, cpu_percent integer, gpu_percent integer, activity text,

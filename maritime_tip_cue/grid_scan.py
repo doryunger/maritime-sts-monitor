@@ -186,7 +186,7 @@ def used_by_tile(db, tile_id):
     return {row["scene"] for row in found}, {row["scene_time"].astimezone(UTC).date().isoformat() for row in found}
 
 
-def run(db, now=None, rng=None, dry_run=False, since=None):
+def run(db, now=None, rng=None, dry_run=False, since=None, drawn=None):
     now = now or datetime.now(UTC)
     rng = rng or random.SystemRandom()
     grid, rules = load_grid(), load_rules()
@@ -264,15 +264,15 @@ def run(db, now=None, rng=None, dry_run=False, since=None):
         firsts_allowed = min(firsts_allowed, max(rules["grids_in_flight"] - in_flight, 0))
         touched = {row["tile_id"] for row in catalogue.rows(db, "SELECT tile_id FROM processing.grid_scans WHERE round=%s", (round_no,))}
         touched |= {row["tile_id"] for row in catalogue.rows(db, "SELECT tile_id FROM processing.grid_visits WHERE round=%s", (round_no,))}
-        pool = [tile_id for tile_id in grid if tile_id not in touched]
-        if not pool and not open_tiles(db, round_no):
+        pool = [tile_id for tile_id in (drawn if drawn is not None else grid) if tile_id not in touched]
+        if drawn is None and not pool and not open_tiles(db, round_no):
             round_no += 1
             pool = list(grid)
         summary["round"] = round_no
         summary["pool"] = len(pool)
         summary["in_flight"] = in_flight
         draws, firsts = 0, 0
-        for tile_id in rng.sample(pool, len(pool)):
+        for tile_id in pool if drawn is not None else rng.sample(pool, len(pool)):
             if firsts >= firsts_allowed or draws >= 4 * max(firsts_allowed, 1):
                 break
             draws += 1
@@ -306,22 +306,55 @@ def run(db, now=None, rng=None, dry_run=False, since=None):
     return summary
 
 
-def batch_finished(db, since, rules):
-    queued = catalogue.one(
-        db, "SELECT COUNT(*) AS firsts FROM processing.grid_scans WHERE date_no=1 AND queued_utc>=%s", (since,)
-    )["firsts"]
+def draw_batch(db, since, rules, rng=None):
+    rng = rng or random.SystemRandom()
+    existing = catalogue.rows(
+        db, "SELECT tile_id FROM processing.grid_draws WHERE batch_utc=%s ORDER BY position", (since,)
+    )
+    if existing:
+        return [row["tile_id"] for row in existing]
     round_no = grid_status.current_round(db_rows(db))
-    return queued >= rules["first_dates_per_day"] and not open_tiles(db, round_no)
+    queued = [
+        row["tile_id"]
+        for row in catalogue.rows(
+            db,
+            "SELECT tile_id FROM processing.grid_scans WHERE date_no=1 AND queued_utc>=%s ORDER BY queued_utc,tile_id",
+            (since,),
+        )
+    ]
+    touched = {row["tile_id"] for row in catalogue.rows(db, "SELECT tile_id FROM processing.grid_scans WHERE round=%s", (round_no,))}
+    touched |= {row["tile_id"] for row in catalogue.rows(db, "SELECT tile_id FROM processing.grid_visits WHERE round=%s", (round_no,))}
+    pool = [tile_id for tile_id in load_grid() if tile_id not in touched and tile_id not in queued]
+    wanted = max(load_rules()["first_dates_per_day"] - len(queued), 0)
+    tiles = queued + rng.sample(pool, min(wanted, len(pool)))
+    for position, tile_id in enumerate(tiles, 1):
+        db.execute(
+            "INSERT INTO processing.grid_draws (batch_utc,tile_id,round,position) VALUES (%s,%s,%s,%s)",
+            (since, tile_id, round_no, position),
+        )
+    return tiles
+
+
+def batch_finished(db, since):
+    undecided = catalogue.one(
+        db,
+        "SELECT COUNT(*) AS n FROM processing.grid_draws d WHERE d.batch_utc=%s AND NOT EXISTS "
+        "(SELECT 1 FROM processing.grid_visits v WHERE v.tile_id=d.tile_id AND v.round=d.round)",
+        (since,),
+    )["n"]
+    return undecided == 0
 
 
 def batch(db, rules, sleep=time.sleep, rng=None, clock=None, report=None, since=None):
     clock = clock or (lambda: datetime.now(UTC))
     since = since or clock()
+    with catalogue.tx(db):
+        drawn = draw_batch(db, since, rules, rng)
     while True:
-        summary = run(db, now=clock(), rng=rng, since=since)
+        summary = run(db, now=clock(), rng=rng, since=since, drawn=drawn)
         if report:
             report(summary)
-        if batch_finished(db, since, rules):
+        if batch_finished(db, since):
             return summary
         sleep(rules["batch_poll_minutes"] * 60)
 
