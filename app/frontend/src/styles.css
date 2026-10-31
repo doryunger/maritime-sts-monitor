@@ -169,7 +169,7 @@ summary { cursor: pointer; padding: 4px 0; }
 .grid-body { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; align-items: flex-start; }
 .grid-map { flex: 0 1 560px; width: 100%; max-width: 560px; height: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
 .grid-map .land { fill: var(--g-land); stroke: var(--line); stroke-width: 0.4; }
-.grid-map .tile { stroke: var(--bg); stroke-width: 0.3; cursor: pointer; }
+.grid-map .tile { stroke: var(--bg); stroke-width: 0.15; cursor: pointer; }
 .grid-map .tile.inert { cursor: default; pointer-events: none; }
 .grid-map .tile:not(.inert):hover { stroke: var(--fg); stroke-width: 1; }
 .grid-map .tile.selected { stroke: var(--fg); stroke-width: 1.2; }

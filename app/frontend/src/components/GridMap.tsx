@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, GridScan, GridSummary, GridTile, label } from "../api";
+import { layout, PITCH } from "./gridLayout";
 
 const WEST = 53;
 const NORTH = 28;
@@ -71,6 +72,7 @@ export default function GridMap() {
     };
   }, []);
 
+  const matrix = useMemo(() => layout(tiles ?? []), [tiles]);
   const chosen = tiles?.find((t) => t.id === selected) ?? null;
   const open = (s: GridScan) => s.pairs && s.run_no && go(`/hotspot-tests/runs/${s.run_no}?scene=${encodeURIComponent(s.scene)}`);
   const result = (s: GridScan) => (s.status === "failed" ? "Failed" : s.status !== "done" ? "Pending" : s.pairs ? (s.pairs === 1 ? "1 pair" : `${s.pairs} pairs`) : "No pairs");
@@ -84,19 +86,23 @@ export default function GridMap() {
         {land.map((ring, i) => (
           <polygon key={i} className="land" points={ring.map(([lon, lat]) => `${px(lon)},${py(lat)}`).join(" ")} />
         ))}
-        {tiles.map((t) => (
+        {tiles.map((t) => {
+          const cell = matrix.cells.get(t.id);
+          if (!cell) return null;
+          return (
           <rect
             key={t.id}
             className={`tile ${t.status}${INERT.includes(t.status) ? " inert" : ""}${t.id === selected ? " selected" : ""}`}
             onClick={INERT.includes(t.status) ? undefined : () => setSelected(t.id === selected ? null : t.id)}
-            x={px(t.bbox[0])}
-            y={py(t.bbox[3])}
-            width={(t.bbox[2] - t.bbox[0]) * SCALE}
-            height={(t.bbox[3] - t.bbox[1]) * SCALE}
+            x={px((cell.col - matrix.offset) * PITCH)}
+            y={py((cell.row + 1 - matrix.offset) * PITCH)}
+            width={PITCH * SCALE}
+            height={PITCH * SCALE}
           >
             {!INERT.includes(t.status) && <title>{`${t.id}: ${name(t.status)}`}</title>}
           </rect>
-        ))}
+          );
+        })}
         {LIVE.map(([name, b]) => (
           <g key={name}>
             <rect className="live" x={px(b[0])} y={py(b[3])} width={(b[2] - b[0]) * SCALE} height={(b[3] - b[1]) * SCALE} />
