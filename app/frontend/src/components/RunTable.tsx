@@ -11,7 +11,14 @@ const COLUMNS: { key: Key; title: string; numeric?: boolean }[] = [
   { key: "pairs", title: "Pairs", numeric: true },
 ];
 
-const STATUS: Record<GridRunEntry["status"], string> = { waiting: "Waiting", processing: "Processing", processed: "Processed", failed: "Failed" };
+const STATUS: Record<GridRunEntry["status"], string> = {
+  pending: "Pending",
+  waiting: "Waiting",
+  processing: "Processing",
+  processed: "Processed",
+  failed: "Failed",
+  no_imagery: "No imagery",
+};
 
 const value = (g: GridRunEntry, key: Key): string | number =>
   key === "tile" ? g.tile_id : key === "date" ? g.finished ?? "9999" : key === "status" ? STATUS[g.status] : g.pairs;

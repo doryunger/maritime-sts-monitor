@@ -367,3 +367,23 @@ def test_batch_waits_and_retries_when_another_controller_holds_the_ledger_lock(p
 
     grid_scan.batch(pgdb, rules, sleep=sleep, rng=random.Random(7), clock=lambda: NOW)
     assert len(calls) >= 2 and sleeps[0] == 600 and grid_scan.batch_finished(pgdb, NOW)
+
+
+def test_a_run_lists_every_drawn_cell_with_the_unqueued_ones_pending(pgdb, small_grid, monkeypatch):
+    from maritime_tip_cue import grid_status
+
+    rules = dict(RULES, grids_in_flight=1)
+    monkeypatch.setattr(grid_scan, "load_rules", lambda: rules)
+    drawn = grid_scan.draw_batch(pgdb, NOW, rules, random.Random(7))
+    grid_scan.run(pgdb, now=NOW, rng=random.Random(7), since=NOW, drawn=drawn)
+    runs = grid_status.scan_runs(lambda sql: [dict(row) for row in _rows(pgdb, sql)], rules)
+    assert len(runs) == 1
+    run = runs[0]
+    assert run["tiles"] == 2 and run["pending"] == 1 and run["waiting"] == 1
+    assert {grid["tile_id"]: grid["status"] for grid in run["grids"]} == {drawn[0]: "waiting", drawn[1]: "pending"}
+
+
+def _rows(conn, sql):
+    cursor = conn.execute(sql)
+    names = [column.name for column in cursor.description]
+    return [dict(zip(names, row)) for row in cursor.fetchall()]

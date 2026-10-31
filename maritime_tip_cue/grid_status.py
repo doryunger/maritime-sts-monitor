@@ -186,33 +186,60 @@ def scan_runs(rows, rules):
         (row["tile_id"], row["round"]): row
         for row in rows("SELECT tile_id,round,outcome,decided_utc FROM processing.grid_visits")
     }
+    draws = rows("SELECT batch_utc,tile_id,round,position FROM processing.grid_draws ORDER BY batch_utc,position")
+    batches = {}
+    for draw in draws:
+        batches.setdefault(draw["batch_utc"], []).append(draw)
+    latest_batch = max(batches, default=None)
     groups = {}
     for scan in load_scans(rows, rules):
         groups.setdefault((scan["tile_id"], scan["round"]), []).append(scan)
-    days = {}
+    runs_by_key = {}
     for (tile_id, round_no), scans in groups.items():
         first = min(scans, key=lambda scan: scan["date_no"])
+        owners = [
+            batch
+            for batch, drawn in batches.items()
+            if batch <= first["queued_utc"] and any(d["tile_id"] == tile_id and d["round"] == round_no for d in drawn)
+        ]
+        if owners:
+            key = max(owners)
+        else:
+            key = first["queued_utc"].astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
         state = progress(scans, visits.get((tile_id, round_no)), rules)
         reviewed = next((scan for scan in scans if scan["status"] == "done" and scan["pairs"]), None)
-        days.setdefault(first["queued_utc"].astimezone(UTC).date().isoformat(), []).append(
-            {
-                "tile_id": tile_id,
-                "status": state["status"],
-                "finished": isoformat(state["finished"]),
-                "pairs": state["pairs"],
-                "run_no": reviewed["run_no"] if reviewed else None,
-                "scene": reviewed["scene"] if reviewed else None,
+        runs_by_key.setdefault(key, {})[tile_id] = {
+            "tile_id": tile_id,
+            "status": state["status"],
+            "finished": isoformat(state["finished"]),
+            "pairs": state["pairs"],
+            "run_no": reviewed["run_no"] if reviewed else None,
+            "scene": reviewed["scene"] if reviewed else None,
+        }
+    if latest_batch is not None:
+        entries = runs_by_key.setdefault(latest_batch, {})
+        for draw in batches[latest_batch]:
+            if draw["tile_id"] in entries:
+                continue
+            visit = visits.get((draw["tile_id"], draw["round"]))
+            entries[draw["tile_id"]] = {
+                "tile_id": draw["tile_id"],
+                "status": visit["outcome"] if visit is not None else "pending",
+                "finished": isoformat(visit["decided_utc"]) if visit is not None else None,
+                "pairs": 0,
+                "run_no": None,
+                "scene": None,
             }
-        )
     runs = []
-    for number, day in enumerate(sorted(days), 1):
-        grids = sorted(days[day], key=lambda grid: grid["tile_id"])
+    for number, key in enumerate(sorted(runs_by_key), 1):
+        grids = sorted(runs_by_key[key].values(), key=lambda grid: grid["tile_id"])
         runs.append(
             {
                 "run": number,
-                "day": day,
+                "day": key.astimezone(UTC).date().isoformat(),
                 "tiles": len(grids),
                 "with_pairs": sum(bool(grid["pairs"]) for grid in grids),
+                "pending": sum(grid["status"] == "pending" for grid in grids),
                 "waiting": sum(grid["status"] == "waiting" for grid in grids),
                 "processing": sum(grid["status"] == "processing" for grid in grids),
                 "processed": sum(grid["status"] == "processed" for grid in grids),

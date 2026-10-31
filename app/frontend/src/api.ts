@@ -234,7 +234,7 @@ export interface GridSummary {
 
 export interface GridRunEntry {
   tile_id: string;
-  status: "waiting" | "processing" | "processed" | "failed";
+  status: "pending" | "waiting" | "processing" | "processed" | "failed" | "no_imagery";
   finished: string | null;
   pairs: number;
   run_no: number | null;
@@ -254,6 +254,7 @@ export interface GridRun {
   day: string;
   tiles: number;
   with_pairs: number;
+  pending: number;
   waiting: number;
   processing: number;
   processed: number;
