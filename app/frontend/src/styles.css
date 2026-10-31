@@ -15,14 +15,14 @@
   --warn: #b9770e;
   --hl: #fff6e5;
   --g-unscanned: #e3e6ea;
-  --g-planned: #9a7fd1;
-  --g-progress: #f2c94c;
-  --g-processing: #2e8b57;
-  --g-candidate: #c0392b;
-  --g-cold: #4a6fa5;
+  --g-planned: #ffffff;
+  --g-progress: #4a6fa5;
+  --g-processing: #17b8c9;
+  --g-candidate: #2e8b57;
+  --g-cold: #f2c94c;
   --g-quiet: #9fb7d6;
   --g-noimg: #aeb4bb;
-  --g-failed: #1b1f24;
+  --g-failed: #c0392b;
   --g-land: #d9d4c7;
   --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -40,14 +40,14 @@
     --accent-ink: #0b1220;
     --hl: #2e2818;
     --g-unscanned: #343b46;
-    --g-planned: #8466c4;
-    --g-progress: #d4a72c;
-    --g-processing: #3fb27a;
-    --g-candidate: #e05a49;
-    --g-cold: #5b86c9;
+    --g-planned: #f2f4f7;
+    --g-progress: #5b86c9;
+    --g-processing: #2fd0e0;
+    --g-candidate: #3fb27a;
+    --g-cold: #d4a72c;
     --g-quiet: #46608a;
     --g-noimg: #59616c;
-    --g-failed: #e6e9ee;
+    --g-failed: #e05a49;
     --g-land: #2a2f37;
     color-scheme: dark;
   }
@@ -177,6 +177,7 @@ summary { cursor: pointer; padding: 4px 0; }
 .grid-map .live-label { fill: var(--pair); font-size: 7px; pointer-events: none; }
 .tile.unscanned, .swatch.unscanned { fill: var(--g-unscanned); background: var(--g-unscanned); }
 .tile.planned, .swatch.planned { fill: var(--g-planned); background: var(--g-planned); }
+.grid-map .tile.planned { stroke: var(--line); }
 .tile.waiting, .swatch.waiting { fill: var(--g-progress); background: var(--g-progress); }
 .tile.processing, .swatch.processing { fill: var(--g-processing); background: var(--g-processing); }
 .grid-map .tile.processing { stroke: var(--fg); stroke-width: 1; }
