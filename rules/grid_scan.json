@@ -73,6 +73,6 @@
   "request_stale_minutes": {
     "value": 30,
     "unit": "minutes",
-    "basis": "Engineering choice 2026-11-01, to be confirmed by the user: a run requested from the page counts as interrupted when its process has not beat for this long (the planner beats every batch_poll_minutes) or a request was not picked up in that time, so the page offers Continue run instead of staying disabled."
+    "basis": "User decision 2026-11-01: a run requested from the page counts as interrupted when its process has not beat for this long (the planner beats every batch_poll_minutes) or a request was not picked up in that time, so the page offers Continue run instead of staying disabled."
   }
 }
