@@ -1233,3 +1233,16 @@ Grid for the random scan ([planner](../maritime_tip_cue/context/hotspot_tests.md
 
 ## Sentinel-2 speed veto for moving ships (measured 2026-11-01, applied at 2 kn)
 Question: should a hull with a high Ai2 speed be called single before the pair check? Measured on every reviewed S2 pair in Postgres (73 confirmed, 14 wrong, 10 unreviewed; regions fujairah_outer, off_sohar, johor_east_scs, test_mumbai_outer, test_east_of_sohar, grid, malaysia_eopl). A limit between 2 and 10 kn lost the same 3 confirmed pairs (fujairah_outer 11.5 and 14.9 kn, off_sohar 11.8 kn) and removed 3 to 5 of the 14 wrong ones; above 12 kn it lost 1 of 73 and removed 1 of 14. Wrong pairs at 0.3 to 0.5 kn (test_mumbai_outer, one off_sohar) are untouched by any limit. Examples of moving-ship false pairs: run 315 hull 60622_-271981 (19.7 kn, 226 m) and run 314 hull 60623_-271980 (18.7 kn). Decision 2026-11-01 (user): a moving vessel is single by itself; `stopped_speed_kn` is back in `rules/sts_graph.json` at the earlier 2 kn limit, with the cost above (3 confirmed pairs at 11 to 15 kn become singles, to be re-checked).
+
+## Sentinel-1 moving ship with wake called pair (measured 2026-11-01, no rule found)
+Examples: run 316, hulls w0_44880_280392 (confidence 0.98, AIS STAR KAMILA 0.1 kn ten minutes before capture) and w0_46598_278222 (0.77, no AIS match), both fujairah_outer, both QA'd single. Both have `rule_verdict` single and become pair through the confidence score, whose second-hull evidence reads the wake streak (VH rows share 0.88 and 0.73). Of 53 reviewed S1 pairs with `rule_verdict` single, 42 are confirmed and 11 wrong, so that pattern cannot be vetoed. The stored chips (`data/app/runs/<folder>/scenes/s1/<scene>/chips/*.npz`, VH and VV power at 10 m) of 179 S1 pair hulls were measured against 124 to 152 confirmed pairs and 8 to 10 wrong ones (labelled single or reviewed wrong):
+
+| Feature | AUC, wrong above confirmed |
+|---|---|
+| low outline fill (existing) | 0.90 |
+| one-sided streak reach beyond the bright core, ray search, 4 to 6 dB over sea | 0.79 to 0.80 |
+| the same ignoring directions within 12 degrees of the image axes (radar crosses) | 0.70 to 0.79 |
+| dimmer light line brightness, line length ratio, line brightness gap | 0.56 to 0.70 |
+| object length over Ai2 length | 0.50 |
+
+No limit separates them: fill under 0.56 with a streak over 80 m catches 3 of 8 wrong and loses 3 of 124 confirmed. AIS speed does not help for S1 (the 8 wrong pairs that have a speed are all at 0.2 kn or below; a 3 kn limit loses 2 of 125 confirmed). Confirmed pairs also carry long one-sided streaks (radar crosses), so streak length alone is not a wake test. Eight to ten wrong pairs, mostly malaysia_eopl and fujairah_outer, are too few to fit or check a new rule in all four regions; refit the confidence score (`s1_confidence`) with fill and the streak feature once 30 or more wrong pairs are flagged. Scripts: `~/projects/maritime-sts-tests/s1_wake/` (outside the repo).
