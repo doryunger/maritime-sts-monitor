@@ -202,6 +202,11 @@
       "value": 1.4,
       "basis": "A hull is too wide for one tanker when its width, or the hull A to hull B span, reaches this many beams."
     },
+    "stopped_speed_kn": {
+      "value": 2,
+      "unit": "kn",
+      "basis": "User decision 2026-11-01: a moving vessel is single by itself, before any pair check. 2 kn is the limit of the earlier rule (frozen snapshot). Measured the same day on 97 reviewed S2 pairs (docs/feasibility.md): it removes 5 of 14 wrong pairs and loses 3 of 73 confirmed ones (fujairah_outer 11.5 and 14.9 kn, off_sohar 11.8 kn), whose Ai2 speed may be an estimate error. A hull with no speed estimate counts as stopped."
+    },
     "cloud_classes": {
       "value": [
         8,

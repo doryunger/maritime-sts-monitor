@@ -27,9 +27,10 @@ A pair is called from three signals: the half-peak width of hull A in beams (`pa
 blob in a strip beside hull A (size, elongation, axis and plateau tests, with a halo test that rejects a dim
 skirt of A), and one-sided excess along most of the hull in the 10 m bands. Weaker evidence gives `possible_pair`.
 S2 cases that cannot be measured (cloud, hull running out of the window, profile never reaching water, no water
-peak, no detector pixels) are called `single` from 2026-11-01 (user decision); the reason stays in `unmeasured_reason`. S1 still has `unmeasured`. Estimated speed is retained with the detection but does not veto the pair check or create a separate verdict;
-The stopped-speed veto remains executable only when loading the old
-frozen rules snapshot, so historical fixture results can still be reproduced.
+peak, no detector pixels) are called `single` from 2026-11-01 (user decision); the reason stays in `unmeasured_reason`. S1 still has `unmeasured`. A hull whose Ai2 speed is above `stopped_speed_kn` (2 kn, user decision 2026-11-01) is called `moving` before any
+pair check; every count and review treats `moving` as single, and the record keeps the speed and the reason. A hull with
+no speed estimate counts as stopped. The limit was removed earlier and is back; the cost is measured in feasibility
+(`Sentinel-2 speed veto for moving ships`).
 Hull shape (`shape_step`, `pair_split.shape_*`): both edges of hull A are traced per 5 m row where the brightest
 10 m band falls to half its peak above the sea, and each edge is fitted as a straight line with at most one
 one-sided step. Every limit is a ratio or a multiple of that hull's own edge noise (sea noise over edge steepness,
