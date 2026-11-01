@@ -178,6 +178,10 @@ docker run --rm --network host --env-file .env -v "$PWD/config.local.yaml:/app/c
 The manager records each attempt and allows one delayed retry. A second failure is terminal and requires an
 explicit operator decision before a future manual retry mechanism is used.
 
+## Updating the code without a full rebuild
+
+A full `docker build` on the worker does not reuse the existing image's layers (this Docker unpacks into the containerd store) and needs about 23 GB free. On 2026-11-01 with 21 GB free it filled the disk (2 GB left) while a drain session was running, failed while unpacking, and left the `:test` tag on the broken half-built image. When only `maritime_tip_cue`, `rules`, `config.yaml` or `hotspot-tests/areas.json` changed, build a thin image from the current one instead: tag the current image `:pre-<change>`, copy the changed files into `~/maritime-sts-monitor-worker-test` (compare them with git first, the worker tree is not a git checkout), then build under a new tag from a Dockerfile that starts `FROM maritime-sts-gpu-worker:pre-<change>`, removes `/app/maritime_tip_cue` and `/app/rules`, repeats the four `COPY` lines of the final stage and sets `STS_GIT_COMMIT`. It adds a few MB. Check the new tag with `docker run --rm --entrypoint python` (no job, no GPU), then move `:test` to it. A running drain container keeps the old image until its next start. Run `sudo systemctl start sts-disk-maintenance` afterwards. Never leave a failed build's tag on `:test`: build under another tag first.
+
 ## Disk maintenance on the worker
 
 The root volume fills with old image generations, not with a prunable cache: on 2026-10-26 Docker reported 48 GB of
