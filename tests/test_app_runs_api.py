@@ -51,3 +51,22 @@ def test_bad_flags_are_refused_and_store_nothing(api):
     assert client.put("/api/runs/1/flags/s__zzz", json={"status": "ok"}).status_code == 400
     assert client.put("/api/runs/1/flags/s__a", json={"status": "nonsense"}).status_code == 400
     assert store.qa_flags() == []
+
+
+def test_a_stopped_run_with_nothing_to_review_is_not_listed_but_a_running_one_is(api, pgdb, monkeypatch, tmp_path):
+    client, _ = api
+    dead = new_store(monkeypatch, tmp_path)
+    dead.start_run({}, "x", ("a", "b"), "s1", "r", "c")
+    dead.begin_scene(1, {"scene": "dead", "site": "x", "source": "s1", "time": "2026-10-30T14:24:16Z"}, dead.path / "scenes" / "s1" / "dead", None)
+    dead.event(None, "info", None, "x")
+    pgdb.execute("update review.events set time_utc = now() - interval '3 hours' where run_key = %s", (dead.run_key,))
+    pgdb.commit()
+    live = new_store(monkeypatch, tmp_path)
+    live.start_run({}, "x", ("a", "b"), "s1", "r", "c")
+    live.begin_scene(1, {"scene": "live", "site": "x", "source": "s1", "time": "2026-10-30T14:24:16Z"}, live.path / "scenes" / "s1" / "live", None)
+    live.event(None, "info", None, "x")
+    runs.SCENE_CACHE.clear()
+    rows = {r["scene_id"]: r for r in client.get("/api/scenes").json()}
+    assert set(rows) == {"s", "live"} and rows["live"]["review"] == "waiting for run"
+    dead.close()
+    live.close()

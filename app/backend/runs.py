@@ -258,7 +258,9 @@ def scene_rows(test: bool = False) -> list[dict]:
                 status = scene_status(scene["status"], run_status)
                 counts = snapshot["pair_review" if test else "review"]
                 listed, reviewed, unresolved = counts.get(scene["scene_id"], (0, 0, 0))
-                waiting = status in ("running", "stopped") or run_status == "running"
+                if status == "stopped" and not listed:
+                    continue
+                waiting = status == "running" or run_status == "running"
                 review = "waiting for run" if waiting else review_of(
                     status, reviewed, listed, unresolved
                 )
