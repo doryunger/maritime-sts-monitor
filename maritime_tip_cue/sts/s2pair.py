@@ -470,6 +470,13 @@ def blank_result(verdict: str, reason: str) -> dict:
     }
 
 
+def hull_b_counts(blob: dict, wide: bool, cfg: dict) -> bool:
+    floor = cfg.get("hull_b_min_plateau_sigma")
+    if floor is not None and blob["plateau_sigma"] < floor:
+        return False
+    return wide or blob["plateau_sigma"] >= cfg["hull_b_alone_plateau_min_sigma"]
+
+
 def cloudy_beside(ring_stats: dict, cfg: dict) -> bool:
     share, limit = ring_stats["cloud_share"], cfg["cloud_beside_single_min_share"]
     return share is not None and limit is not None and share >= limit
@@ -551,9 +558,7 @@ def check(win: dict, box: dict, cfg: dict) -> dict:
     out["a_fired"] = bool(wide)
     found = find_b(grid, gs, gt, water, (a_lo, a_hi), length_a, cfg)
     for side in list(found):
-        if halo(zprof, t, (a_lo, a_hi), found[side], cfg):
-            del found[side]
-        elif not wide and found[side]["plateau_sigma"] < cfg["hull_b_alone_plateau_min_sigma"]:
+        if halo(zprof, t, (a_lo, a_hi), found[side], cfg) or not hull_b_counts(found[side], wide, cfg):
             del found[side]
     if not found and all(dry.values()):
         out["reaches_water"] = False
