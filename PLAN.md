@@ -44,7 +44,11 @@ started through `run-scenes.cmd`; the local launcher can resume the interrupted 
 5. Stop the EC2 instance after the pending batch is finished and results are durable. Verify restart recovery,
    handoff failures and shutdown behavior, including the maximum-runtime safeguard, before unattended use.
 
-The random grid scan ([design](maritime_tip_cue/context/hotspot_tests.md#grid-scan), [grid](hotspot-tests/grid.json)) samples 25 tiles a day of the 533 between the four hot spots, 2 scenes at most per tile, to find new pair areas; its status map is on the app's hotspot-test page.
+The random grid scan ([design](maritime_tip_cue/context/hotspot_tests.md#grid-scan), [grid](hotspot-tests/grid.json)) samples 25 of the 533 tiles between the four hot spots per run, up to 2 scenes per tile (two dates are an initial clue, not proof), started from the app's hotspot-test page. Way forward (user, 2026-11-02):
+
+1. **Sample:** run until enough cells are scanned (the stop point is open).
+2. **Zoom:** around every cell with QA-confirmed pairs, scan its neighbouring cells (the ring, 3 to 8 cells) the same way, with more dates if two prove too few.
+3. **Promote:** where the ring systematically has pairs too, add the area to the hot-spot list (`hotspots publish`). Status on 2026-11-02: 100 of 533 scanned, 4 cells with pairs (40QFH, 42NYP, 44NLN, 48NXK), each with 0 or 1 scanned neighbour, so nothing can be inferred yet.
 
 ## Stages
 
@@ -68,6 +72,7 @@ The random grid scan ([design](maritime_tip_cue/context/hotspot_tests.md#grid-sc
 | Hot-spot file | Who edits it and how (now `python -m maritime_tip_cue.hotspots publish <file>`) | Decision | 2 |
 | AIS region alignment | Local and deployed collector views jointly cover all expanded survey areas and the AIS query margin; repeat coverage check when boundaries change | Boundary-change coverage check | 2, 5, 7 |
 | EOPL / Johor survey | Expanded survey batch launched; compare original versus added waters after processing ([map and coverage inventory](docs/feasibility.md#eopl-and-johor-expansion-survey-prepared-2026-10-20)); expanded shared boundaries now selected for tracking | Processing and review | 3, 4 |
+| Grid scan zoom | Stop point of the random sampling, the ring around a pair cell, how many dates a ring cell needs, and the promotion rule (how many or what share of ring cells with pairs) are undecided; none of it is implemented (the planner only draws random untouched cells) | Decision, then a ring draw in `grid_scan.draw_batch` and the rule values in `rules/grid_scan.json` (`tbd` until decided) | Hotspot tests |
 | Hotspot tests | Five versioned areas and an isolated detector/pair pipeline are implemented locally. Test jobs skip AIS and regular publishing; the authenticated review page shows only pair candidates and reads private S3 Parquets | Deploy rebuilt roles, set the Caddy DNS environment value and S3 permissions, run the initial catalogue scan, then review scans over time. Process the approximate March 2022 Maldives lead before judging that area; treat east-of-Sohar findings within the existing box as an edge audit | 2, 3, 4, 8, 9 |
 | Detector output cleanup | S2 test: one detection on an inland reservoir; one ship detected twice ~100 m apart (see feasibility) | Sea mask; merge overlapping detections | 4 |
 | Missed S1 pairs | [All-region similarity audit](docs/feasibility.md#sentinel-1-missed-pair-similarity-audit-measured-2026-10-20) retained as research; similar signals can be smudges | Detection rules unchanged; further investigation only when requested | 4 |
