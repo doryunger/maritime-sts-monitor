@@ -55,6 +55,15 @@ open sessions), then let it idle-stop. Keep the idle-stop rules in place (`worke
 `rules/worker_idle.json`, and the CloudWatch low-CPU alarm); never disable, lengthen or work around them. Do not
 start, wake or SSH into the worker without asking first.
 
+## Judging a rule change
+
+A change that removes false pairs is judged by what it costs in real pairs, on the labelled hulls in Postgres (QA
+status `ok` is real, `wrong_verdict` to single is false). Every proposal is reported as one line: false pairs removed
+of all known false, real pairs lost of all known real, the ratio, and the same split per region (and per source, S1
+or S2). A limit is chosen on that trade-off, never on the false pairs alone; a rule that loses about as many real
+pairs as the false ones it removes is not applied. Say how small the false set is and which regions have none. The
+measurement goes in `docs/feasibility.md`; its scripts live outside the repo.
+
 ## Reply style
 
 Keep chat replies short and informative: answer first, a few lines at most, no padding. Use one
