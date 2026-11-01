@@ -11,6 +11,7 @@ RULES = {
     "first_dates_per_day": 2,
     "max_scans_per_day": 4,
     "dates_per_tile": 2,
+    "scenes_queued_with_first": 2,
     "grids_in_flight": 2,
     "window_days": 30,
     "window_max_days": 60,
@@ -166,6 +167,25 @@ def test_plan_queues_both_dates_of_a_grid_together_up_to_the_in_flight_limit(pgd
     assert pgdb.execute("SELECT COUNT(*) FROM processing.jobs WHERE status='pending'").fetchone()[0] == 4
     again = grid_scan.run(pgdb, now=NOW, rng=random.Random(7))
     assert again["queued"] == [] and again["in_flight"] == 2
+
+
+def test_a_cell_queues_only_its_first_scene_and_the_second_follows_an_empty_first(pgdb, small_grid, monkeypatch):
+    rules = dict(RULES, scenes_queued_with_first=1, grids_in_flight=25)
+    monkeypatch.setattr(grid_scan, "load_rules", lambda: rules)
+    first = grid_scan.run(pgdb, now=NOW, rng=random.Random(7))
+    assert [item["date_no"] for item in first["queued"]] == [1, 1]
+    tile = first["queued"][0]["tile"]
+    finish(pgdb, f"test_grid_{tile}", tile_scenes(pgdb, tile)[0][2], pairs=0)
+    later = grid_scan.run(pgdb, now=NOW, rng=random.Random(7))
+    assert [(item["tile"], item["date_no"]) for item in later["queued"]] == [(tile, 2)]
+
+
+def test_a_step_with_nothing_to_do_leaves_no_scan_row(pgdb, small_grid, monkeypatch):
+    monkeypatch.setattr(grid_scan, "load_rules", lambda: dict(RULES, grids_in_flight=1))
+    grid_scan.run(pgdb, now=NOW, rng=random.Random(7))
+    before = pgdb.execute("SELECT COUNT(*) FROM processing.scans").fetchone()[0]
+    idle = grid_scan.run(pgdb, now=NOW, rng=random.Random(7))
+    assert idle["queued"] == [] and pgdb.execute("SELECT COUNT(*) FROM processing.scans").fetchone()[0] == before
 
 
 def test_a_pair_on_the_first_scene_finishes_the_grid_and_frees_its_slot(pgdb, small_grid):

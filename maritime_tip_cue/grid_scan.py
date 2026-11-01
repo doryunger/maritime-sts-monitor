@@ -280,7 +280,7 @@ def run(db, now=None, rng=None, dry_run=False, since=None, drawn=None):
             site = site_for(tile, rules)
             used_scenes, used_days = used_by_tile(db, tile_id)
             try:
-                picks = find_scenes(site, now, rules, scene_rules, used_scenes, used_days, rng, rules["dates_per_tile"])
+                picks = find_scenes(site, now, rules, scene_rules, used_scenes, used_days, rng, rules["scenes_queued_with_first"])
                 if not picks:
                     record_visit(db, tile_id, round_no, "no_imagery", now, dry_run)
                     summary["no_imagery"].append(tile_id)
@@ -297,12 +297,16 @@ def run(db, now=None, rng=None, dry_run=False, since=None, drawn=None):
             firsts += 1
     summary["ended_utc"] = datetime.now(UTC).isoformat()
     summary["status"] = "failed" if summary["errors"] else "ok"
+    idle = not any(summary[key] for key in ("queued", "decided", "resolved", "rechecked", "reconciled", "errors", "failed", "no_imagery"))
     if not dry_run:
         with catalogue.tx(db):
-            db.execute(
-                "UPDATE processing.scans SET ended_utc=%s,status=%s,summary_json=%s WHERE scan_id=%s",
-                (datetime.now(UTC), summary["status"], catalogue.jsonb(summary), scan_id),
-            )
+            if idle:
+                db.execute("DELETE FROM processing.scans WHERE scan_id=%s", (scan_id,))
+            else:
+                db.execute(
+                    "UPDATE processing.scans SET ended_utc=%s,status=%s,summary_json=%s WHERE scan_id=%s",
+                    (datetime.now(UTC), summary["status"], catalogue.jsonb(summary), scan_id),
+                )
     return summary
 
 

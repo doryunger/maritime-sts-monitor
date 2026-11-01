@@ -15,10 +15,15 @@
     "unit": "scenes",
     "basis": "User decision 2026-10-30: each tile gets two scenes on different days, queued together so a tile is finished before the next starts. A pair on the first scene finishes the tile; its second scene may already be queued and then runs without being needed."
   },
+  "scenes_queued_with_first": {
+    "value": 1,
+    "unit": "scenes",
+    "basis": "User decision 2026-10-31: a cell queues only its first scene; the second (dates_per_tile is 2) is queued when the first has no pair, and a pair on the first scene ends the cell. Setting it to 2 queues both together as before."
+  },
   "grids_in_flight": {
-    "value": 2,
+    "value": 25,
     "unit": "tiles",
-    "basis": "2026-10-30: the worker takes jobs in the order Redis returns them (ties by job id), so queuing every tile at once spreads a tile's two scenes across the whole queue. At most this many tiles are queued and unfinished at a time, the planner runs every ten minutes to top up, so a tile's scenes run together and the queue never runs dry (2 tiles are about 35 minutes of worker time)."
+    "basis": "2026-10-31 (user): every drawn cell's first scene is queued at once so the worker never waits for the planner; the second scene follows when the first has no pair. Before this the limit was 2, which left the worker idle for minutes between planner steps."
   },
   "window_days": {
     "value": 30,
@@ -61,13 +66,13 @@
     "basis": "A queued scene with no review result after this many days is reported as stuck in the status output; it is not retried automatically."
   },
   "batch_poll_minutes": {
-    "value": 10,
+    "value": 1,
     "unit": "minutes",
-    "basis": "User decision 2026-10-31: the scan is an ad-hoc batch run by hand, not a timer. The batch planner repeats its step at the 10-minute spacing the retired timer used, until the first_dates_per_day tiles are queued and every tile is decided; max_scans_per_day then counts scenes since the batch started."
+    "basis": "User decision 2026-10-31: the planner step repeats every minute so a second scene is queued within about a minute of its first scene's result and the worker keeps its drain session; a step with nothing to do leaves no scan row."
   },
   "request_stale_minutes": {
     "value": 30,
     "unit": "minutes",
-    "basis": "Engineering choice 2026-11-01, to be confirmed by the user: a run requested from the page counts as interrupted when its process has not beat for three batch_poll_minutes (or a request was not picked up in that time), so the page offers Continue run instead of staying disabled."
+    "basis": "Engineering choice 2026-11-01, to be confirmed by the user: a run requested from the page counts as interrupted when its process has not beat for this long (the planner beats every batch_poll_minutes) or a request was not picked up in that time, so the page offers Continue run instead of staying disabled."
   }
 }
