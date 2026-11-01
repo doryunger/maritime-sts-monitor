@@ -156,6 +156,9 @@ summary { cursor: pointer; padding: 4px 0; }
 .sync-panel { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; margin: 8px 0 12px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
 .sync-panel button.sync { font: 600 13px var(--sans); background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 4px; padding: 7px 14px; cursor: pointer; }
 .sync-panel button.sync:disabled { opacity: .45; cursor: default; }
+button.run { font: 600 13px var(--sans); background: var(--accent); color: var(--accent-ink); border: 1px solid var(--accent); border-radius: 4px; padding: 7px 14px; cursor: pointer; }
+button.run:hover:not(:disabled) { filter: brightness(1.1); }
+button.run:disabled { background: var(--surface); color: var(--muted); border-color: var(--line); cursor: not-allowed; }
 .sync-status { font-size: 13px; display: grid; gap: 2px; min-width: 0; }
 .sync-status .counts { font-family: var(--mono); font-size: 12px; }
 .sync-error { color: var(--pair); overflow-wrap: anywhere; }

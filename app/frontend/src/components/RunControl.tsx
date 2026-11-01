@@ -54,7 +54,7 @@ export default function RunControl() {
         {process.heartbeat_utc && <div><dt>Updated</dt><dd>{process.heartbeat_utc.slice(11, 16)}Z</dd></div>}
         {(process.error || error) && <div><dt>Error</dt><dd>{process.error || error}</dd></div>}
       </dl>
-      <button onClick={() => void press()} disabled={busy || !process.action}>
+      <button className="run" onClick={() => void press()} disabled={busy || !process.action}>
         {process.action === "continue" ? `Continue run ${process.run_no}` : "Start a new run"}
       </button>
     </>
