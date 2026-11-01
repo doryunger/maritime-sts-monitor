@@ -207,5 +207,3 @@ summary { cursor: pointer; padding: 4px 0; }
 .worker-status { display: flex; flex-wrap: wrap; gap: 0.5rem 2rem; margin: 1rem 0; }
 .worker-status dt { color: var(--muted); font-size: 0.75rem; }
 .worker-status dd { margin: 0; font-weight: 600; }
-.run-control { align-items: center; }
-.run-control button { margin-left: auto; }

@@ -43,12 +43,15 @@ export default function WorkerStatus() {
   if (!status) return null;
   const running = status.state === "running";
   return (
+    <>
+    <h2>Worker</h2>
     <dl className="worker-status">
-      <div><dt>Worker</dt><dd>{STATES[status.state] ?? status.state}</dd></div>
+      <div><dt>Status</dt><dd>{STATES[status.state] ?? status.state}</dd></div>
       <div><dt>Doing</dt><dd>{(status.activity && ACTIVITY[status.activity]) || "—"}</dd></div>
       <div><dt>CPU</dt><dd>{running ? percent(status.cpu) : "—"}</dd></div>
       <div><dt>GPU</dt><dd>{running ? percent(status.gpu) : "—"}</dd></div>
       <div><dt>Updated</dt><dd>{status.measured_utc.slice(11, 16)}Z</dd></div>
     </dl>
+    </>
   );
 }

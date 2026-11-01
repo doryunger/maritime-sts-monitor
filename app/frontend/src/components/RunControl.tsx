@@ -44,16 +44,19 @@ export default function RunControl() {
 
   if (!process) return error ? <p className="sync-error">{error}</p> : null;
   return (
-    <dl className="worker-status run-control">
-      <div><dt>Run</dt><dd>{process.run_no}</dd></div>
-      <div><dt>Process</dt><dd>{STATES[process.status] ?? process.status}</dd></div>
-      {process.tiles !== null && <div><dt>Decided</dt><dd>{process.decided}/{process.tiles}</dd></div>}
-      {process.requested_by && <div><dt>Started by</dt><dd>{process.requested_by}</dd></div>}
-      {process.heartbeat_utc && <div><dt>Updated</dt><dd>{process.heartbeat_utc.slice(11, 16)}Z</dd></div>}
-      {(process.error || error) && <div><dt>Error</dt><dd>{process.error || error}</dd></div>}
+    <>
+      <h2>Run management</h2>
+      <dl className="worker-status">
+        <div><dt>Run ID</dt><dd>{process.run_no}</dd></div>
+        <div><dt>Process</dt><dd>{STATES[process.status] ?? process.status}</dd></div>
+        {process.tiles !== null && <div><dt>Decided</dt><dd>{process.decided}/{process.tiles}</dd></div>}
+        {process.requested_by && <div><dt>Started by</dt><dd>{process.requested_by}</dd></div>}
+        {process.heartbeat_utc && <div><dt>Updated</dt><dd>{process.heartbeat_utc.slice(11, 16)}Z</dd></div>}
+        {(process.error || error) && <div><dt>Error</dt><dd>{process.error || error}</dd></div>}
+      </dl>
       <button onClick={() => void press()} disabled={busy || !process.action}>
         {process.action === "continue" ? `Continue run ${process.run_no}` : "Start new run"}
       </button>
-    </dl>
+    </>
   );
 }
