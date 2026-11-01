@@ -74,5 +74,16 @@
     "value": 30,
     "unit": "minutes",
     "basis": "User decision 2026-11-01: a run requested from the page counts as interrupted when its process has not beat for this long (the planner beats every batch_poll_minutes) or a request was not picked up in that time, so the page offers Continue run instead of staying disabled."
+  },
+  "promotion_min_pairs_per_scene_s1": {
+    "value": 0.4,
+    "unit": "pairs per scene",
+    "basis": "User decision 2026-11-02: an area (a pair cell and its adjacent ring, all dates) is a hot-spot candidate when its QA-confirmed pairs per scanned S1 scene reach this value, about half of the weakest live hot spot (johor_east_scs 0.83 per S1 scene; docs/feasibility.md). Random cells measured 0.03 on 2026-11-02 (4 pairs in 116 S1 scenes)."
+  },
+  "promotion_min_pairs_per_scene_s2": {
+    "value": null,
+    "basis": "tbd",
+    "unit": "pairs per scene",
+    "note": "Live S2 hot spots run 1.0 to 1.65 pairs per scene and the random cells found none in 79 scenes; not set until the user picks it."
   }
 }
