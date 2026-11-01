@@ -7,7 +7,9 @@ After=network-online.target
 Type=oneshot
 TimeoutStartSec=infinity
 EnvironmentFile=/home/ubuntu/maritime-sts-monitor/.env
-ExecStart=/usr/bin/docker run --rm --network host --user 1000:1000 --env-file /home/ubuntu/maritime-sts-monitor/.env -e STS_CONFIG_PATH=/app/config.yaml -v /home/ubuntu/maritime-sts-monitor/data:/app/data maritime-sts-manager -m maritime_tip_cue.grid_scan run-pending
+ExecStartPre=-/usr/bin/docker rm -f sts-grid-run
+ExecStart=/usr/bin/docker run --rm --init --name sts-grid-run --network host --user 1000:1000 --env-file /home/ubuntu/maritime-sts-monitor/.env -e STS_CONFIG_PATH=/app/config.yaml -v /home/ubuntu/maritime-sts-monitor/data:/app/data maritime-sts-manager -m maritime_tip_cue.grid_scan run-pending
+ExecStop=-/usr/bin/docker stop -t 10 sts-grid-run
 NoNewPrivileges=true
 PrivateTmp=true
 UMask=0077

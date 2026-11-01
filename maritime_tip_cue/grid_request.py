@@ -4,6 +4,11 @@ from maritime_tip_cue import grid_status
 from maritime_tip_cue.watch.pgutil import iso
 
 LOCK_KEY = 7302
+
+
+class RequestLost(Exception):
+    pass
+
 FIELDS = "request_id,requested_utc,requested_by,kind,run_no,batch_utc,status,started_utc,heartbeat_utc,finished_utc,error"
 FRESH = "now() - coalesce(heartbeat_utc, requested_utc) < make_interval(mins => %s)"
 
@@ -106,13 +111,17 @@ def claim(conn, rules):
 
 
 def beat(conn, request_id):
-    conn.execute("UPDATE processing.grid_run_requests SET heartbeat_utc=now() WHERE request_id=%s", (request_id,))
+    beaten = conn.execute(
+        "UPDATE processing.grid_run_requests SET heartbeat_utc=now() WHERE request_id=%s AND status='running'", (request_id,)
+    ).rowcount
     conn.commit()
+    if not beaten:
+        raise RequestLost(f"request {request_id} is no longer running")
 
 
 def finish(conn, request_id, status, error=None):
     conn.execute(
-        "UPDATE processing.grid_run_requests SET status=%s, finished_utc=now(), error=%s WHERE request_id=%s",
+        "UPDATE processing.grid_run_requests SET status=%s, finished_utc=now(), error=%s WHERE request_id=%s AND status='running'",
         (status, error, request_id),
     )
     conn.commit()

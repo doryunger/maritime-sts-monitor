@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.backend import server
-from maritime_tip_cue import grid_scan, grid_status
+from maritime_tip_cue import grid_request, grid_scan, grid_status
 from tests.test_grid_scan import RULES, small_grid  # noqa: F401
 
 NOW = datetime(2026, 10, 30, 12, 0, tzinfo=UTC)
@@ -95,3 +95,29 @@ def test_run_pending_runs_the_requested_batch_to_the_end_and_a_crash_marks_it_fa
 
 def test_invalid_action_is_rejected(api):
     assert api.post("/api/hotspot-tests/grid/process", json={"action": "stop"}).status_code == 400
+
+
+def test_a_process_whose_request_was_expired_stops_instead_of_beating_on(api, pgdb, monkeypatch):
+    api.post("/api/hotspot-tests/grid/process", json={"action": "start"})
+
+    def batch(db, rules, sleep=None, since=None, beat=None):
+        beat()
+        pgdb.execute("UPDATE processing.grid_run_requests SET heartbeat_utc=now()-interval '1 hour'")
+        grid_request.expire(pgdb.cursor(), RULES_WITH_STALE)
+        beat()
+
+    monkeypatch.setattr(grid_scan, "batch", batch)
+    assert grid_scan.run_pending(pgdb, RULES_WITH_STALE) == "stopped"
+    assert pgdb.execute("SELECT status, error FROM processing.grid_run_requests").fetchone() == ("failed", "interrupted")
+
+
+def test_run_pending_returns_stopped_when_the_batch_finds_its_request_lost(api, pgdb, monkeypatch):
+    api.post("/api/hotspot-tests/grid/process", json={"action": "start"})
+
+    def batch(db, rules, sleep=None, since=None, beat=None):
+        pgdb.execute("UPDATE processing.grid_run_requests SET status='failed', error='interrupted'")
+        beat()
+
+    monkeypatch.setattr(grid_scan, "batch", batch)
+    assert grid_scan.run_pending(pgdb, RULES_WITH_STALE) == "stopped"
+    assert pgdb.execute("SELECT status, error FROM processing.grid_run_requests").fetchone() == ("failed", "interrupted")

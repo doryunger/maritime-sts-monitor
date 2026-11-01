@@ -377,6 +377,8 @@ def run_pending(db, rules, sleep=time.sleep):
             return None
         try:
             batch(db, rules, sleep=sleep, since=row["batch_utc"], beat=lambda: grid_request.beat(conn, row["request_id"]))
+        except grid_request.RequestLost:
+            return "stopped"
         except Exception as error:
             grid_request.finish(conn, row["request_id"], "failed", f"{type(error).__name__}: {error}")
             return "failed"
