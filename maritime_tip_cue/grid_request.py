@@ -51,7 +51,7 @@ def state(cur, rules):
         "status": status,
         "requested_by": shown["requested_by"] if shown else None,
         "heartbeat_utc": iso(shown["heartbeat_utc"] or shown["requested_utc"]) if shown else None,
-        "error": shown["error"] if shown and not active and shown["error"] not in ("interrupted", "not picked up") else None,
+        "error": shown["error"] if shown and not active and shown["error"] not in ("interrupted", "not picked up", "stopped") else None,
         "decided": tracked["decided"] if tracked else None,
         "tiles": tracked["tiles"] if tracked else None,
     }

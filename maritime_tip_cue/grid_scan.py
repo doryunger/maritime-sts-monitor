@@ -1,6 +1,7 @@
 import argparse
 import json
 import random
+import signal
 import sys
 import time
 import uuid
@@ -369,7 +370,12 @@ def batch(db, rules, sleep=time.sleep, rng=None, clock=None, report=None, since=
         sleep(rules["batch_poll_minutes"] * 60)
 
 
+def stop_on_signal(signum, frame):
+    raise SystemExit(128 + signum)
+
+
 def run_pending(db, rules, sleep=time.sleep):
+    signal.signal(signal.SIGTERM, stop_on_signal)
     conn = pg.connect()
     try:
         row = grid_request.claim(conn, rules)
@@ -379,6 +385,9 @@ def run_pending(db, rules, sleep=time.sleep):
             batch(db, rules, sleep=sleep, since=row["batch_utc"], beat=lambda: grid_request.beat(conn, row["request_id"]))
         except grid_request.RequestLost:
             return "stopped"
+        except (KeyboardInterrupt, SystemExit):
+            grid_request.finish(conn, row["request_id"], "failed", "stopped")
+            raise
         except Exception as error:
             grid_request.finish(conn, row["request_id"], "failed", f"{type(error).__name__}: {error}")
             return "failed"

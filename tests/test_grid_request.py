@@ -121,3 +121,18 @@ def test_run_pending_returns_stopped_when_the_batch_finds_its_request_lost(api, 
     monkeypatch.setattr(grid_scan, "batch", batch)
     assert grid_scan.run_pending(pgdb, RULES_WITH_STALE) == "stopped"
     assert pgdb.execute("SELECT status, error FROM processing.grid_run_requests").fetchone() == ("failed", "interrupted")
+
+
+def test_a_stop_signal_marks_the_request_failed_at_once_so_the_page_offers_continue(api, pgdb, monkeypatch):
+    pgdb.execute("INSERT INTO processing.grid_draws VALUES (now(), 'T1', 1, 1)")
+    api.post("/api/hotspot-tests/grid/process", json={"action": "continue"})
+
+    def batch(db, rules, sleep=None, since=None, beat=None):
+        raise SystemExit(143)
+
+    monkeypatch.setattr(grid_scan, "batch", batch)
+    with pytest.raises(SystemExit):
+        grid_scan.run_pending(pgdb, RULES_WITH_STALE)
+    assert pgdb.execute("SELECT status, error FROM processing.grid_run_requests").fetchone() == ("failed", "stopped")
+    current = api.get("/api/hotspot-tests/grid/process").json()
+    assert current["action"] == "continue" and current["status"] == "interrupted" and current["error"] is None
