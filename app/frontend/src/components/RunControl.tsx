@@ -55,7 +55,7 @@ export default function RunControl() {
         {(process.error || error) && <div><dt>Error</dt><dd>{process.error || error}</dd></div>}
       </dl>
       <button onClick={() => void press()} disabled={busy || !process.action}>
-        {process.action === "continue" ? `Continue run ${process.run_no}` : "Start new run"}
+        {process.action === "continue" ? `Continue run ${process.run_no}` : "Start a new run"}
       </button>
     </>
   );
