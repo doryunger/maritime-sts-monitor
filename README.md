@@ -94,7 +94,7 @@ all discovered after the tracker baseline. EC2 worker validation and automatic s
 2. **Detection**: Ai2 detectors (one per sensor) on the hot-spot crop. Output per ship: position,
    length, width, heading, type. Detections on land or within the site's shore distance are dropped.
 3. **STS pair check** (`maritime_tip_cue/sts/`, parameters in `rules/sts_graph.json`): per tanker,
-   `pair`, `single` or `unmeasured` (no `possible_pair`: weak evidence is reported as single and kept in the record). Sentinel-2 uses the hull's spectral
+   `pair` or `single`, plus `unmeasured` for a Sentinel-1 object without a usable outline (no `possible_pair`: weak evidence is reported as single and kept in the record). Sentinel-2 hulls that cannot be measured are single, with the reason kept. Sentinel-2 uses the hull's spectral
    width and a second-hull search beside it; Sentinel-1 uses the radar outline and two light lines.
 4. **AIS enrichment**: from the AIS archive, the AIS positions in and around the
    hot spot near the pass time, projected to the capture time, matched to each hull by position,

@@ -270,7 +270,7 @@ def analyse(folder: Path, dets: list[dict], index: list[dict], rules: dict) -> l
         for k in sorted(w["members"]):
             d = by_id[k]
             if win is None:
-                checks[k] = {"verdict": "unmeasured", "unmeasured_reason": "no detector pixels cover the hull"}
+                checks[k] = {"verdict": "single", "unmeasured_reason": "no detector pixels cover the hull"}
                 continue
             hull = {key: d[key] for key in ("lat", "lon", "length_m", "width_m", "heading", "speed_kn")}
             res = s2pair.run(win, hull, rules, shape_bands)

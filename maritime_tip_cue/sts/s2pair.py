@@ -517,13 +517,13 @@ def check(win: dict, box: dict, cfg: dict) -> dict:
             f"cloud: only {ring_stats['clear_cells']} clear water pixels around the hull "
             f"({ring_stats['cloud_share']:.0%} of the surroundings are cloud)"
         )
-        return empty_result(out, "unmeasured")
+        return empty_result(out, "single")
     if cloudy_beside(ring_stats, cfg):
         out["cloud_single_reason"] = f"cloud: {ring_stats['cloud_share']:.0%} of the surroundings are cloud, no hull B search"
         return empty_result(out, "single")
     if fix.get("at_edge"):
         out["unmeasured_reason"] = "hull A runs out of the image window, so its length and beam are not measured"
-        return empty_result(out, "unmeasured")
+        return empty_result(out, "single")
     if edges is None:
         return empty_result(out, "single")
     a_lo, a_hi, centre = edges
@@ -558,7 +558,7 @@ def check(win: dict, box: dict, cfg: dict) -> dict:
     if not found and all(dry.values()):
         out["reaches_water"] = False
         out["unmeasured_reason"] = "profile does not reach water at either strip edge"
-        return empty_result(out, "unmeasured")
+        return empty_result(out, "single")
     if found:
         side, b = max(found.items(), key=lambda kv: kv[1]["cells"])
         lo = min([a_lo] + [v["t_lo"] for v in found.values()])
@@ -604,5 +604,5 @@ def check_hull(win: dict, hull: dict, cfg: dict) -> dict:
 def run(win: dict | None, hull: dict, rules: dict, shape_bands: list[str]) -> dict:
     cfg = rules["pair_split"]
     if win is None or s2window.prepare(win, rules["sensing_water"], shape_bands, cfg) is None:
-        return blank_result("unmeasured", "no water peak in the window")
+        return blank_result("single", "no water peak in the window")
     return check_hull(win, hull, cfg)

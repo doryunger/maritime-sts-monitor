@@ -15,3 +15,8 @@ def test_cloud_beside_the_hull_stops_the_hull_b_search(share, expected):
 
 def test_an_unset_limit_never_stops_the_search():
     assert s2pair.cloudy_beside({"cloud_share": 0.9}, {"cloud_beside_single_min_share": None}) is False
+
+
+def test_a_hull_that_cannot_be_measured_is_called_single_with_its_reason_kept():
+    result = s2pair.run(None, {}, {"pair_split": {}}, [])
+    assert result["verdict"] == "single" and result["unmeasured_reason"] == "no water peak in the window"

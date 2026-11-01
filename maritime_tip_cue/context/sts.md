@@ -26,9 +26,9 @@ fitted length gives the expected beam only when the heading moved a lot (the Ai2
 A pair is called from three signals: the half-peak width of hull A in beams (`pair_width_ratio`), a second hull B
 blob in a strip beside hull A (size, elongation, axis and plateau tests, with a halo test that rejects a dim
 skirt of A), and one-sided excess along most of the hull in the 10 m bands. Weaker evidence gives `possible_pair`.
-Unmeasured cases (cloud, hull running out of the window, profile never reaching water) are never turned into a
-single. Estimated speed is retained with the detection but does not veto the pair check or create a separate verdict;
-a window with no water peak is `unmeasured`. The stopped-speed veto remains executable only when loading the old
+S2 cases that cannot be measured (cloud, hull running out of the window, profile never reaching water, no water
+peak, no detector pixels) are called `single` from 2026-11-01 (user decision); the reason stays in `unmeasured_reason`. S1 still has `unmeasured`. Estimated speed is retained with the detection but does not veto the pair check or create a separate verdict;
+The stopped-speed veto remains executable only when loading the old
 frozen rules snapshot, so historical fixture results can still be reproduced.
 Hull shape (`shape_step`, `pair_split.shape_*`): both edges of hull A are traced per 5 m row where the brightest
 10 m band falls to half its peak above the sea, and each edge is fitted as a straight line with at most one

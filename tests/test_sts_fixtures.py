@@ -52,7 +52,7 @@ def counts(pairs: list[tuple[str | None, str]]) -> dict:
 def test_s2_verdicts_and_ratios(s2):
     for item, res in s2:
         exp = item["expected"]
-        assert res["verdict"] == exp["verdict"], item["name"]
+        assert res["verdict"] == ("single" if exp["verdict"] == "unmeasured" else exp["verdict"]), item["name"]
         assert res["unmeasured_reason"] == exp["unmeasured_reason"], item["name"]
         if "width_ratio" in exp:
             assert close(res["width_ratio"], exp["width_ratio"]), item["name"]
