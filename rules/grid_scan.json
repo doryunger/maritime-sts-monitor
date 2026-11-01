@@ -64,5 +64,10 @@
     "value": 10,
     "unit": "minutes",
     "basis": "User decision 2026-10-31: the scan is an ad-hoc batch run by hand, not a timer. The batch planner repeats its step at the 10-minute spacing the retired timer used, until the first_dates_per_day tiles are queued and every tile is decided; max_scans_per_day then counts scenes since the batch started."
+  },
+  "request_stale_minutes": {
+    "value": 30,
+    "unit": "minutes",
+    "basis": "Engineering choice 2026-11-01, to be confirmed by the user: a run requested from the page counts as interrupted when its process has not beat for three batch_poll_minutes (or a request was not picked up in that time), so the page offers Continue run instead of staying disabled."
   }
 }

@@ -1,0 +1,11 @@
+[Unit]
+Description=Check for a requested STS grid scan run every 30 seconds
+
+[Timer]
+OnBootSec=60
+OnUnitInactiveSec=30
+AccuracySec=1s
+Unit=sts-grid-run.service
+
+[Install]
+WantedBy=timers.target

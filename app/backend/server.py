@@ -9,9 +9,10 @@ import uvicorn
 from fastapi import Body, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from psycopg.rows import dict_row
 
 from app.backend import auth, queue, runs, s3runs, sync
-from maritime_tip_cue import grid_status, hotspot_tests, worker_status
+from maritime_tip_cue import grid_request, grid_status, hotspot_tests, pg, worker_status
 from maritime_tip_cue.config import env, settings
 
 DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
@@ -81,6 +82,23 @@ def get_hotspot_test_grid():
 @app.get("/api/hotspot-tests/grid/runs")
 def get_hotspot_test_grid_runs():
     return grid_status.scan_runs(runs.query, grid_status.load_rules())
+
+
+@app.get("/api/hotspot-tests/grid/process")
+def get_hotspot_test_grid_process():
+    with pg.connect() as conn, conn.cursor(row_factory=dict_row) as cur:
+        return grid_request.state(cur, grid_status.load_rules())
+
+
+@app.post("/api/hotspot-tests/grid/process")
+def post_hotspot_test_grid_process(request: Request, body: dict = Body(...)):
+    if body.get("action") not in ("start", "continue"):
+        raise HTTPException(400, "action must be start or continue")
+    with pg.connect() as conn:
+        created, state = grid_request.request(
+            conn, getattr(request.state, "user", None) or "local", body["action"], grid_status.load_rules()
+        )
+    return JSONResponse(state, status_code=202 if created else 409)
 
 
 @app.get("/api/hotspot-tests/worker")

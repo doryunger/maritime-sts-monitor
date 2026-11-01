@@ -1,6 +1,6 @@
 import pytest
 
-from maritime_tip_cue import pg, worker_status
+from maritime_tip_cue import worker_status
 
 LIMITS = (5, 5)
 

@@ -262,6 +262,20 @@ create table if not exists processing.grid_draws (
     primary key (batch_utc, tile_id)
 );
 
+create table if not exists processing.grid_run_requests (
+    request_id bigserial primary key,
+    requested_utc timestamptz not null default now(),
+    requested_by text,
+    kind text not null,
+    run_no integer not null,
+    batch_utc timestamptz not null,
+    status text not null default 'pending',
+    started_utc timestamptz,
+    heartbeat_utc timestamptz,
+    finished_utc timestamptz,
+    error text
+);
+
 create table if not exists processing.worker_status (
     id integer primary key check (id = 1),
     instance_state text not null, cpu_percent integer, gpu_percent integer, activity text,
@@ -357,7 +371,7 @@ EVENT_KEYS = {
     "job_attempts": "job_id",
     "job_scenes": "job_id",
 }
-EVENT_ROOTS = ("scans", "channels")
+EVENT_ROOTS = ("scans", "channels", "grid_draws", "grid_scans", "grid_visits", "grid_run_requests", "worker_status")
 EVENT_TABLES = ("runs", "sync_runs", "removed_runs")
 
 

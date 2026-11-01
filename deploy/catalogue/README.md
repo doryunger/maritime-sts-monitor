@@ -191,16 +191,18 @@ and publication boundaries.
 
 ## Random grid scan
 
-The grid scan is an ad-hoc batch started by hand, with no timer: `sudo systemctl start sts-grid-scan.service` runs `python -m maritime_tip_cue.grid_scan batch` in the manager image until 25 random tiles, drawn at the start and shown as Planned on the map, are decided. Every 10 minutes it resolves finished scans, closes tiles and keeps at most `grids_in_flight` (2) tiles queued and unfinished, each with its two scenes queued together (one only if a tile's first scene has a pair), up to 25 tiles and 50 scenes since the batch started; the dispatcher and worker process the jobs like any other. Install after rebuilding the manager image:
+The grid scan is started from the Hotspot tests page (Start new run / Continue run), which records a row in `processing.grid_run_requests`; `sts-grid-run.timer` checks for one every 30 s and `sts-grid-run.service` runs `python -m maritime_tip_cue.grid_scan run-pending` in the manager image: it claims the oldest pending request and runs the batch until 25 random tiles, drawn at the start and shown as Pending on the map, are decided. Every 10 minutes it resolves finished scans, closes tiles and keeps at most `grids_in_flight` (2) tiles queued and unfinished, each with its two scenes queued together (one only if a tile's first scene has a pair), up to 25 tiles and 50 scenes since the batch started; the dispatcher and worker process the jobs like any other. The service updates the request's heartbeat each cycle; a request with no heartbeat for `request_stale_minutes` (30) is interrupted and the page offers Continue run for the same run number. Install after rebuilding the manager image:
 
 ```bash
 sudo docker build -f deploy/catalogue/Dockerfile -t maritime-sts-manager .
 sudo docker run --rm --network host --user 1000:1000 --env-file .env -e STS_CONFIG_PATH=/app/config.yaml maritime-sts-manager -m maritime_tip_cue.pg init
-sudo cp deploy/catalogue/sts-grid-scan.service /etc/systemd/system/
+sudo systemctl disable --now sts-grid-scan.service 2>/dev/null; sudo rm -f /etc/systemd/system/sts-grid-scan.service
+sudo cp deploy/catalogue/sts-grid-run.service deploy/catalogue/sts-grid-run.timer /etc/systemd/system/
 sudo systemctl daemon-reload
+sudo systemctl enable --now sts-grid-run.timer
 ```
 
-`plan --dry-run` prints the tiles and scenes it would queue without writing. `status` prints the round, tile counts by status and today's budget; `export` prints every tile with its status for a map. Stop a batch with `sudo systemctl stop sts-grid-scan.service`; queued scenes still run. Continue one with `grid_scan batch --since <ISO start>`, which counts the 25 tiles from that start (use it after a code deploy, which stops the batch). A scene that never gets a review result keeps its tile open, so the batch waits until it is stopped.
+`plan --dry-run` prints the tiles and scenes it would queue without writing. `status` prints the round, tile counts by status and today's budget; `export` prints every tile with its status for a map. Stop a run with `sudo systemctl stop sts-grid-run.service`; queued scenes still run, and the page offers Continue run once the heartbeat goes stale. `grid_scan batch --since <ISO start>` still resumes a batch by hand. A scene that never gets a review result keeps its tile open, so the batch waits until it is stopped.
 
 ## Worker idle check
 

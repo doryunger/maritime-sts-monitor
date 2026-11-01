@@ -6,7 +6,7 @@ import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from maritime_tip_cue import catalogue, grid_status, passes
+from maritime_tip_cue import catalogue, grid_request, grid_status, passes, pg
 from maritime_tip_cue.grid_status import decide, load_grid, load_rules
 
 SITE_PREFIX = "test_grid_"
@@ -345,12 +345,14 @@ def batch_finished(db, since):
     return undecided == 0
 
 
-def batch(db, rules, sleep=time.sleep, rng=None, clock=None, report=None, since=None):
+def batch(db, rules, sleep=time.sleep, rng=None, clock=None, report=None, since=None, beat=None):
     clock = clock or (lambda: datetime.now(UTC))
     since = since or clock()
     with catalogue.tx(db):
         drawn = draw_batch(db, since, rules, rng)
     while True:
+        if beat:
+            beat()
         try:
             summary = run(db, now=clock(), rng=rng, since=since, drawn=drawn)
         except BlockingIOError:
@@ -361,6 +363,23 @@ def batch(db, rules, sleep=time.sleep, rng=None, clock=None, report=None, since=
         if batch_finished(db, since):
             return summary
         sleep(rules["batch_poll_minutes"] * 60)
+
+
+def run_pending(db, rules, sleep=time.sleep):
+    conn = pg.connect()
+    try:
+        row = grid_request.claim(conn, rules)
+        if row is None:
+            return None
+        try:
+            batch(db, rules, sleep=sleep, since=row["batch_utc"], beat=lambda: grid_request.beat(conn, row["request_id"]))
+        except Exception as error:
+            grid_request.finish(conn, row["request_id"], "failed", f"{type(error).__name__}: {error}")
+            return "failed"
+        grid_request.finish(conn, row["request_id"], "done")
+        return "done"
+    finally:
+        conn.close()
 
 
 def tile_states(db, grid):
@@ -380,6 +399,7 @@ def main():
     plan.add_argument("--dry-run", action="store_true")
     batch_parser = sub.add_parser("batch")
     batch_parser.add_argument("--since")
+    sub.add_parser("run-pending")
     sub.add_parser("status")
     sub.add_parser("export")
     args = parser.parse_args()
@@ -400,6 +420,11 @@ def main():
             since = datetime.fromisoformat(args.since) if args.since else None
             batch(db, load_rules(), report=report, since=since)
             return 0
+        if args.command == "run-pending":
+            outcome = run_pending(db, load_rules())
+            if outcome:
+                print(f"grid run {outcome}")
+            return 1 if outcome == "failed" else 0
         if args.command == "status":
             print(json.dumps(status(db), indent=1))
         else:

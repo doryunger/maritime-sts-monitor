@@ -249,6 +249,17 @@ export interface WorkerStatus {
   measured_utc: string;
 }
 
+export interface GridProcess {
+  action: "start" | "continue" | null;
+  run_no: number;
+  status: "idle" | "starting" | "running" | "interrupted";
+  requested_by: string | null;
+  heartbeat_utc: string | null;
+  error: string | null;
+  decided: number | null;
+  tiles: number | null;
+}
+
 export interface GridRun {
   run: number;
   day: string;
@@ -314,6 +325,16 @@ export const api = {
   run: (n: number) => fetch(`/api/runs/${n}`).then((r) => json<RunDetail>(r)),
   hotspotTestGrid: () => fetch("/api/hotspot-tests/grid").then((r) => json<{ summary: GridSummary; tiles: GridTile[] }>(r)),
   hotspotTestGridRuns: () => fetch("/api/hotspot-tests/grid/runs").then((r) => json<GridRun[]>(r)),
+  hotspotTestGridProcess: () => fetch("/api/hotspot-tests/grid/process").then((r) => json<GridProcess>(r)),
+  startHotspotTestGridProcess: async (action: "start" | "continue") => {
+    const response = await fetch("/api/hotspot-tests/grid/process", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    if (response.status === 409) return (await response.json()) as GridProcess;
+    return json<GridProcess>(response);
+  },
   hotspotTestWorker: () => fetch("/api/hotspot-tests/worker").then((r) => json<WorkerStatus | null>(r)),
   hotspotTestGridLand: () => fetch("/api/hotspot-tests/grid/land").then((r) => json<{ rings: [number, number][][] }>(r)),
   hotspotTestAreas: () => fetch("/api/hotspot-tests/areas").then((r) => json<HotspotTestArea[]>(r)),

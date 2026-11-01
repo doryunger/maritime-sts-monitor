@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import GridMap from "../components/GridMap";
+import RunControl from "../components/RunControl";
 import RunTable from "../components/RunTable";
 import WorkerStatus from "../components/WorkerStatus";
 
@@ -9,6 +10,7 @@ export default function HotspotTests() {
       <h1>Hotspot tests</h1>
       <nav className="subnav"><Link to="/hotspot-tests/areas">Areas</Link><Link to="/hotspot-tests/scenes">Earlier scans</Link></nav>
       <GridMap />
+      <RunControl />
       <WorkerStatus />
       <RunTable />
     </section>
