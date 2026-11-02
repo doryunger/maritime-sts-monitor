@@ -14,7 +14,8 @@ MANAGER_MODULE = "maritime_tip_cue.job_manager"
 
 def limits():
     return {
-        "max_session_seconds": int(os.environ.get("DISPATCH_MAX_SESSION_SECONDS", str(4 * 3600))),
+        "kill_grace_seconds": int(os.environ.get("DISPATCH_KILL_GRACE_SECONDS", "3600")),
+        "min_session_seconds": int(os.environ.get("DISPATCH_MIN_SESSION_SECONDS", "900")),
         "max_no_progress_sessions": int(os.environ.get("DISPATCH_MAX_NO_PROGRESS_SESSIONS", "3")),
         "max_seconds_per_day": int(os.environ.get("DISPATCH_MAX_SECONDS_PER_DAY", str(12 * 3600))),
         "settle_seconds": int(os.environ.get("DISPATCH_SETTLE_SECONDS", "180")),
@@ -49,6 +50,10 @@ def seconds_last_day(state, now):
     return total
 
 
+def remaining_seconds(state, now, cfg):
+    return cfg["max_seconds_per_day"] - seconds_last_day(state, now)
+
+
 def decide(counts, state, now, cfg, paused):
     if paused:
         return False, "paused"
@@ -60,7 +65,7 @@ def decide(counts, state, now, cfg, paused):
         return False, "backing off after a GPU deferral"
     if counts["claimed"] > 0:
         return False, "jobs are being processed elsewhere"
-    if seconds_last_day(state, now) >= cfg["max_seconds_per_day"]:
+    if remaining_seconds(state, now, cfg) < cfg["min_session_seconds"]:
         return False, "daily worker-seconds cap reached"
     return True, "ready jobs"
 
@@ -76,7 +81,7 @@ def settle(queue_counts, cfg, sleep=time.sleep):
 
 
 def run_session(
-    directory, queue_counts, run_worker, cfg, clock=time.time, paused=False, dry_run=False, sleep=time.sleep
+    directory, queue_counts, run_worker, cfg, clock=time.time, paused=False, dry_run=False, sleep=time.sleep, release=None
 ):
     directory.mkdir(parents=True, exist_ok=True)
     with (directory / "dispatcher.lock").open("a+") as lock:
@@ -91,8 +96,11 @@ def run_session(
         if not go or dry_run:
             return {"action": "would-run" if go else "skip", "reason": reason, "queue": before}
         started = clock()
-        exit_code = run_worker(cfg["max_session_seconds"])
+        name = f"drain-{int(started)}"
+        exit_code = run_worker(int(remaining_seconds(state, now, cfg)), name, cfg["kill_grace_seconds"])
         seconds = max(0, round(clock() - started))
+        if exit_code != 0 and release is not None:
+            release(name)
         after = settle(queue_counts, cfg, sleep)
         progress = after["completed"] - before["completed"]
         deferred = exit_code == worker_host.GPU_BUSY_EXIT
@@ -144,9 +152,18 @@ def main(argv=None):
     def queue_counts():
         return worker_host.manager_json(env_path, MANAGER_MODULE, "queue-status")
 
-    def run_worker(max_seconds):
-        command = worker_host.remote_worker_command(settings, "drain", CONTAINER, max_seconds)
-        return worker_host.run_remote(settings, command, session_timeout=max_seconds + settings["ready_timeout"])
+    def run_worker(budget_seconds, session_name, grace_seconds):
+        hard_seconds = budget_seconds + grace_seconds
+        command = worker_host.remote_worker_command(
+            settings, f"drain --stop-after {budget_seconds} --session {session_name}", CONTAINER, hard_seconds
+        )
+        return worker_host.run_remote(settings, command, session_timeout=hard_seconds + settings["ready_timeout"])
+
+    def release(session_name):
+        try:
+            worker_host.manager_json(env_path, MANAGER_MODULE, "release-session", "--session", session_name)
+        except RuntimeError as error:
+            print(f"session claims not released: {error}", file=sys.stderr)
 
     if args.preflight:
         directory.mkdir(parents=True, exist_ok=True)
@@ -163,7 +180,7 @@ def main(argv=None):
         }
         print(json.dumps(report, sort_keys=True))
         return 0
-    result = run_session(directory, queue_counts, run_worker, limits(), dry_run=args.dry_run)
+    result = run_session(directory, queue_counts, run_worker, limits(), dry_run=args.dry_run, release=release)
     print(json.dumps(result, sort_keys=True), flush=True)
     return 0 if result["action"] != "ran" or result["exit"] == 0 else 1
 

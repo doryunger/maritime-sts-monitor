@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "deploy" / "catalog
 dispatch = importlib.import_module("dispatch_worker")
 worker_host = importlib.import_module("worker_host")
 
-CFG = {"max_session_seconds": 3600, "max_no_progress_sessions": 3, "max_seconds_per_day": 7200, "settle_seconds": 60, "defer_backoff_seconds": 900}
+CFG = {"kill_grace_seconds": 600, "min_session_seconds": 900, "max_no_progress_sessions": 3, "max_seconds_per_day": 7200, "settle_seconds": 60, "defer_backoff_seconds": 900}
 
 
 class Queue:
@@ -30,53 +30,104 @@ class Clock:
 
 
 def session(tmp_path, queue, worker, clock, **kwargs):
-    return dispatch.run_session(tmp_path, queue, worker, CFG, clock=clock, sleep=lambda s: None, **kwargs)
+    return dispatch.run_session(tmp_path, queue, worker, CFG, clock=clock, sleep=lambda s, *_: None, **kwargs)
 
 
 def test_empty_queue_never_wakes_worker(tmp_path):
     calls = []
-    result = session(tmp_path, Queue(ready=0), lambda s: calls.append(s) or 0, Clock())
+    result = session(tmp_path, Queue(ready=0), lambda s, *_: calls.append(s) or 0, Clock())
     assert result["action"] == "skip" and calls == []
 
 
 def test_only_delayed_retries_never_wakes_worker(tmp_path):
     calls = []
-    result = session(tmp_path, Queue(ready=0, retry_wait=3), lambda s: calls.append(s) or 0, Clock())
+    result = session(tmp_path, Queue(ready=0, retry_wait=3), lambda s, *_: calls.append(s) or 0, Clock())
     assert result["reason"] == "no ready jobs" and calls == []
 
 
 def test_pause_flag_blocks_wake(tmp_path):
     (tmp_path / "paused").touch()
     calls = []
-    result = session(tmp_path, Queue(), lambda s: calls.append(s) or 0, Clock())
+    result = session(tmp_path, Queue(), lambda s, *_: calls.append(s) or 0, Clock())
     assert result["reason"] == "paused" and calls == []
 
 
 def test_dry_run_decides_without_waking_or_writing_state(tmp_path):
     calls = []
-    result = session(tmp_path, Queue(), lambda s: calls.append(s) or 0, Clock(), dry_run=True)
+    result = session(tmp_path, Queue(), lambda s, *_: calls.append(s) or 0, Clock(), dry_run=True)
     assert result["action"] == "would-run" and calls == []
     assert not (tmp_path / "state.json").exists()
 
 
-def test_session_is_bounded_and_records_progress(tmp_path):
+def test_session_budget_is_what_is_left_of_the_day(tmp_path):
     queue, clock, seen = Queue(), Clock(), []
 
-    def worker(max_seconds):
+    def worker(max_seconds, *_):
         seen.append(max_seconds)
         queue.counts["completed"] += 2
         clock.value += 600
         return 0
 
     result = session(tmp_path, queue, worker, clock)
-    assert seen == [3600]
+    assert seen == [7200]
     assert result["progress"] == 2 and result["seconds"] == 600 and result["no_progress_sessions"] == 0
+
+
+def test_second_session_gets_only_the_remaining_budget_and_a_session_name(tmp_path):
+    queue, clock, seen = Queue(), Clock(), []
+
+    def worker(budget, name, grace):
+        seen.append((budget, name, grace))
+        queue.counts["completed"] += 1
+        clock.value += 3000
+        return 0
+
+    session(tmp_path, queue, worker, clock)
+    session(tmp_path, queue, worker, clock)
+    assert [(budget, grace) for budget, _, grace in seen] == [(7200, 600), (4200, 600)]
+    assert seen[0][1] != seen[1][1] and seen[0][1].startswith("drain-")
+
+
+def test_a_day_with_less_than_the_minimum_left_does_not_wake_the_worker(tmp_path):
+    queue, clock, calls = Queue(), Clock(), []
+
+    def worker(*args):
+        calls.append(args)
+        queue.counts["completed"] += 1
+        clock.value += 6500
+        return 0
+
+    session(tmp_path, queue, worker, clock)
+    blocked = session(tmp_path, queue, worker, clock)
+    assert blocked["reason"] == "daily worker-seconds cap reached" and len(calls) == 1
+
+
+def test_claims_of_a_session_that_did_not_exit_cleanly_are_released_before_settling(tmp_path):
+    queue, clock, released = Queue(), Clock(), []
+
+    def killed(budget, name, grace):
+        queue.counts["claimed"] = 1
+        clock.value += 100
+        return 137
+
+    def release(name):
+        released.append(name)
+        queue.counts["claimed"] = 0
+
+    result = dispatch.run_session(tmp_path, queue, killed, CFG, clock=clock, sleep=lambda s: None, release=release)
+    assert len(released) == 1 and released[0].startswith("drain-") and result["queue"]["claimed"] == 0
+
+
+def test_a_clean_session_releases_nothing(tmp_path):
+    queue, clock, released = Queue(), Clock(), []
+    dispatch.run_session(tmp_path, queue, lambda *a: 0, CFG, clock=clock, sleep=lambda s: None, release=released.append)
+    assert released == []
 
 
 def test_breaker_opens_after_repeated_sessions_without_progress(tmp_path):
     queue, clock, calls = Queue(), Clock(), []
 
-    def worker(max_seconds):
+    def worker(max_seconds, *_):
         calls.append(max_seconds)
         clock.value += 1000
         return 2
@@ -94,11 +145,11 @@ def test_breaker_opens_after_repeated_sessions_without_progress(tmp_path):
 def test_progress_resets_breaker(tmp_path):
     queue, clock = Queue(), Clock()
 
-    def stuck(max_seconds):
+    def stuck(max_seconds, *_):
         clock.value += 1000
         return 1
 
-    def good(max_seconds):
+    def good(max_seconds, *_):
         queue.counts["completed"] += 1
         clock.value += 1000
         return 0
@@ -111,7 +162,7 @@ def test_progress_resets_breaker(tmp_path):
 def test_daily_worker_seconds_cap(tmp_path):
     queue, clock, calls = Queue(), Clock(), []
 
-    def worker(max_seconds):
+    def worker(max_seconds, *_):
         calls.append(1)
         queue.counts["completed"] += 1
         clock.value += 3600
@@ -132,7 +183,7 @@ def test_second_dispatcher_cannot_run_concurrently(tmp_path):
     with (tmp_path / "dispatcher.lock").open("a+") as held:
         fcntl.flock(held.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         calls = []
-        result = session(tmp_path, Queue(), lambda s: calls.append(s) or 0, Clock())
+        result = session(tmp_path, Queue(), lambda s, *_: calls.append(s) or 0, Clock())
     assert "another dispatcher" in result["reason"] and calls == []
 
 
@@ -186,20 +237,20 @@ def test_waits_for_manager_to_record_the_last_result_before_judging_progress(tmp
                 queue.counts["completed"] += 1
         return data
 
-    def worker(max_seconds):
+    def worker(max_seconds, *_):
         queue.counts["claimed"] = 1
         reads["after"] = 1
         clock.value += 100
         return 0
 
-    result = dispatch.run_session(tmp_path, counts, worker, CFG, clock=clock, sleep=lambda s: None)
+    result = dispatch.run_session(tmp_path, counts, worker, CFG, clock=clock, sleep=lambda s, *_: None)
     assert result["progress"] == 1 and result["no_progress_sessions"] == 0
 
 
 def test_does_not_wake_while_jobs_are_claimed_elsewhere(tmp_path):
     queue, calls = Queue(), []
     queue.counts["claimed"] = 1
-    result = session(tmp_path, queue, lambda s: calls.append(s) or 0, Clock())
+    result = session(tmp_path, queue, lambda s, *_: calls.append(s) or 0, Clock())
     assert result["reason"] == "jobs are being processed elsewhere" and calls == []
 
 
@@ -278,7 +329,7 @@ def test_remote_command_runs_the_guard_before_the_worker_and_stops_when_it_defer
 def test_deferred_session_is_recorded_but_never_opens_the_breaker(tmp_path):
     clock = Clock()
     for _ in range(5):
-        result = session(tmp_path, Queue(), lambda s: worker_host.GPU_BUSY_EXIT, clock)
+        result = session(tmp_path, Queue(), lambda s, *_: worker_host.GPU_BUSY_EXIT, clock)
         assert result["action"] == "deferred" and result["no_progress_sessions"] == 0
         clock.value += 1000
     assert dispatch.load_state(tmp_path)["no_progress_sessions"] == 0
@@ -287,10 +338,10 @@ def test_deferred_session_is_recorded_but_never_opens_the_breaker(tmp_path):
 
 def test_a_deferral_backs_the_dispatcher_off_so_a_busy_gpu_is_not_woken_every_two_minutes(tmp_path):
     clock, calls = Clock(), []
-    first = session(tmp_path, Queue(), lambda s: calls.append(s) or worker_host.GPU_BUSY_EXIT, clock)
+    first = session(tmp_path, Queue(), lambda s, *_: calls.append(s) or worker_host.GPU_BUSY_EXIT, clock)
     assert first["action"] == "deferred"
     clock.value += 120
-    blocked = session(tmp_path, Queue(), lambda s: calls.append(s) or 0, clock)
+    blocked = session(tmp_path, Queue(), lambda s, *_: calls.append(s) or 0, clock)
     assert blocked["action"] == "skip" and "backing off" in blocked["reason"] and len(calls) == 1
     clock.value += 900
-    assert session(tmp_path, Queue(), lambda s: calls.append(s) or 0, clock)["action"] == "ran"
+    assert session(tmp_path, Queue(), lambda s, *_: calls.append(s) or 0, clock)["action"] == "ran"

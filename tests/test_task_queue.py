@@ -131,3 +131,14 @@ def test_restore_keeps_the_original_ready_time_so_clock_skew_cannot_hide_a_job(r
     time.sleep(0.01)
     task_queue.restore({"j": manifest("j")}, [])
     assert redis.zscore(task_queue.keys()["pending"], "j") == first
+
+
+def test_release_session_drops_only_that_sessions_leases_and_the_manager_then_requeues_them(redis):
+    dispatch("mine")
+    dispatch("other")
+    task_queue.claim("mine", "drain-7:aaa")
+    task_queue.claim("other", "local:bbb")
+    assert task_queue.release_session("drain-7") == 1
+    k = task_queue.keys()
+    assert not redis.exists(k["lease"] + "mine") and redis.exists(k["lease"] + "other")
+    assert task_queue.requeue_stale() == 1 and redis.sismember(k["inflight"], "other")

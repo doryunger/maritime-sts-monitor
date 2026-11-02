@@ -97,9 +97,10 @@ def scan_and_dispatch_one():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("run", "once", "scan-one", "queue-status"))
+    parser.add_argument("command", choices=("run", "once", "scan-one", "queue-status", "release-session"))
     parser.add_argument("--interval", type=int, default=10)
     parser.add_argument("--job-id")
+    parser.add_argument("--session")
     args = parser.parse_args()
     if args.interval < 1:
         parser.error("--interval must be positive")
@@ -110,6 +111,11 @@ def main():
         return 0
     if args.command == "queue-status":
         print(json.dumps(task_queue.counts(), sort_keys=True))
+        return 0
+    if args.command == "release-session":
+        if not args.session:
+            parser.error("release-session needs --session")
+        print(json.dumps({"released": task_queue.release_session(args.session)}, sort_keys=True))
         return 0
     if args.command == "scan-one":
         return scan_and_dispatch_one()

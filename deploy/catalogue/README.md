@@ -93,8 +93,16 @@ starts EC2 directly (no refinery wake service), and runs `worker drain` over SSH
 
 Safeguards, all in `data/dispatcher/state.json` or environment settings:
 
-- `DISPATCH_MAX_SESSION_SECONDS` (default 14400) bounds one session; the SSH client, the remote container and
-  the local SSH process are all terminated at the limit.
+- There is no fixed session length. A session gets what is left of the rolling-24-hour budget
+  (`DISPATCH_MAX_SECONDS_PER_DAY` minus the last day's sessions) as a soft limit: `worker drain --stop-after` stops
+  claiming new jobs when it is spent and finishes the one in flight, so nothing is killed mid-job. The hard kill (remote
+  `timeout`, SSH client and container) comes `DISPATCH_KILL_GRACE_SECONDS` (default 3600) later, as a backstop for a
+  hung job. The dispatcher does not wake the worker when less than `DISPATCH_MIN_SESSION_SECONDS` (default 900) of the
+  budget is left, because a session that short could finish no job and would count towards the no-progress breaker.
+- Each session names its claims (`drain --session drain-<start>`). If the session exits non-zero (a kill, a crash) the
+  dispatcher runs `job_manager release-session`, which deletes the lease of that session's claims only, so the manager
+  requeues them at its next pass instead of after the 900 s lease and the next wake is not blocked by them.
+  Claims of other owners, such as the local runner, are untouched.
 - `DISPATCH_MAX_NO_PROGRESS_SESSIONS` (default 3): that many consecutive sessions that complete no job open a
   breaker and the instance is no longer woken; inspect the failures, then `dispatch_worker.py --reset`.
 - `DISPATCH_MAX_SECONDS_PER_DAY` (default 43200) caps worker time over a rolling 24 hours.
@@ -122,7 +130,7 @@ failure. None of steps 1-3 wakes EC2.
 4. EC2 prerequisites, checked by hand: worker image rebuilt from this commit (the run.py fix and abort guards);
    `config.local.yaml` on EC2 has `worker.queue.max_seconds_per_scene`, since `worker drain` refuses without it;
    `nvidia-smi`, `/opt/ai2-models`, 3 GB free disk, instance profile S3 access.
-5. Kill drill (wakes EC2): with one real ready job, run with `DISPATCH_MAX_SESSION_SECONDS=120`. Expect exit 124, no
+5. Kill drill (wakes EC2): with one real ready job, run with `DISPATCH_MAX_SECONDS_PER_DAY=120 DISPATCH_MIN_SESSION_SECONDS=60 DISPATCH_KILL_GRACE_SECONDS=0`. Expect exit 124, no
    `sts-worker-drain` container left on EC2 (`docker ps`), the attempt recorded as `stopped` in `catalogue job-status`,
    the job back to `retry_wait`, and EC2 stopped by the idle check once it has been quiet. This spends one retry.
 6. Live drain with defaults over one S2 and one S1 job from different hot spots: both `succeeded`, five artifacts

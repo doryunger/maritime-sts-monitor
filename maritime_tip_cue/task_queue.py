@@ -308,6 +308,18 @@ def requeue_stale():
     )
 
 
+def release_session(session):
+    redis = client()
+    k = keys()
+    released = 0
+    for job_id in redis.smembers(k["inflight"]):
+        owner = redis.get(k["owner"] + job_id)
+        if owner and owner.startswith(f"{session}:"):
+            redis.delete(k["lease"] + job_id)
+            released += 1
+    return released
+
+
 def restore(jobs, completed):
     redis = client()
     k = keys()

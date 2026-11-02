@@ -575,18 +575,26 @@ def list_jobs(client, bucket: str, include_scenes: bool = False) -> list[dict]:
     return rows
 
 
-def drain_jobs(client, bucket: str) -> list[dict]:
+def drain_jobs(client, bucket: str, stop_after: int | None = None, session: str | None = None) -> list[dict]:
     if not settings()["worker"]["queue"].get("max_seconds_per_scene"):
         raise RuntimeError("drain requires worker.queue.max_seconds_per_scene in the worker config")
     results = []
     attempted = set()
+    deadline = time.monotonic() + stop_after if stop_after is not None else None
+
+    def expired():
+        return deadline is not None and time.monotonic() >= deadline
+
     while True:
         pending = [job_id for job_id in task_queue.ready_ids() if job_id not in attempted]
-        if not pending:
+        if not pending or expired():
             return results
         for job_id in pending:
+            if expired():
+                return results
             attempted.add(job_id)
-            owner = f"{os.uname().nodename if hasattr(os, 'uname') else 'worker'}:{uuid.uuid4().hex}"
+            label = session or (os.uname().nodename if hasattr(os, "uname") else "worker")
+            owner = f"{label}:{uuid.uuid4().hex}"
             manifest = task_queue.claim(job_id=job_id, owner=owner)
             if manifest is None:
                 continue
@@ -607,7 +615,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(prog="maritime-sts-monitor worker")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("list")
-    commands.add_parser("drain")
+    drain_parser = commands.add_parser("drain")
+    drain_parser.add_argument("--stop-after", type=int)
+    drain_parser.add_argument("--session")
     run_parser = commands.add_parser("run")
     source = run_parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--manifest", type=Path)
@@ -621,7 +631,7 @@ def main() -> int:
         print(json.dumps(list_jobs(client, bucket), indent=2))
         return 0
     if args.command == "drain":
-        results = drain_jobs(client, bucket)
+        results = drain_jobs(client, bucket, args.stop_after, args.session)
         print(json.dumps({"processed": len(results), "failed": sum(row["status"] != "succeeded" for row in results)}))
         return int(any(row["status"] != "succeeded" for row in results))
     queue_owner = None
