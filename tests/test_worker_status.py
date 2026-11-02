@@ -24,17 +24,17 @@ def test_activity_from_the_worker_readings(state, cpu, gpu, expected):
 
 
 def test_record_keeps_one_row_and_read_returns_it(pgdb):
-    assert worker_status.read(lambda sql, params=(): [dict(r) for r in _rows(pgdb, sql)]) is None
+    assert worker_status.read(lambda sql, params=(): _rows(pgdb, sql, params)) is None
     worker_status.record(pgdb, "running", 60, 0, LIMITS)
     worker_status.record(pgdb, "running", 2, 1, LIMITS)
     pgdb.commit()
-    row = worker_status.read(lambda sql, params=(): _rows(pgdb, sql))
+    row = worker_status.read(lambda sql, params=(): _rows(pgdb, sql, params))
     assert (row["state"], row["cpu"], row["gpu"], row["activity"]) == ("running", 2, 1, "idle")
     assert pgdb.execute("select count(*) from processing.worker_status").fetchone()[0] == 1
 
 
-def _rows(conn, sql):
-    cursor = conn.execute(sql)
+def _rows(conn, sql, params=()):
+    cursor = conn.execute(sql, params)
     names = [column.name for column in cursor.description]
     return [dict(zip(names, row)) for row in cursor.fetchall()]
 
