@@ -143,12 +143,14 @@ def test_elapsed_time_adds_each_request_of_the_run_and_stops_counting_while_it_i
     assert state(api)["elapsed_seconds"] == 0
     pgdb.execute(
         "INSERT INTO processing.grid_run_requests (requested_by,kind,run_no,batch_utc,status,started_utc,heartbeat_utc,finished_utc,error) "
-        "VALUES ('sts','start',1,%s,'failed',now()-interval '3 hours',now()-interval '2 hours 50 minutes',now()-interval '1 hour','interrupted'),"
+        "VALUES ('sts','start',1,%s,'failed',now()-interval '5 hours',now()-interval '6 hours',now()-interval '4 hours','interrupted'),"
+        "('sts','start',1,%s,'failed',now()-interval '3 hours 30 minutes',now()-interval '1 hour',now()-interval '3 hours','interrupted'),"
+        "('sts','start',1,%s,'failed',now()-interval '3 hours',now()-interval '2 hours 50 minutes',now()-interval '1 hour','interrupted'),"
         "('sts','continue',1,%s,'failed',now()-interval '40 minutes',now()-interval '30 minutes',now()-interval '30 minutes','stopped')",
-        (NOW, NOW),
+        (NOW, NOW, NOW, NOW),
     )
     stopped = state(api)
-    assert stopped["elapsed_seconds"] == 1200 and stopped["status"] == "interrupted"
+    assert stopped["elapsed_seconds"] == 3000 and stopped["status"] == "interrupted"
     pgdb.execute("UPDATE processing.grid_run_requests SET status='running', error=NULL, finished_utc=NULL, heartbeat_utc=now() WHERE request_id=(SELECT MAX(request_id) FROM processing.grid_run_requests)")
     running = state(api)
-    assert running["status"] == "running" and 600 + 2390 <= running["elapsed_seconds"] <= 600 + 2420
+    assert running["status"] == "running" and 1800 + 600 + 2390 <= running["elapsed_seconds"] <= 1800 + 600 + 2420

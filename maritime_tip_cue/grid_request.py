@@ -31,14 +31,15 @@ def latest_batch(rows):
 
 def elapsed_seconds(rows, run_no, stale):
     found = rows(
-        "SELECT COALESCE(SUM(EXTRACT(EPOCH FROM ("
+        "SELECT COALESCE(SUM(GREATEST(0, EXTRACT(EPOCH FROM ("
         "CASE WHEN status='running' AND fresh THEN now() "
-        "WHEN status='running' OR error='interrupted' THEN COALESCE(heartbeat_utc, started_utc) "
-        "ELSE COALESCE(finished_utc, heartbeat_utc, started_utc) END - started_utc))),0) AS seconds FROM "
+        "WHEN status='running' THEN COALESCE(heartbeat_utc, started_utc) "
+        "WHEN error='interrupted' THEN COALESCE(LEAST(heartbeat_utc, finished_utc), started_utc) "
+        "ELSE COALESCE(finished_utc, heartbeat_utc, started_utc) END - started_utc)))),0) AS seconds FROM "
         f"(SELECT *, {FRESH} AS fresh FROM processing.grid_run_requests) r WHERE run_no=%s AND started_utc IS NOT NULL",
         (stale, run_no),
     )
-    return max(0, int(found[0]["seconds"]))
+    return int(found[0]["seconds"])
 
 
 def state(cur, rules):
