@@ -66,7 +66,7 @@ export default function RunControl() {
         <div><dt>Run ID</dt><dd>{process.run_no}</dd></div>
         <div><dt>Process</dt><dd>{STATES[process.status] ?? process.status}</dd></div>
         {process.elapsed_seconds > 0 && <div><dt>Elapsed</dt><dd>{duration(process.elapsed_seconds + (counting ? Math.max(0, now - loaded) / 1000 : 0))}</dd></div>}
-        {process.tiles !== null && <div><dt>Decided</dt><dd>{process.decided}/{process.tiles}</dd></div>}
+        {process.tiles !== null && <div><dt>Scanned</dt><dd>{process.decided}/{process.tiles}</dd></div>}
         {process.requested_by && <div><dt>Started by</dt><dd>{process.requested_by}</dd></div>}
         {process.heartbeat_utc && <div><dt>Updated</dt><dd>{process.heartbeat_utc.slice(11, 16)}Z</dd></div>}
         {(process.error || error) && <div><dt>Error</dt><dd>{process.error || error}</dd></div>}
