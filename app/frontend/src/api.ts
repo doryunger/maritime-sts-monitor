@@ -247,6 +247,7 @@ export interface WorkerStatus {
   gpu: number | null;
   activity: string | null;
   measured_utc: string;
+  month_seconds: number;
 }
 
 export interface GridProcess {
@@ -254,6 +255,7 @@ export interface GridProcess {
   run_no: number;
   status: "idle" | "starting" | "running" | "interrupted";
   requested_by: string | null;
+  elapsed_seconds: number;
   heartbeat_utc: string | null;
   error: string | null;
   decided: number | null;
@@ -365,6 +367,11 @@ export const sceneTag = (id: string) => {
 };
 
 export const when = (t?: string | null) => (t ? t.replace("T", " ").slice(0, 16) + "Z" : "–");
+export const duration = (seconds: number) => {
+  const total = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), sec = total % 60;
+  return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+};
 export const label = (v?: string | null) => (v ? v.replace(/_/g, " ") : "–");
 export const num = (v: unknown, d = 2) =>
   v === null || v === undefined ? "n/a" : typeof v === "number" ? (Number.isInteger(v) ? String(v) : v.toFixed(d)) : String(v);

@@ -29,6 +29,18 @@ def latest_batch(rows):
     )
 
 
+def elapsed_seconds(rows, run_no, stale):
+    found = rows(
+        "SELECT COALESCE(SUM(EXTRACT(EPOCH FROM ("
+        "CASE WHEN status='running' AND fresh THEN now() "
+        "WHEN status='running' OR error='interrupted' THEN COALESCE(heartbeat_utc, started_utc) "
+        "ELSE COALESCE(finished_utc, heartbeat_utc, started_utc) END - started_utc))),0) AS seconds FROM "
+        f"(SELECT *, {FRESH} AS fresh FROM processing.grid_run_requests) r WHERE run_no=%s AND started_utc IS NOT NULL",
+        (stale, run_no),
+    )
+    return max(0, int(found[0]["seconds"]))
+
+
 def state(cur, rules):
     rows = reader(cur)
     stale = rules["request_stale_minutes"]
@@ -50,6 +62,7 @@ def state(cur, rules):
         "run_no": run_no,
         "status": status,
         "requested_by": shown["requested_by"] if shown else None,
+        "elapsed_seconds": elapsed_seconds(rows, run_no, stale),
         "heartbeat_utc": iso(shown["heartbeat_utc"] or shown["requested_utc"]) if shown else None,
         "error": shown["error"] if shown and not active and shown["error"] not in ("interrupted", "not picked up", "stopped") else None,
         "decided": tracked["decided"] if tracked else None,

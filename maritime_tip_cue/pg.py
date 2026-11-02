@@ -282,6 +282,11 @@ create table if not exists processing.worker_status (
     measured_utc timestamptz not null
 );
 
+create table if not exists processing.worker_uptime (
+    day date primary key,
+    seconds double precision not null
+);
+
 create or replace view review.run_lineage as
 select r.run_key, r.run_no, r.origin, r.folder, r.attempt_id, a.attempt_no, a.status as attempt_status,
     j.job_id, j.status as job_status, j.scan_id, j.site, j.source
@@ -371,7 +376,7 @@ EVENT_KEYS = {
     "job_attempts": "job_id",
     "job_scenes": "job_id",
 }
-EVENT_ROOTS = ("scans", "channels", "grid_draws", "grid_scans", "grid_visits", "grid_run_requests", "worker_status")
+EVENT_ROOTS = ("scans", "channels", "grid_draws", "grid_scans", "grid_visits", "grid_run_requests", "worker_status", "worker_uptime")
 EVENT_TABLES = ("runs", "sync_runs", "removed_runs")
 
 

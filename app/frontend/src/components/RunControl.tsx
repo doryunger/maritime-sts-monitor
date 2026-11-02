@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, GridProcess } from "../api";
+import { api, duration, GridProcess } from "../api";
 
 const STATES: Record<string, string> = {
   idle: "Idle",
@@ -10,13 +10,20 @@ const STATES: Record<string, string> = {
 
 export default function RunControl() {
   const [process, setProcess] = useState<GridProcess | null>(null);
+  const [loaded, setLoaded] = useState(Date.now());
+  const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const active = process?.action === null;
+  const counting = process?.status === "running";
+  const accept = (next: GridProcess) => {
+    setProcess(next);
+    setLoaded(Date.now());
+  };
 
   const load = useCallback(async () => {
     try {
-      setProcess(await api.hotspotTestGridProcess());
+      accept(await api.hotspotTestGridProcess());
       setError(null);
     } catch (e) {
       setError((e as Error).message);
@@ -29,11 +36,17 @@ export default function RunControl() {
     return () => window.clearInterval(timer);
   }, [load, active]);
 
+  useEffect(() => {
+    if (!counting) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [counting]);
+
   const press = async () => {
     if (!process?.action) return;
     setBusy(true);
     try {
-      setProcess(await api.startHotspotTestGridProcess(process.action));
+      accept(await api.startHotspotTestGridProcess(process.action));
       setError(null);
     } catch (e) {
       setError((e as Error).message);
@@ -52,6 +65,7 @@ export default function RunControl() {
       <dl className="worker-status">
         <div><dt>Run ID</dt><dd>{process.run_no}</dd></div>
         <div><dt>Process</dt><dd>{STATES[process.status] ?? process.status}</dd></div>
+        {process.elapsed_seconds > 0 && <div><dt>Elapsed</dt><dd>{duration(process.elapsed_seconds + (counting ? Math.max(0, now - loaded) / 1000 : 0))}</dd></div>}
         {process.tiles !== null && <div><dt>Decided</dt><dd>{process.decided}/{process.tiles}</dd></div>}
         {process.requested_by && <div><dt>Started by</dt><dd>{process.requested_by}</dd></div>}
         {process.heartbeat_utc && <div><dt>Updated</dt><dd>{process.heartbeat_utc.slice(11, 16)}Z</dd></div>}

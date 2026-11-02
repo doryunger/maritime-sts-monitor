@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, WorkerStatus as Status } from "../api";
+import { api, duration, WorkerStatus as Status } from "../api";
 
 const STATES: Record<string, string> = {
   pending: "Starting",
@@ -50,6 +50,7 @@ export default function WorkerStatus() {
       <div><dt>Doing</dt><dd>{(status.activity && ACTIVITY[status.activity]) || "—"}</dd></div>
       <div><dt>CPU</dt><dd>{running ? percent(status.cpu) : "—"}</dd></div>
       <div><dt>GPU</dt><dd>{running ? percent(status.gpu) : "—"}</dd></div>
+      <div><dt>This month</dt><dd>{duration(status.month_seconds)}</dd></div>
       <div><dt>Updated</dt><dd>{status.measured_utc.slice(11, 16)}Z</dd></div>
     </dl>
     </>

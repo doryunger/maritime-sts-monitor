@@ -34,7 +34,7 @@ def state(api):
 def test_first_run_is_number_one_and_starts_a_pending_request(api, pgdb):
     assert state(api) == {
         "action": "start", "run_no": 1, "status": "idle", "requested_by": None,
-        "heartbeat_utc": None, "error": None, "decided": None, "tiles": None,
+        "elapsed_seconds": 0, "heartbeat_utc": None, "error": None, "decided": None, "tiles": None,
     }
     posted = api.post("/api/hotspot-tests/grid/process", json={"action": "start"})
     assert posted.status_code == 202
@@ -136,3 +136,19 @@ def test_a_stop_signal_marks_the_request_failed_at_once_so_the_page_offers_conti
     assert pgdb.execute("SELECT status, error FROM processing.grid_run_requests").fetchone() == ("failed", "stopped")
     current = api.get("/api/hotspot-tests/grid/process").json()
     assert current["action"] == "continue" and current["status"] == "interrupted" and current["error"] is None
+
+
+def test_elapsed_time_adds_each_request_of_the_run_and_stops_counting_while_it_is_stopped(api, pgdb):
+    draw(pgdb, NOW, ["T1", "T2"], decided=["T1"])
+    assert state(api)["elapsed_seconds"] == 0
+    pgdb.execute(
+        "INSERT INTO processing.grid_run_requests (requested_by,kind,run_no,batch_utc,status,started_utc,heartbeat_utc,finished_utc,error) "
+        "VALUES ('sts','start',1,%s,'failed',now()-interval '3 hours',now()-interval '2 hours 50 minutes',now()-interval '1 hour','interrupted'),"
+        "('sts','continue',1,%s,'failed',now()-interval '40 minutes',now()-interval '30 minutes',now()-interval '30 minutes','stopped')",
+        (NOW, NOW),
+    )
+    stopped = state(api)
+    assert stopped["elapsed_seconds"] == 1200 and stopped["status"] == "interrupted"
+    pgdb.execute("UPDATE processing.grid_run_requests SET status='running', error=NULL, finished_utc=NULL, heartbeat_utc=now() WHERE request_id=(SELECT MAX(request_id) FROM processing.grid_run_requests)")
+    running = state(api)
+    assert running["status"] == "running" and 600 + 2390 <= running["elapsed_seconds"] <= 600 + 2420

@@ -1,5 +1,7 @@
 import pytest
 
+from datetime import UTC, date, datetime
+
 from maritime_tip_cue import worker_status
 
 LIMITS = (5, 5)
@@ -39,3 +41,28 @@ def _rows(conn, sql):
 
 def test_limits_come_from_the_rules_file():
     assert worker_status.load_limits() == (5, 5)
+
+
+def _month(pgdb, today):
+    return worker_status.read(lambda sql, params=(): _rows_with(pgdb, sql, params), today)["month_seconds"]
+
+
+def _rows_with(conn, sql, params):
+    cursor = conn.execute(sql, params)
+    names = [column.name for column in cursor.description]
+    return [dict(zip(names, row)) for row in cursor.fetchall()]
+
+
+def test_running_time_counts_only_between_two_running_checks_and_splits_at_midnight(pgdb):
+    at = lambda month, day, hour, minute=0: datetime(2026, month, day, hour, minute, tzinfo=UTC)
+    worker_status.record(pgdb, "stopped", None, None, LIMITS, at(10, 31, 20))
+    worker_status.record(pgdb, "running", 1, 1, LIMITS, at(10, 31, 21))
+    worker_status.record(pgdb, "running", 1, 1, LIMITS, at(10, 31, 23, 30))
+    worker_status.record(pgdb, "running", 1, 1, LIMITS, at(11, 1, 1))
+    worker_status.record(pgdb, "stopping", None, None, LIMITS, at(11, 1, 1, 3))
+    worker_status.record(pgdb, "stopped", None, None, LIMITS, at(11, 1, 1, 6))
+    days = dict(pgdb.execute("select day,seconds from processing.worker_uptime").fetchall())
+    assert days == {date(2026, 10, 31): 9000 + 1800, date(2026, 11, 1): 3600}
+    assert _month(pgdb, date(2026, 10, 15)) == 10800
+    assert _month(pgdb, date(2026, 11, 30)) == 3600
+    assert _month(pgdb, date(2026, 12, 1)) == 0
