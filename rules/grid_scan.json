@@ -42,6 +42,12 @@
     ],
     "basis": "S1 first: the live sites give 3.7 to 6.1 pairs per S1 scene against 1.0 to 1.65 per S2 scene (docs/feasibility.md, predicting pair locations), so one empty S1 scene is far stronger evidence than one empty S2 scene. S2 is used when a tile has no usable S1 scene in the window. S2 cloud limit is scene.s2_max_cloud_pct in sts_graph.json."
   },
+  "s1_scene_modes": {
+    "value": [
+      "IW_GRDH"
+    ],
+    "basis": "User decision 2026-11-02: only Sentinel-1 IW GRDH scenes are taken (the scene id carries the mode, S1x_IW_GRDH_...). The one EW GRDM scene in 145 S1 grid scenes (cell 44PPA, 2026-10-28) failed with 'job has 1 incomplete scenes' while all 144 IW GRDH scenes succeeded, so excluding the other modes removes 1 failure and loses 0 working scenes. A tile whose only S1 scenes are another mode falls through to S2."
+  },
   "hit_verdicts": {
     "value": [
       "pair",

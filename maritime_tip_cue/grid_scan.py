@@ -29,12 +29,23 @@ def budget(rules, scans_today, firsts_today):
     return room, max(min(rules["first_dates_per_day"] - firsts_today, room), 0)
 
 
+def s1_mode(scene_id):
+    return "_".join(scene_id.split("_")[1:3])
+
+
+def usable(row, rules):
+    return row["source"] != "s1" or s1_mode(row["scene"]) in rules["s1_scene_modes"]
+
+
 def pick_scene(found, rules, used_scenes, used_days, rng):
     for source in rules["source_order"]:
         pool = [
             row
             for row in found
-            if row["source"] == source and row["scene"] not in used_scenes and row["time"][:10] not in used_days
+            if row["source"] == source
+            and usable(row, rules)
+            and row["scene"] not in used_scenes
+            and row["time"][:10] not in used_days
         ]
         if pool:
             return rng.choice(pool)

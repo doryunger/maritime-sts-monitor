@@ -16,6 +16,7 @@ RULES = {
     "window_days": 30,
     "window_max_days": 60,
     "source_order": ["s1", "s2"],
+    "s1_scene_modes": ["IW_GRDH"],
     "hit_verdicts": ["pair", "possible_pair"],
     "min_hulls_for_second_date": None,
     "min_shore_distance_m": 2000,
@@ -85,15 +86,28 @@ def test_decide_quiet_only_when_floor_is_set():
     assert grid_scan.decide([scan("done", 0, 30)], RULES | {"min_hulls_for_second_date": 10}) == "second"
 
 
+IW_A = "S1A_IW_GRDH_1SDV_20261027T100000_20261027T100025_000001_000001_AAAA"
+IW_B = "S1A_IW_GRDH_1SDV_20261025T100000_20261025T100025_000001_000001_BBBB"
+EW = "S1D_EW_GRDM_1SDV_20261028T002957_20261028T003100_005208_009E35"
+
+
 def test_pick_scene_prefers_s1_and_skips_used_scenes_and_days():
-    found = [scene("s1", "a", 3), scene("s1", "b", 5), scene("s2", "c", 4)]
+    found = [scene("s1", IW_A, 3), scene("s1", IW_B, 5), scene("s2", "c", 4)]
     rng = random.Random(1)
-    assert {grid_scan.pick_scene(found, RULES, set(), set(), rng)["scene"] for _ in range(40)} == {"a", "b"}
-    assert grid_scan.pick_scene(found, RULES, {"a"}, set(), rng)["scene"] == "b"
+    assert {grid_scan.pick_scene(found, RULES, set(), set(), rng)["scene"] for _ in range(40)} == {IW_A, IW_B}
+    assert grid_scan.pick_scene(found, RULES, {IW_A}, set(), rng)["scene"] == IW_B
     day_of_a = found[0]["time"][:10]
-    assert grid_scan.pick_scene(found, RULES, set(), {day_of_a}, rng)["scene"] == "b"
-    assert grid_scan.pick_scene(found, RULES, {"a", "b"}, set(), rng)["scene"] == "c"
-    assert grid_scan.pick_scene(found, RULES, {"a", "b", "c"}, set(), rng) is None
+    assert grid_scan.pick_scene(found, RULES, set(), {day_of_a}, rng)["scene"] == IW_B
+    assert grid_scan.pick_scene(found, RULES, {IW_A, IW_B}, set(), rng)["scene"] == "c"
+    assert grid_scan.pick_scene(found, RULES, {IW_A, IW_B, "c"}, set(), rng) is None
+
+
+def test_an_s1_scene_of_another_mode_is_never_picked_and_the_tile_falls_through_to_s2():
+    found = [scene("s1", EW, 3), scene("s2", "c", 4)]
+    rng = random.Random(1)
+    assert {grid_scan.pick_scene(found, RULES, set(), set(), rng)["scene"] for _ in range(20)} == {"c"}
+    assert grid_scan.pick_scene([scene("s1", EW, 3), scene("s1", IW_A, 5)], RULES, set(), set(), rng)["scene"] == IW_A
+    assert grid_scan.pick_scene([scene("s1", EW, 3)], RULES, set(), set(), rng) is None
 
 
 def test_find_scene_widens_to_sixty_days_and_stops(monkeypatch):
