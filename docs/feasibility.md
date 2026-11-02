@@ -597,7 +597,7 @@ The scene index now reads minimal SQLite columns in a read-only transaction and 
 checking both the main database and WAL file for changes. The same extracted review-selection helper serves
 the index and detailed reports, preserving the seeded singles sample and flagged cards. Detailed reports are
 not built at startup or by the list request. The browser shows its previous scene list immediately, checks on
-focus and every 15 seconds while visible, and keeps cached rows visible on refresh failure. Conditional ETags
+load, on the Refresh button and every 5 minutes while visible, and keeps cached rows visible on refresh failure. Conditional ETags
 return no row payload when nothing has changed; updates rebuild only changed run summaries.
 
 | Check | Before | After |

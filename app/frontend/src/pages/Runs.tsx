@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import SyncPanel from "../components/SyncPanel";
 import { api, label, SceneRow, sceneTag, when } from "../api";
@@ -60,6 +60,7 @@ export default function Runs() {
   const [refreshing, setRefreshing] = useState(true);
   const [checked, setChecked] = useState<string | null>(() => rememberedScenes()?.checked ?? null);
   const [showEmpty, setShowEmpty] = useState(rememberedShowEmpty);
+  const refreshNow = useRef<() => void>(() => undefined);
   const [params, setParams] = useSearchParams();
   const go = useNavigate();
   const fromUrl = params.get("sort") as Key | null;
@@ -105,16 +106,12 @@ export default function Runs() {
         if (!controller.signal.aborted) setRefreshing(false);
       }
     };
-    const visibleRefresh = () => { if (document.visibilityState === "visible") void refresh(); };
+    refreshNow.current = () => void refresh();
     void refresh();
-    const timer = window.setInterval(visibleRefresh, 15000);
-    window.addEventListener("focus", visibleRefresh);
-    document.addEventListener("visibilitychange", visibleRefresh);
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void refresh(); }, 300000);
     return () => {
       controller.abort();
       window.clearInterval(timer);
-      window.removeEventListener("focus", visibleRefresh);
-      document.removeEventListener("visibilitychange", visibleRefresh);
     };
   }, []);
 
@@ -162,6 +159,7 @@ export default function Runs() {
         <label><input type="checkbox" checked={showEmpty} onChange={(e) => toggleEmpty(e.target.checked)} /> Show scenes with no review cards</label>
         <span className="muted small">Showing {matching.length} of {sorted.length} scenes</span>
         <span className="muted small">{refreshing ? "Checking for updates..." : checked ? `Updated ${when(checked)}` : ""}</span>
+        <button onClick={() => refreshNow.current()} disabled={refreshing}>Refresh</button>
       </div>
       <div className="wrap">
         <table className="runs">
