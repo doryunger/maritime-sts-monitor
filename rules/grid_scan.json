@@ -25,6 +25,11 @@
     "unit": "tiles",
     "basis": "2026-10-31 (user): every drawn cell's first scene is queued at once so the worker never waits for the planner; the second scene follows when the first has no pair. Before this the limit was 2, which left the worker idle for minutes between planner steps."
   },
+  "failed_retries": {
+    "value": 1,
+    "unit": "reruns",
+    "basis": "User decision 2026-11-02: a cell whose scene failed is run again once, after every other cell of the run is decided and before the run finishes. The failures that prompted it came from the worker session being killed at the old 4 hour cap (removed 2026-11-02). Applies to runs (batch); the unattended plan command still closes a failed cell at once."
+  },
   "window_days": {
     "value": 30,
     "unit": "days",

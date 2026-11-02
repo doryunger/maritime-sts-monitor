@@ -250,6 +250,7 @@ create table if not exists processing.grid_scans (
     status text not null, pairs integer, hulls integer, resolved_utc timestamptz,
     primary key (tile_id, round, date_no)
 );
+alter table processing.grid_scans add column if not exists retries integer not null default 0;
 create index if not exists grid_scans_by_status on processing.grid_scans (status);
 
 create table if not exists processing.grid_visits (

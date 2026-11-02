@@ -22,6 +22,7 @@ RULES = {
     "min_shore_distance_m": 2000,
     "result_wait_days": 3,
     "batch_poll_minutes": 10,
+    "failed_retries": 1,
 }
 NOW = datetime(2026, 10, 30, 12, 0, tzinfo=UTC)
 
@@ -421,3 +422,85 @@ def _rows(conn, sql):
     cursor = conn.execute(sql)
     names = [column.name for column in cursor.description]
     return [dict(zip(names, row)) for row in cursor.fetchall()]
+
+
+def fail_job(pgdb, tile, date_no=1):
+    job_id = pgdb.execute("SELECT job_id FROM processing.grid_scans WHERE tile_id=%s AND date_no=%s", (tile, date_no)).fetchone()[0]
+    pgdb.execute("UPDATE processing.jobs SET status='failed' WHERE job_id=%s", (job_id,))
+    return job_id
+
+
+def failed_cell_setup(pgdb, monkeypatch):
+    from maritime_tip_cue import task_queue
+
+    rules = dict(RULES, grids_in_flight=2, scenes_queued_with_first=1)
+    monkeypatch.setattr(grid_scan, "load_rules", lambda: rules)
+    monkeypatch.setattr(task_queue, "clear_failed", lambda ids: None)
+    drawn = grid_scan.draw_batch(pgdb, NOW, rules, random.Random(7))
+    first = grid_scan.run(pgdb, now=NOW, rng=random.Random(7), since=NOW, drawn=drawn)
+    failing, other = [item["tile"] for item in first["queued"]]
+    return rules, drawn, failing, other
+
+
+def visits(pgdb):
+    return dict(pgdb.execute("SELECT tile_id, outcome FROM processing.grid_visits").fetchall())
+
+
+def test_a_failed_cell_waits_until_every_other_cell_is_decided_then_runs_again(pgdb, small_grid, monkeypatch):
+    rules, drawn, failing, other = failed_cell_setup(pgdb, monkeypatch)
+    fail_job(pgdb, failing)
+    (_, site, other_scene, _), = tile_scenes(pgdb, other)
+    finish(pgdb, site, other_scene, pairs=0)
+    step = grid_scan.run(pgdb, now=NOW, rng=random.Random(7), since=NOW, drawn=drawn)
+    assert failing not in visits(pgdb) and step["retried"] == []
+    assert [item["tile"] for item in step["queued"]] == [other]
+    (_, _, _, _), (_, site, second_scene, _) = tile_scenes(pgdb, other)
+    finish(pgdb, site, second_scene, pairs=0)
+    step = grid_scan.run(pgdb, now=NOW, rng=random.Random(7), since=NOW, drawn=drawn)
+    assert visits(pgdb) == {other: "cold"}
+    assert [(item["tile"], item["retry"]) for item in step["retried"]] == [(failing, 1)]
+    assert pgdb.execute("SELECT status, retries FROM processing.grid_scans WHERE tile_id=%s", (failing,)).fetchone() == ("queued", 1)
+    assert not grid_scan.batch_finished(pgdb, NOW)
+    quiet = grid_scan.run(pgdb, now=NOW, rng=random.Random(7), since=NOW, drawn=drawn)
+    assert quiet["retried"] == []
+
+
+def test_a_cell_that_fails_again_after_its_rerun_is_closed_failed_and_the_run_can_finish(pgdb, small_grid, monkeypatch):
+    rules, drawn, failing, other = failed_cell_setup(pgdb, monkeypatch)
+    fail_job(pgdb, failing)
+    (_, site, other_scene, _), = tile_scenes(pgdb, other)
+    finish(pgdb, site, other_scene, pairs=0)
+    grid_scan.run(pgdb, now=NOW, rng=random.Random(7), since=NOW, drawn=drawn)
+    (_, _, _, _), (_, site, second_scene, _) = tile_scenes(pgdb, other)
+    finish(pgdb, site, second_scene, pairs=0)
+    grid_scan.run(pgdb, now=NOW, rng=random.Random(7), since=NOW, drawn=drawn)
+    fail_job(pgdb, failing)
+    step = grid_scan.run(pgdb, now=NOW, rng=random.Random(7), since=NOW, drawn=drawn)
+    assert visits(pgdb) == {other: "cold", failing: "failed"} and step["retried"] == []
+    assert grid_scan.batch_finished(pgdb, NOW)
+
+
+def test_a_rerun_that_succeeds_ends_as_a_normal_cell(pgdb, small_grid, monkeypatch):
+    rules, drawn, failing, other = failed_cell_setup(pgdb, monkeypatch)
+    fail_job(pgdb, failing)
+    (_, site, other_scene, _), = tile_scenes(pgdb, other)
+    finish(pgdb, site, other_scene, pairs=0)
+    grid_scan.run(pgdb, now=NOW, rng=random.Random(7), since=NOW, drawn=drawn)
+    (_, _, _, _), (_, site, second_scene, _) = tile_scenes(pgdb, other)
+    finish(pgdb, site, second_scene, pairs=0)
+    grid_scan.run(pgdb, now=NOW, rng=random.Random(7), since=NOW, drawn=drawn)
+    (_, failing_site, failing_scene, _), = tile_scenes(pgdb, failing)
+    finish(pgdb, failing_site, failing_scene, pairs=1)
+    grid_scan.run(pgdb, now=NOW, rng=random.Random(7), since=NOW, drawn=drawn)
+    assert visits(pgdb)[failing] == "candidate" and grid_scan.batch_finished(pgdb, NOW)
+
+
+def test_the_plan_command_without_a_draw_still_closes_a_failed_cell_at_once(pgdb, small_grid, monkeypatch):
+    from maritime_tip_cue import task_queue
+
+    monkeypatch.setattr(task_queue, "clear_failed", lambda ids: None)
+    first = grid_scan.run(pgdb, now=NOW, rng=random.Random(7))
+    tile = first["queued"][0]["tile"]
+    fail_job(pgdb, tile)
+    grid_scan.run(pgdb, now=NOW, rng=random.Random(7))
+    assert visits(pgdb)[tile] == "failed"

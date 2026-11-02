@@ -152,7 +152,7 @@ def reconcile(db, rules, summary):
 def open_tiles(db, round_no):
     scans = catalogue.rows(
         db,
-        "SELECT tile_id,date_no,scene,source,scene_time,status,pairs,hulls FROM processing.grid_scans "
+        "SELECT tile_id,date_no,scene,source,scene_time,status,pairs,hulls,retries,job_id FROM processing.grid_scans "
         "WHERE round=%s AND tile_id NOT IN (SELECT tile_id FROM processing.grid_visits WHERE round=%s) "
         "ORDER BY tile_id,date_no",
         (round_no, round_no),
@@ -213,6 +213,7 @@ def run(db, now=None, rng=None, dry_run=False, since=None, drawn=None):
         "rechecked": [],
         "reconciled": [],
         "failed": [],
+        "retried": [],
         "stuck": [],
         "decided": [],
         "queued": [],
@@ -231,9 +232,15 @@ def run(db, now=None, rng=None, dry_run=False, since=None, drawn=None):
             reconcile(db, rules, summary)
         round_no = grid_status.current_round(db_rows(db))
         pending_second = []
+        parked = []
         in_flight = 0
         for tile_id, scans in open_tiles(db, round_no).items():
             outcome = decide(scans, rules)
+            if outcome == "failed" and drawn is not None:
+                waiting = [scan for scan in scans if scan["status"] == "failed" and scan["retries"] < rules["failed_retries"]]
+                if waiting:
+                    parked.extend(waiting)
+                    continue
             if outcome == "second":
                 pending_second.append((tile_id, scans))
             elif outcome is not None:
@@ -307,9 +314,22 @@ def run(db, now=None, rng=None, dry_run=False, since=None, drawn=None):
                 summary["errors"].append({"tile": tile_id, "error": str(error)})
                 continue
             firsts += 1
+        if parked and not dry_run and not in_flight and not queued and not firsts:
+            seen = {row["tile_id"] for row in catalogue.rows(db, "SELECT tile_id FROM processing.grid_scans WHERE round=%s", (round_no,))}
+            seen |= {row["tile_id"] for row in catalogue.rows(db, "SELECT tile_id FROM processing.grid_visits WHERE round=%s", (round_no,))}
+            if all(tile_id in seen for tile_id in drawn):
+                for scan in parked:
+                    catalogue.requeue_failed(db, scan["job_id"])
+                    with catalogue.tx(db):
+                        db.execute(
+                            "UPDATE processing.grid_scans SET status='queued',retries=retries+1,resolved_utc=NULL "
+                            "WHERE tile_id=%s AND round=%s AND date_no=%s",
+                            (scan["tile_id"], round_no, scan["date_no"]),
+                        )
+                    summary["retried"].append({"tile": scan["tile_id"], "date_no": scan["date_no"], "retry": scan["retries"] + 1})
     summary["ended_utc"] = datetime.now(UTC).isoformat()
     summary["status"] = "failed" if summary["errors"] else "ok"
-    idle = not any(summary[key] for key in ("queued", "decided", "resolved", "rechecked", "reconciled", "errors", "failed", "no_imagery"))
+    idle = not any(summary[key] for key in ("queued", "decided", "resolved", "rechecked", "reconciled", "errors", "failed", "retried", "no_imagery"))
     if not dry_run:
         with catalogue.tx(db):
             if idle:
