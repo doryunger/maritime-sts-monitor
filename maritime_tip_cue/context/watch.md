@@ -37,7 +37,9 @@ hull 500 m from the edge), the 20 m and 60 m sets are repeated up to 10 m. The L
 same tile and day is cut to the same grid. All of it is stored per scene (`s2_windows/*.npz`) before the scratch
 goes, so verdicts can be recomputed without the detector (`--reanalyse`). The hull passed to the pair check is the
 corrected Ai2 box unrounded; the check was frozen on unrounded values. A box inside the A or B rectangle of a
-pair or possible_pair record is absorbed (role `duplicate` or `hull_b_box`) and not counted again.
+pair or possible_pair record is absorbed (role `duplicate` or `hull_b_box`) and not counted again. A single
+hull absorbs only into its A rectangle (`single_absorbs_duplicates`): Ai2 boxes a ship twice, and a B rectangle
+beside a single may be a real neighbour; see feasibility, Sentinel-2 duplicate single hulls.
 A scene processed on its capture day has no L2A item on the STAC yet: its windows get no `scl`, the index entry says
 `cloud_mask: false` and the log says so (before 2026-10-27 this was silent). Only the cloud handling of the water ring
 around hull A is skipped; the cloud-as-hull-B pairs have another cause (see feasibility), so the L2A is not waited for.

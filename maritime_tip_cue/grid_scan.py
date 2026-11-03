@@ -37,7 +37,17 @@ def usable(row, rules):
     return row["source"] != "s1" or s1_mode(row["scene"]) in rules["s1_scene_modes"]
 
 
-def pick_scene(found, rules, used_scenes, used_days, rng):
+def has_reference(row, scene_rules):
+    from maritime_tip_cue.watch import detector
+
+    try:
+        detector.s1_reference(row["item"], scene_rules)
+    except RuntimeError:
+        return False
+    return True
+
+
+def pick_scene(found, rules, used_scenes, used_days, rng, referenced=lambda row: True):
     for source in rules["source_order"]:
         pool = [
             row
@@ -47,18 +57,28 @@ def pick_scene(found, rules, used_scenes, used_days, rng):
             and row["scene"] not in used_scenes
             and row["time"][:10] not in used_days
         ]
-        if pool:
-            return rng.choice(pool)
+        while pool:
+            row = rng.choice(pool)
+            if source != "s1" or referenced(row):
+                return row
+            pool.remove(row)
     return None
 
 
 def find_scenes(site, now, rules, scene_rules, used_scenes, used_days, rng, count):
     used_scenes, used_days = set(used_scenes), set(used_days)
+    known = {}
+
+    def referenced(row):
+        if row["scene"] not in known:
+            known[row["scene"]] = not rules.get("s1_reference_required") or has_reference(row, scene_rules)
+        return known[row["scene"]]
+
     picked = []
     for days in dict.fromkeys((rules["window_days"], rules["window_max_days"])):
         found = passes.find(now - timedelta(days=days), now, [site], rules=scene_rules)
         while len(picked) < count:
-            row = pick_scene(found, rules, used_scenes, used_days, rng)
+            row = pick_scene(found, rules, used_scenes, used_days, rng, referenced)
             if row is None:
                 break
             picked.append((row, days))

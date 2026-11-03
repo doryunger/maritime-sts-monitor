@@ -1039,6 +1039,10 @@
       "unit": "m",
       "basis": "initial guess to be measured on known pairs 2026-10-17: an Ai2 box belongs to a hull when its centre lies inside that hull's rectangle (pair-check length along, width across, fix heading) grown by this much; one 10 m pixel, the position resolution of the detector's box centre"
     },
+    "single_absorbs_duplicates": {
+      "value": true,
+      "basis": "measured 2026-11-03 (docs/feasibility.md, Sentinel-2 duplicate single hulls): a single hull also absorbs Ai2 boxes inside its hull A rectangle (never hull B); 37 hulls removed over all S2 runs, all the same ship, 0 of 57 labelled real pairs lost"
+    },
     "shape_bands": {
       "value": [
         "B02",

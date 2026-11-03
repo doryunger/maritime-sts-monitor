@@ -111,6 +111,25 @@ def test_an_s1_scene_of_another_mode_is_never_picked_and_the_tile_falls_through_
     assert grid_scan.pick_scene([scene("s1", EW, 3)], RULES, set(), set(), rng) is None
 
 
+def test_an_s1_scene_without_a_reference_is_skipped_and_the_tile_falls_through_to_s2():
+    found = [scene("s1", IW_A, 3), scene("s1", IW_B, 5), scene("s2", "c", 4)]
+    rng = random.Random(1)
+    no_a = lambda row: row["scene"] != IW_A
+    assert {grid_scan.pick_scene(found, RULES, set(), set(), rng, no_a)["scene"] for _ in range(20)} == {IW_B}
+    assert grid_scan.pick_scene(found, RULES, set(), set(), rng, lambda row: False)["scene"] == "c"
+
+
+def test_the_reference_search_runs_once_per_scene_and_only_when_required(monkeypatch):
+    calls = []
+    monkeypatch.setattr(passes, "find", lambda *args, **kwargs: [scene("s1", IW_A, 3), scene("s2", "c", 4)])
+    monkeypatch.setattr(grid_scan, "has_reference", lambda row, scene_rules: calls.append(row["scene"]) or False)
+    site = {"name": "x", "bbox": [0, 0, 1, 1]}
+    row, _ = grid_scan.find_scene(site, NOW, RULES | {"s1_reference_required": True}, {}, set(), set(), random.Random(0))
+    assert row["scene"] == "c" and calls == [IW_A]
+    row, _ = grid_scan.find_scene(site, NOW, RULES, {}, set(), set(), random.Random(0))
+    assert row["scene"] == IW_A and calls == [IW_A]
+
+
 def test_find_scene_widens_to_sixty_days_and_stops(monkeypatch):
     windows = []
 

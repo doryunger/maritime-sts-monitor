@@ -53,6 +53,10 @@
     ],
     "basis": "User decision 2026-11-02: only Sentinel-1 IW GRDH scenes are taken (the scene id carries the mode, S1x_IW_GRDH_...). The one EW GRDM scene in 145 S1 grid scenes (cell 44PPA, 2026-10-28) failed with 'job has 1 incomplete scenes' while all 144 IW GRDH scenes succeeded, so excluding the other modes removes 1 failure and loses 0 working scenes. A tile whose only S1 scenes are another mode falls through to S2."
   },
+  "s1_reference_required": {
+    "value": true,
+    "basis": "User decision 2026-11-03: an S1 scene is taken only when the worker's reference search (sts_graph.json s1_reference_image: same orbit direction, 30 to 90 days before) finds an image, the same test the detector applies. Cell 45QSV's only S1 scene in the window (2026-10-31, an ascending S1C pass) failed twice with 'no Sentinel-1 reference': all 109 S1 images of that tile in the six months before are descending. A tile with no such S1 scene falls through to S2."
+  },
   "hit_verdicts": {
     "value": [
       "pair",

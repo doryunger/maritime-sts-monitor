@@ -16,7 +16,7 @@ from maritime_tip_cue.watch.geo import haversine_m, offset_m
 
 SETS = {"B02_B03_B04_B08": 1, "B05_B06_B07_B8A_B11_B12": 2, "B01_B09_B10": 4}
 REF = "B02_B03_B04_B08"
-VERDICT_RANK = {"pair": 2, "possible_pair": 1}
+VERDICT_RANK = {"pair": 2, "possible_pair": 1, "single": 0}
 
 
 def window_layers(scratch: Path) -> list[Path]:
@@ -224,25 +224,31 @@ def inside(d: dict, rect, margin: float) -> bool:
     return along is not None and along <= length / 2 + margin and across <= width / 2 + margin
 
 
-def group(dets: list[dict], checks: dict[str, dict], margin: float) -> dict[str, dict]:
+def group(dets: list[dict], checks: dict[str, dict], margin: float, single_absorbs: bool = False) -> dict[str, dict]:
     by_id = {d["det_id"]: d for d in dets}
+    ranked = {v: r for v, r in VERDICT_RANK.items() if r > 0 or single_absorbs}
     seeds = sorted(
-        (d for d in dets if checks.get(d["det_id"], {}).get("verdict") in VERDICT_RANK),
-        key=lambda d: (-VERDICT_RANK[checks[d["det_id"]]["verdict"]], -d["score"], -d["length_m"], d["det_id"]),
+        (d for d in dets if checks.get(d["det_id"], {}).get("verdict") in ranked),
+        key=lambda d: (-ranked[checks[d["det_id"]]["verdict"]], -d["score"], -d["length_m"], d["det_id"]),
     )
     claimed: dict[str, dict] = {}
+    seen: set[str] = set()
     for n, s in enumerate(seeds, 1):
         sid = s["det_id"]
         if sid in claimed:
             continue
+        seen.add(sid)
         chk = checks[sid]
-        ra, rb = rectangle(chk, "a"), rectangle(chk, "b")
+        paired = ranked[chk["verdict"]] > 0
+        ra, rb = rectangle(chk, "a"), rectangle(chk, "b") if paired else None
         members = {sid: "anchor"}
         for d in dets:
             k = d["det_id"]
-            if k == sid or k in claimed:
+            if k == sid or k in claimed or (not paired and k in seen):
                 continue
             in_a, in_b = inside(d, ra, margin), inside(d, rb, margin)
+            if not paired and not in_a and k in checks:
+                in_a = inside(s, rectangle(checks[k], "a"), margin)
             if in_a and in_b:
                 in_a = offset_m({"lat": ra[0], "lon": ra[1]}, d, None)[0] <= offset_m({"lat": rb[0], "lon": rb[1]}, d, None)[0]
                 in_b = not in_a
@@ -256,6 +262,8 @@ def group(dets: list[dict], checks: dict[str, dict], margin: float) -> dict[str,
             for k in second:
                 if k != nearest and chk["verdict"] == "pair":
                     members[k] = "duplicate"
+        if not paired and len(members) == 1:
+            continue
         for k, role in members.items():
             claimed[k] = {"record": f"{n:03d}", "role": role}
     return claimed
@@ -275,7 +283,7 @@ def analyse(folder: Path, dets: list[dict], index: list[dict], rules: dict) -> l
             hull = {key: d[key] for key in ("lat", "lon", "length_m", "width_m", "heading", "speed_kn")}
             res = s2pair.run(win, hull, rules, shape_bands)
             checks[k] = summarise(win, res)
-    claimed = group(dets, checks, rules["s2_window"]["inside_margin_m"])
+    claimed = group(dets, checks, rules["s2_window"]["inside_margin_m"], bool(rules["s2_window"].get("single_absorbs_duplicates")))
     rows = []
     for d in dets:
         if d["det_id"] not in checks and d["det_id"] not in claimed:
