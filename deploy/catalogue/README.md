@@ -56,6 +56,8 @@ WORKER_KEY_PATH=/home/ubuntu/.ssh/geogen-key.pem
 WORKER_REMOTE_DIR=/home/ubuntu/maritime-sts-monitor-worker-test
 WORKER_IMAGE=maritime-sts-gpu-worker:test
 WORKER_INSTANCE_ID=<EC2_INSTANCE_ID>
+WORKER_SPOT_INSTANCE_ID=<SPOT_EC2_INSTANCE_ID>
+WORKER_SPOT_WAIT_SECONDS=600
 ```
 
 The instance is started and stopped with the control host's AWS credentials, which need `ec2:DescribeInstances`,

@@ -52,7 +52,7 @@ decisions go to a git tag, with a one-line pointer, not into files agents read.
 When the user asks to stop a process that was run manually on the GPU worker, it means the worker itself
 must not stay up: stop the process and anything keeping the worker awake (keep-alive loops, status polls,
 open sessions), then let it idle-stop. Keep the idle-stop rules in place (`worker_idle.py` with
-`rules/worker_idle.json`, and the CloudWatch low-CPU alarm); never disable, lengthen or work around them. Do not
+`rules/worker_idle.json`, applied to both the spot and the on-demand worker); never disable, lengthen or work around them. Do not
 start, wake or SSH into the worker without asking first.
 
 ## Judging a rule change

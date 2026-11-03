@@ -169,7 +169,10 @@ def remote_worker_command(settings, worker_args, container_name=None, max_second
 
 
 def power(settings, action):
-    return manager_json(settings["env_path"], POWER_MODULE, action)["state"]
+    result = manager_json(settings["env_path"], POWER_MODULE, action)
+    if result.get("private_ip"):
+        settings["private_ip"] = result["private_ip"]
+    return result["state"]
 
 
 def wait_for_ssh(settings, timeout, sleep=time.sleep, clock=time.time):

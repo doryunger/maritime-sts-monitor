@@ -1249,6 +1249,20 @@ No limit separates them: fill under 0.56 with a streak over 80 m catches 3 of 8 
 
 Trade-off of single S1 limits (2026-11-01, 152 confirmed, 10 wrong; wrong pairs only at malaysia_eopl 7 and fujairah_outer 3): outline fill below 0.52 removes 4 wrong (all malaysia_eopl) and loses 5 real (fujairah_outer 1, off_sohar 3, johor_east_scs 1), ratio 0.8:1; below 0.58 removes 7 and loses 12, 0.6:1; confidence below 0.85 (now 0.75) removes 6 and loses 5, 1.2:1; below 0.90 removes 7 and loses 16, 0.4:1. None passes the standard in AGENTS.md (Judging a rule change).
 
+## Worker time per scene: preparation against GPU work (measured 2026-11-03)
+Question: would a water/cloud pre-filter before the detector, or moving image preparation off the GPU worker, cut worker time? Measured from `review.scenes.detector_s` and the runner's 2 s `GPU_DIAGNOSTIC` samples in `review.events` (Tesla T4), all scenes of 2026-10-25 to 2026-11-03: 207 S1 and 231 S2. Idle is the time from detector start to the first sample with GPU use above 0 (download, radar reprojection, materialize); busy counts samples above 0.
+
+| Source, scenes | Median detector run | GPU idle before first use | After first use | GPU busy | Busy share of all runs |
+|---|---|---|---|---|---|
+| S1 grid, 169 | 481 s | 361 s | 120 s | 72 s | 15% |
+| S1 hot spots, 38 | 552 s | 418 s | 134 s | 64 s | 17% |
+| S2 grid, 119 | 194 s | 160 s | 34 s | 8 s | 6% |
+| S2 hot spots, 112 | 275 s | 160 s | 115 s | 9 s | 6% |
+
+Per hot spot the S1 idle phase is 345 to 474 s everywhere (fujairah_outer 414, off_sohar 474, johor_east_scs 413, malaysia_eopl 452, test_east_of_sohar 414; others 1 to 2 scenes) and the S2 idle phase 144 to 203 s; GPU busy grows with ship count (S1 johor_east_scs 209 s and malaysia_eopl 245 s against 28 s at fujairah_outer). The detector run is almost all of a scene's worker time (S1 event span minus `detector_s` is about 25 s), and worker uptime matches attempt hours (4.4 to 8.5 h a day on 2026-10-30 to 11-03), so the worker is up only while it processes.
+
+Consequence: a pre-filter that skips sea, land or cloud patches can only shorten the phase after first GPU use, at most about 2 of 8 min for S1 and 0.5 to 2 of 3 to 5 min for S2, and less in practice because ship measurement (attribute model, crops) does not shrink with skipped water. Preparation, 75 to 85% of worker time, runs on CPU while the GPU waits. The skip-share measurement on fresh scenes was not run because this ceiling already bounds it.
+
 ## Sentinel-2 duplicate single hulls (measured 2026-11-03, applied)
 Question: Ai2 sometimes puts two boxes on one ship (a second box on the stern, the bow or the wake, 100 to 200 m from the first). Only `pair` and `possible_pair` records absorbed boxes inside their rectangles, so both boxes of a single or moving ship were listed. Example: run 444 off_sohar, hulls 48704_-272807 (score 0.997) and 48719_-272803 (0.81, on the wake), both moving. Measured on every S2 hull in live Postgres (2,731 hulls after removing repeat runs, 57 QA-labelled real pairs). A removed hull counts as the same ship when both measured hull A rectangles overlap and as distinct when they do not:
 

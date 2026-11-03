@@ -202,6 +202,19 @@ Idle was tied to the refinery wake-service, which stops the instance after 3 min
 STS session sends it none, so it stopped running jobs, and a leftover keep-alive loop pinging it kept the instance up
 for four days (2026-10-26 to 2026-10-30). The stop is now one process-independent script (`worker_idle.py`): it
 looks at the worker's CPU and GPU use, not at who started it, and the dispatcher and one-scene runner never stop the
-instance. 3 quiet checks of 3 minutes (about 9 minutes; the CloudWatch rule of 15 minutes stays as the slower backstop); a
+instance. 3 quiet checks of 3 minutes (about 9 minutes); there is no CloudWatch alarm (none existed in eu-central-1 on 2026-11-03 and the user chose not to add one), so this script is the only stopper; a
 single quiet check would stop a drain during a scene download. The refinery wake-service's own idle stop is disabled with
 `IDLE_STOP_MINUTES=0` so there is one stopper.
+
+## Spot worker
+Decision 2026-11-03 (user): the GPU worker runs on spot with the old on-demand instance kept as fallback. GPU use is
+6 to 17% of a detector run (see feasibility, worker time per scene), so a cheaper GPU hour beats a faster pipeline.
+g4dn.xlarge spot in eu-central-1 was $0.31 to 0.34/h over 30 days against about $0.66 on-demand; AWS rates its
+interruptions at 15 to 20% a month. The spot copy (`Name` tag `sts-gpu-worker-spot`, persistent request, interruption
+stops it, so disk and private IP survive) is set in `WORKER_SPOT_INSTANCE_ID`. `worker_power start` keeps whichever
+worker is already up, otherwise tries spot for `WORKER_SPOT_WAIT_SECONDS` (default 600) and then starts the on-demand
+one; `stop` stops both; every action reports the active instance and its private IP, which `worker_host.power` writes
+into the settings so SSH, the idle check and the dispatcher follow the worker that is up. An interruption kills the
+session like a killed drain, so the existing claim release and failed-cell retry cover it. Both instances hold their
+own disk: image updates and disk maintenance must be done on both. The host AWS user's start/stop rights for the spot
+copy come from the managed policy `sts-gpu-worker-spot` (tag-scoped); its `Setup*` statements are for the migration only.

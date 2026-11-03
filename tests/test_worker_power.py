@@ -70,3 +70,61 @@ def test_start_retries_while_aws_has_no_capacity():
     assert worker_power.start(ec2, "i-1", sleep=sleeps.append) == "running"
     assert len(sleeps) == 2
     assert ec2.calls == ["start", "wait"]
+
+
+class FakeFleet:
+    def __init__(self, states, spot_capacity=True, ips=None):
+        self.states = dict(states)
+        self.spot_capacity = spot_capacity
+        self.ips = ips or {}
+        self.calls = []
+
+    def describe_instances(self, InstanceIds):
+        i = InstanceIds[0]
+        return {"Reservations": [{"Instances": [{"InstanceId": i, "State": {"Name": self.states[i]}, "PrivateIpAddress": self.ips.get(i)}]}]}
+
+    def start_instances(self, InstanceIds):
+        i = InstanceIds[0]
+        if i == "spot" and not self.spot_capacity:
+            raise ClientError({"Error": {"Code": "InsufficientInstanceCapacity"}}, "StartInstances")
+        self.calls.append(("start", i))
+        self.states[i] = "running"
+
+    def stop_instances(self, InstanceIds):
+        self.calls.append(("stop", InstanceIds[0]))
+        self.states[InstanceIds[0]] = "stopping"
+
+    def get_waiter(self, name):
+        class Waiter:
+            def wait(self, **kwargs):
+                pass
+
+        return Waiter()
+
+
+def test_start_first_prefers_the_spot_worker():
+    ec2 = FakeFleet({"spot": "stopped", "od": "stopped"})
+    assert worker_power.start_first(ec2, ["spot", "od"], 60, sleep=lambda s: None) == ("running", "spot")
+    assert ec2.calls == [("start", "spot")]
+
+
+def test_start_first_falls_back_when_spot_has_no_capacity():
+    ec2 = FakeFleet({"spot": "stopped", "od": "stopped"}, spot_capacity=False)
+    assert worker_power.start_first(ec2, ["spot", "od"], 0, sleep=lambda s: None) == ("running", "od")
+    assert ec2.calls == [("start", "od")]
+
+
+def test_start_first_keeps_whichever_worker_is_already_up():
+    ec2 = FakeFleet({"spot": "stopped", "od": "running"})
+    assert worker_power.start_first(ec2, ["spot", "od"], 60, sleep=lambda s: None) == ("running", "od")
+    assert ec2.calls == []
+
+
+def test_report_names_the_running_worker_and_its_address():
+    ec2 = FakeFleet({"spot": "running", "od": "stopped"}, ips={"spot": "10.0.0.5", "od": "10.0.0.4"})
+    assert worker_power.report(ec2, "state", ["spot", "od"]) == {"action": "state", "state": "running", "instance_id": "spot", "private_ip": "10.0.0.5"}
+
+
+def test_report_without_a_spot_worker_reads_the_single_worker():
+    ec2 = FakeFleet({"od": "stopped"}, ips={"od": "10.0.0.4"})
+    assert worker_power.report(ec2, "state", ["od"])["instance_id"] == "od"
