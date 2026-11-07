@@ -47,6 +47,13 @@ def isoformat(value):
     return value.isoformat() if hasattr(value, "isoformat") else value
 
 
+MODES = ("regular", "pairs")
+
+
+def run_label(mode, number):
+    return f"p-{number}" if mode == "pairs" else str(number)
+
+
 def decide(scans, rules):
     if any(scan["status"] == "done" and scan["pairs"] for scan in scans):
         return "candidate"
@@ -186,36 +193,38 @@ def scan_runs(rows, rules):
         (row["tile_id"], row["round"]): row
         for row in rows("SELECT tile_id,round,outcome,decided_utc FROM processing.grid_visits")
     }
-    draws = rows("SELECT batch_utc,tile_id,round,position FROM processing.grid_draws ORDER BY batch_utc,position")
+    draws = rows("SELECT batch_utc,tile_id,round,position,kind FROM processing.grid_draws ORDER BY batch_utc,position")
     batches = {}
     for draw in draws:
         batches.setdefault(draw["batch_utc"], []).append(draw)
     latest_batch = max(batches, default=None)
+    batch_mode = {batch: "pairs" if any(d["kind"] != "regular" for d in drawn) else "regular" for batch, drawn in batches.items()}
     groups = {}
     for scan in load_scans(rows, rules):
         groups.setdefault((scan["tile_id"], scan["round"]), []).append(scan)
+    drawn_in = {}
+    for batch, drawn in batches.items():
+        for d in drawn:
+            drawn_in.setdefault((d["tile_id"], d["round"]), []).append(batch)
     runs_by_key = {}
     for (tile_id, round_no), scans in groups.items():
         first = min(scans, key=lambda scan: scan["date_no"])
-        owners = [
-            batch
-            for batch, drawn in batches.items()
-            if batch <= first["queued_utc"] and any(d["tile_id"] == tile_id and d["round"] == round_no for d in drawn)
-        ]
-        if owners:
-            key = max(owners)
-        else:
-            key = first["queued_utc"].astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-        state = progress(scans, visits.get((tile_id, round_no)), rules)
-        reviewed = next((scan for scan in scans if scan["status"] == "done" and scan["pairs"]), None)
-        runs_by_key.setdefault(key, {})[tile_id] = {
-            "tile_id": tile_id,
-            "status": state["status"],
-            "finished": isoformat(state["finished"]),
-            "pairs": state["pairs"],
-            "run_no": reviewed["run_no"] if reviewed else None,
-            "scene": reviewed["scene"] if reviewed else None,
-        }
+        fallback = first["queued_utc"].astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+        parts = {}
+        for scan in scans:
+            owners = [batch for batch in drawn_in.get((tile_id, round_no), []) if batch <= scan["queued_utc"]]
+            parts.setdefault(max(owners) if owners else fallback, []).append(scan)
+        for key, part in parts.items():
+            state = progress(part, visits.get((tile_id, round_no)), rules)
+            reviewed = next((scan for scan in part if scan["status"] == "done" and scan["pairs"]), None)
+            runs_by_key.setdefault(key, {})[tile_id] = {
+                "tile_id": tile_id,
+                "status": state["status"],
+                "finished": isoformat(state["finished"]),
+                "pairs": state["pairs"],
+                "run_no": reviewed["run_no"] if reviewed else None,
+                "scene": reviewed["scene"] if reviewed else None,
+            }
     if latest_batch is not None:
         entries = runs_by_key.setdefault(latest_batch, {})
         for draw in batches[latest_batch]:
@@ -231,11 +240,17 @@ def scan_runs(rows, rules):
                 "scene": None,
             }
     runs = []
-    for number, key in enumerate(sorted(runs_by_key), 1):
+    numbers = Counter()
+    for key in sorted(runs_by_key):
+        mode = batch_mode.get(key, "regular")
+        numbers[mode] += 1
+        number = numbers[mode]
         grids = sorted(runs_by_key[key].values(), key=lambda grid: grid["tile_id"])
         runs.append(
             {
                 "run": number,
+                "mode": mode,
+                "label": run_label(mode, number),
                 "day": key.astimezone(UTC).date().isoformat(),
                 "tiles": len(grids),
                 "with_pairs": sum(bool(grid["pairs"]) for grid in grids),

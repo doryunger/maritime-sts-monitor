@@ -401,15 +401,22 @@ def batch_finished(db, since):
     return undecided == 0
 
 
-def batch(db, rules, sleep=time.sleep, rng=None, clock=None, report=None, since=None, beat=None):
+def batch(db, rules, sleep=time.sleep, rng=None, clock=None, report=None, since=None, beat=None, mode="regular"):
     clock = clock or (lambda: datetime.now(UTC))
     since = since or clock()
-    with catalogue.tx(db):
-        drawn = draw_batch(db, since, rules, rng)
+    if mode == "pairs":
+        from maritime_tip_cue import grid_neighbour_scan
+
+        drawn = grid_neighbour_scan.draw(db, since, rules)
+    else:
+        with catalogue.tx(db):
+            drawn = draw_batch(db, since, rules, rng)
     while True:
         if beat:
             beat()
         try:
+            if mode == "pairs":
+                grid_neighbour_scan.queue_rescans(db, since, clock(), rng)
             summary = run(db, now=clock(), rng=rng, since=since, drawn=drawn)
         except BlockingIOError:
             sleep(rules["batch_poll_minutes"] * 60)
@@ -433,7 +440,7 @@ def run_pending(db, rules, sleep=time.sleep):
         if row is None:
             return None
         try:
-            batch(db, rules, sleep=sleep, since=row["batch_utc"], beat=lambda: grid_request.beat(conn, row["request_id"]))
+            batch(db, rules, sleep=sleep, since=row["batch_utc"], beat=lambda: grid_request.beat(conn, row["request_id"]), mode=row["mode"])
         except grid_request.RequestLost:
             return "stopped"
         except (KeyboardInterrupt, SystemExit):

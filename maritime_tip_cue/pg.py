@@ -211,6 +211,7 @@ create table if not exists review.sync_runs (
     summary jsonb,
     error text
 );
+alter table processing.grid_run_requests add column if not exists mode text not null default 'regular';
 create table if not exists review.removed_runs (
     attempt_id text primary key references processing.job_attempts,
     run_no integer,
@@ -262,6 +263,8 @@ create table if not exists processing.grid_draws (
     batch_utc timestamptz not null, tile_id text not null, round integer not null, position integer not null,
     primary key (batch_utc, tile_id)
 );
+
+alter table processing.grid_draws add column if not exists kind text not null default 'regular';
 
 create table if not exists processing.grid_run_requests (
     request_id bigserial primary key,

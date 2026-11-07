@@ -90,6 +90,16 @@
     "unit": "minutes",
     "basis": "User decision 2026-11-01: a run requested from the page counts as interrupted when its process has not beat for this long (the planner beats every batch_poll_minutes) or a request was not picked up in that time, so the page offers Continue run instead of staying disabled."
   },
+  "neighbour_new_dates": {
+    "value": 2,
+    "unit": "scenes",
+    "basis": "User decision 2026-11-07: a known-pairs run takes the cells whose footprint overlaps a cell with pairs (its 8 surrounding cells). A neighbour scanned before gets this many new dates, on days none of its earlier scenes used, queued together; a neighbour never scanned is run like any drawn cell; one with no imagery is skipped."
+  },
+  "neighbour_max_runs": {
+    "value": 1,
+    "unit": "runs",
+    "basis": "A cell takes part in at most this many known-pairs runs, so a later run only takes neighbours of newly found pairs instead of rescanning the same cells. Set 2026-11-07 with the known-pairs run; no measurement behind it."
+  },
   "promotion_min_pairs_per_scene_s1": {
     "value": 0.4,
     "unit": "pairs per scene",

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, duration, GridProcess } from "../api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, duration, GridProcess, RunMode } from "../api";
 
 const STATES: Record<string, string> = {
   idle: "Idle",
@@ -8,8 +8,16 @@ const STATES: Record<string, string> = {
   interrupted: "Interrupted",
 };
 
+const MODES: { value: RunMode; label: string }[] = [
+  { value: "regular", label: "Regular run" },
+  { value: "pairs", label: "Known pairs" },
+];
+
 export default function RunControl() {
   const [process, setProcess] = useState<GridProcess | null>(null);
+  const [mode, setMode] = useState<RunMode>("regular");
+  const [menu, setMenu] = useState(false);
+  const holder = useRef<HTMLDivElement>(null);
   const [loaded, setLoaded] = useState(Date.now());
   const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
@@ -23,18 +31,31 @@ export default function RunControl() {
 
   const load = useCallback(async () => {
     try {
-      accept(await api.hotspotTestGridProcess());
+      accept(await api.hotspotTestGridProcess(mode));
       setError(null);
     } catch (e) {
       setError((e as Error).message);
     }
-  }, []);
+  }, [mode]);
 
   useEffect(() => {
     void load();
     const timer = window.setInterval(() => { if (document.visibilityState === "visible") void load(); }, active ? 5000 : 30000);
     return () => window.clearInterval(timer);
   }, [load, active]);
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = (e: Event) => {
+      if (e.type === "keydown" ? (e as KeyboardEvent).key === "Escape" : !holder.current?.contains(e.target as Node)) setMenu(false);
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [menu]);
 
   useEffect(() => {
     if (!counting) return;
@@ -46,7 +67,7 @@ export default function RunControl() {
     if (!process?.action) return;
     setBusy(true);
     try {
-      accept(await api.startHotspotTestGridProcess(process.action));
+      accept(await api.startHotspotTestGridProcess(process.action, mode));
       setError(null);
     } catch (e) {
       setError((e as Error).message);
@@ -59,11 +80,25 @@ export default function RunControl() {
   return (
     <>
       <h2>Run management</h2>
-      <button className="run" onClick={() => void press()} disabled={busy || !process.action}>
-        {process.action === "continue" ? `Continue run ${process.run_no}` : "Start a new run"}
-      </button>
+      <div className="split" ref={holder}>
+        <button className="run" onClick={() => void press()} disabled={busy || !process.action}>
+          {process.action === "continue" ? `Continue run ${process.label}` : mode === "pairs" ? "Start a known pairs run" : "Start a new run"}
+        </button>
+        <button className="run toggle" onClick={() => setMenu((open) => !open)} disabled={busy || process.action !== "start"} aria-haspopup="menu" aria-expanded={menu} aria-label="Run mode">▾</button>
+        {menu && (
+          <ul className="split-menu" role="menu">
+            {MODES.map((m) => (
+              <li key={m.value}>
+                <button role="menuitemradio" aria-checked={m.value === mode} className={m.value === mode ? "on" : ""} onClick={() => { setMode(m.value); setMenu(false); }}>
+                  {m.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
       <dl className="worker-status">
-        <div><dt>Run ID</dt><dd>{process.run_no}</dd></div>
+        <div><dt>Run ID</dt><dd>{process.label}</dd></div>
         <div><dt>Process</dt><dd>{STATES[process.status] ?? process.status}</dd></div>
         {process.elapsed_seconds > 0 && <div><dt>Elapsed</dt><dd>{duration(process.elapsed_seconds + (counting ? Math.max(0, now - loaded) / 1000 : 0))}</dd></div>}
         {process.tiles !== null && <div><dt>Scanned</dt><dd>{process.decided}/{process.tiles}</dd></div>}

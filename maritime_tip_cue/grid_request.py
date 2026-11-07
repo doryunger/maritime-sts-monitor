@@ -1,3 +1,5 @@
+from collections import Counter
+
 from psycopg.rows import dict_row
 
 from maritime_tip_cue import grid_status
@@ -9,7 +11,7 @@ LOCK_KEY = 7302
 class RequestLost(Exception):
     pass
 
-FIELDS = "request_id,requested_utc,requested_by,kind,run_no,batch_utc,status,started_utc,heartbeat_utc,finished_utc,error"
+FIELDS = "request_id,requested_utc,requested_by,kind,mode,run_no,batch_utc,status,started_utc,heartbeat_utc,finished_utc,error"
 FRESH = "now() - coalesce(heartbeat_utc, requested_utc) < make_interval(mins => %s)"
 
 
@@ -23,47 +25,51 @@ def reader(cur):
 
 def latest_batch(rows):
     return rows(
-        "SELECT d.batch_utc, COUNT(*) AS tiles, COUNT(v.tile_id) AS decided FROM processing.grid_draws d "
+        "SELECT d.batch_utc, COUNT(*) AS tiles, COUNT(v.tile_id) AS decided, "
+        "CASE WHEN bool_or(d.kind<>'regular') THEN 'pairs' ELSE 'regular' END AS mode FROM processing.grid_draws d "
         "LEFT JOIN processing.grid_visits v ON v.tile_id=d.tile_id AND v.round=d.round "
         "WHERE d.batch_utc=(SELECT MAX(batch_utc) FROM processing.grid_draws) GROUP BY d.batch_utc"
     )
 
 
-def elapsed_seconds(rows, run_no, stale):
+def elapsed_seconds(rows, run_no, mode, stale):
     found = rows(
         "SELECT COALESCE(SUM(GREATEST(0, EXTRACT(EPOCH FROM ("
         "CASE WHEN status='running' AND fresh THEN now() "
         "WHEN status='running' THEN COALESCE(heartbeat_utc, started_utc) "
         "WHEN error='interrupted' THEN COALESCE(LEAST(heartbeat_utc, finished_utc), started_utc) "
         "ELSE COALESCE(finished_utc, heartbeat_utc, started_utc) END - started_utc)))),0) AS seconds FROM "
-        f"(SELECT *, {FRESH} AS fresh FROM processing.grid_run_requests) r WHERE run_no=%s AND started_utc IS NOT NULL",
-        (stale, run_no),
+        f"(SELECT *, {FRESH} AS fresh FROM processing.grid_run_requests) r WHERE run_no=%s AND mode=%s AND started_utc IS NOT NULL",
+        (stale, run_no, mode),
     )
     return int(found[0]["seconds"])
 
 
-def state(cur, rules):
+def state(cur, rules, mode="regular"):
     rows = reader(cur)
     stale = rules["request_stale_minutes"]
     batch = next(iter(latest_batch(rows)), None)
     request = next(iter(rows(f"SELECT {FIELDS},{FRESH} AS fresh FROM processing.grid_run_requests ORDER BY request_id DESC LIMIT 1", (stale,))), None)
     unfinished = batch is not None and batch["decided"] < batch["tiles"]
     active = request is not None and request["status"] in ("pending", "running") and request["fresh"]
-    runs = len(grid_status.scan_runs(rows, rules))
+    counts = Counter(run["mode"] for run in grid_status.scan_runs(rows, rules))
     if active:
-        action, run_no, status = None, request["run_no"], "starting" if request["status"] == "pending" else "running"
+        action, run_no, status, mode = None, request["run_no"], "starting" if request["status"] == "pending" else "running", request["mode"]
     elif unfinished:
-        action, run_no, status = "continue", runs, "interrupted"
+        action, mode, status = "continue", batch["mode"], "interrupted"
+        run_no = counts[mode]
     else:
-        action, run_no, status = "start", runs + 1, "idle"
+        action, run_no, status = "start", counts[mode] + 1, "idle"
     shown = request if request is not None and (active or unfinished) else None
     tracked = batch if batch is not None and (status == "interrupted" or (shown is not None and shown["batch_utc"] == batch["batch_utc"])) else None
     return {
         "action": action,
+        "mode": mode,
         "run_no": run_no,
+        "label": grid_status.run_label(mode, run_no),
         "status": status,
         "requested_by": shown["requested_by"] if shown else None,
-        "elapsed_seconds": elapsed_seconds(rows, run_no, stale),
+        "elapsed_seconds": elapsed_seconds(rows, run_no, mode, stale),
         "heartbeat_utc": iso(shown["heartbeat_utc"] or shown["requested_utc"]) if shown else None,
         "error": shown["error"] if shown and not active and shown["error"] not in ("interrupted", "not picked up", "stopped") else None,
         "decided": tracked["decided"] if tracked else None,
@@ -81,11 +87,11 @@ def expire(cur, rules):
     )
 
 
-def request(conn, user, action, rules):
+def request(conn, user, action, rules, mode="regular"):
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute("SELECT pg_advisory_xact_lock(%s)", (LOCK_KEY,))
         expire(cur, rules)
-        current = state(cur, rules)
+        current = state(cur, rules, mode)
         if current["action"] != action:
             conn.commit()
             return False, current
@@ -95,10 +101,10 @@ def request(conn, user, action, rules):
             cur.execute("SELECT now() AS now")
             batch_utc = cur.fetchone()["now"]
         cur.execute(
-            "INSERT INTO processing.grid_run_requests (requested_by,kind,run_no,batch_utc) VALUES (%s,%s,%s,%s)",
-            (user, action, current["run_no"], batch_utc),
+            "INSERT INTO processing.grid_run_requests (requested_by,kind,mode,run_no,batch_utc) VALUES (%s,%s,%s,%s,%s)",
+            (user, action, current["mode"], current["run_no"], batch_utc),
         )
-        result = state(cur, rules)
+        result = state(cur, rules, mode)
         conn.commit()
         return True, result
 

@@ -26,7 +26,7 @@ const value = (g: GridRunEntry, key: Key): string | number =>
 export default function RunTable() {
   const [runs, setRuns] = useState<GridRun[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [picked, setPicked] = useState<number | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
   const [sort, setSort] = useState<{ key: Key; dir: 1 | -1 }>({ key: "tile", dir: 1 });
   const go = useNavigate();
 
@@ -53,7 +53,7 @@ export default function RunTable() {
 
   const index = useMemo(() => {
     if (!runs || !runs.length) return -1;
-    const found = picked === null ? -1 : runs.findIndex((r) => r.run === picked);
+    const found = picked === null ? -1 : runs.findIndex((r) => r.label === picked);
     return found >= 0 ? found : runs.length - 1;
   }, [runs, picked]);
 
@@ -73,7 +73,7 @@ export default function RunTable() {
   const latest = index === runs.length - 1;
   const move = (step: number) => {
     const next = runs[index + step];
-    if (next) setPicked(index + step === runs.length - 1 ? null : next.run);
+    if (next) setPicked(index + step === runs.length - 1 ? null : next.label);
   };
   const toggle = (key: Key) => setSort((s) => (s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: 1 }));
   const open = (g: GridRunEntry) => g.pairs > 0 && g.run_no && g.scene && go(`/hotspot-tests/runs/${g.run_no}?scene=${encodeURIComponent(g.scene)}`);
@@ -82,7 +82,7 @@ export default function RunTable() {
     <div className="run-table">
       <div className="run-nav">
         <button onClick={() => move(-1)} disabled={index === 0} aria-label="Earlier run">◀</button>
-        <strong>Run {run.run}</strong>
+        <strong>Run {run.label}</strong>
         <span className="muted">{run.day}</span>
         <button onClick={() => move(1)} disabled={latest} aria-label="Later run">▶</button>
       </div>

@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from psycopg.rows import dict_row
 
 from app.backend import auth, queue, runs, s3runs, sync
-from maritime_tip_cue import grid_request, grid_status, hotspot_tests, pg, worker_status
+from maritime_tip_cue import grid_neighbours, grid_request, grid_status, hotspot_tests, pg, worker_status
 from maritime_tip_cue.config import env, settings
 
 DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
@@ -84,19 +84,32 @@ def get_hotspot_test_grid_runs():
     return grid_status.scan_runs(runs.query, grid_status.load_rules())
 
 
+def grid_mode(value):
+    if value not in grid_status.MODES:
+        raise HTTPException(400, "mode must be regular or pairs")
+    return value
+
+
 @app.get("/api/hotspot-tests/grid/process")
-def get_hotspot_test_grid_process():
+def get_hotspot_test_grid_process(mode: str = "regular"):
     with pg.connect() as conn, conn.cursor(row_factory=dict_row) as cur:
-        return grid_request.state(cur, grid_status.load_rules())
+        return grid_request.state(cur, grid_status.load_rules(), grid_mode(mode))
 
 
 @app.post("/api/hotspot-tests/grid/process")
 def post_hotspot_test_grid_process(request: Request, body: dict = Body(...)):
     if body.get("action") not in ("start", "continue"):
         raise HTTPException(400, "action must be start or continue")
+    mode = grid_mode(body.get("mode", "regular"))
+    rules = grid_status.load_rules()
     with pg.connect() as conn:
+        if mode == "pairs" and body["action"] == "start":
+            with conn.cursor(row_factory=dict_row) as cur:
+                planned = grid_neighbours.plan(grid_request.reader(cur), grid_status.load_grid(), rules)
+            if not planned["cells"]:
+                raise HTTPException(409, "No cell next to a known pair is left to scan")
         created, state = grid_request.request(
-            conn, getattr(request.state, "user", None) or "local", body["action"], grid_status.load_rules()
+            conn, getattr(request.state, "user", None) or "local", body["action"], rules, mode
         )
     return JSONResponse(state, status_code=202 if created else 409)
 

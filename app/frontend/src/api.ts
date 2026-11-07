@@ -250,9 +250,13 @@ export interface WorkerStatus {
   month_seconds: number;
 }
 
+export type RunMode = "regular" | "pairs";
+
 export interface GridProcess {
   action: "start" | "continue" | null;
+  mode: RunMode;
   run_no: number;
+  label: string;
   status: "idle" | "starting" | "running" | "interrupted";
   requested_by: string | null;
   elapsed_seconds: number;
@@ -264,6 +268,8 @@ export interface GridProcess {
 
 export interface GridRun {
   run: number;
+  mode: RunMode;
+  label: string;
   day: string;
   tiles: number;
   with_pairs: number;
@@ -327,12 +333,12 @@ export const api = {
   run: (n: number) => fetch(`/api/runs/${n}`).then((r) => json<RunDetail>(r)),
   hotspotTestGrid: () => fetch("/api/hotspot-tests/grid").then((r) => json<{ summary: GridSummary; tiles: GridTile[] }>(r)),
   hotspotTestGridRuns: () => fetch("/api/hotspot-tests/grid/runs").then((r) => json<GridRun[]>(r)),
-  hotspotTestGridProcess: () => fetch("/api/hotspot-tests/grid/process").then((r) => json<GridProcess>(r)),
-  startHotspotTestGridProcess: async (action: "start" | "continue") => {
+  hotspotTestGridProcess: (mode: RunMode) => fetch(`/api/hotspot-tests/grid/process?mode=${mode}`).then((r) => json<GridProcess>(r)),
+  startHotspotTestGridProcess: async (action: "start" | "continue", mode: RunMode) => {
     const response = await fetch("/api/hotspot-tests/grid/process", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action, mode }),
     });
     if (response.status === 409) return (await response.json()) as GridProcess;
     return json<GridProcess>(response);

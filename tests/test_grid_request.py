@@ -33,7 +33,7 @@ def state(api):
 
 def test_first_run_is_number_one_and_starts_a_pending_request(api, pgdb):
     assert state(api) == {
-        "action": "start", "run_no": 1, "status": "idle", "requested_by": None,
+        "action": "start", "mode": "regular", "label": "1", "run_no": 1, "status": "idle", "requested_by": None,
         "elapsed_seconds": 0, "heartbeat_utc": None, "error": None, "decided": None, "tiles": None,
     }
     posted = api.post("/api/hotspot-tests/grid/process", json={"action": "start"})
@@ -77,14 +77,14 @@ def test_run_pending_runs_the_requested_batch_to_the_end_and_a_crash_marks_it_fa
     api.post("/api/hotspot-tests/grid/process", json={"action": "start"})
     seen = {}
 
-    def fake_batch(db, rules, sleep=None, since=None, beat=None):
-        seen["since"] = since
+    def fake_batch(db, rules, sleep=None, since=None, beat=None, mode=None):
+        seen["since"], seen["mode"] = since, mode
         beat()
 
     monkeypatch.setattr(grid_scan, "batch", fake_batch)
     assert grid_scan.run_pending(pgdb, RULES_WITH_STALE) == "done"
     row = pgdb.execute("SELECT status, started_utc, heartbeat_utc, finished_utc FROM processing.grid_run_requests").fetchone()
-    assert row[0] == "done" and None not in row and seen["since"] is not None
+    assert row[0] == "done" and None not in row and seen["since"] is not None and seen["mode"] == "regular"
     assert grid_scan.run_pending(pgdb, RULES_WITH_STALE) is None
 
     api.post("/api/hotspot-tests/grid/process", json={"action": "start"})
@@ -100,7 +100,7 @@ def test_invalid_action_is_rejected(api):
 def test_a_process_whose_request_was_expired_stops_instead_of_beating_on(api, pgdb, monkeypatch):
     api.post("/api/hotspot-tests/grid/process", json={"action": "start"})
 
-    def batch(db, rules, sleep=None, since=None, beat=None):
+    def batch(db, rules, sleep=None, since=None, beat=None, mode=None):
         beat()
         pgdb.execute("UPDATE processing.grid_run_requests SET heartbeat_utc=now()-interval '1 hour'")
         grid_request.expire(pgdb.cursor(), RULES_WITH_STALE)
@@ -114,7 +114,7 @@ def test_a_process_whose_request_was_expired_stops_instead_of_beating_on(api, pg
 def test_run_pending_returns_stopped_when_the_batch_finds_its_request_lost(api, pgdb, monkeypatch):
     api.post("/api/hotspot-tests/grid/process", json={"action": "start"})
 
-    def batch(db, rules, sleep=None, since=None, beat=None):
+    def batch(db, rules, sleep=None, since=None, beat=None, mode=None):
         pgdb.execute("UPDATE processing.grid_run_requests SET status='failed', error='interrupted'")
         beat()
 
@@ -127,7 +127,7 @@ def test_a_stop_signal_marks_the_request_failed_at_once_so_the_page_offers_conti
     pgdb.execute("INSERT INTO processing.grid_draws VALUES (now(), 'T1', 1, 1)")
     api.post("/api/hotspot-tests/grid/process", json={"action": "continue"})
 
-    def batch(db, rules, sleep=None, since=None, beat=None):
+    def batch(db, rules, sleep=None, since=None, beat=None, mode=None):
         raise SystemExit(143)
 
     monkeypatch.setattr(grid_scan, "batch", batch)

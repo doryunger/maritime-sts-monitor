@@ -212,7 +212,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now sts-grid-run.timer
 ```
 
-`plan --dry-run` prints the tiles and scenes it would queue without writing. `status` prints the round, tile counts by status and today's budget; `export` prints every tile with its status for a map. Stop a run with `sudo systemctl stop sts-grid-run.service`; queued scenes still run, and the page offers Continue run once the heartbeat goes stale. `grid_scan batch --since <ISO start>` still resumes a batch by hand. A scene that never gets a review result keeps its tile open, so the batch waits until it is stopped.
+`plan --dry-run` prints the tiles and scenes it would queue without writing. `status` prints the round, tile counts by status and today's budget; `export` prints every tile with its status for a map. Stop a run with `sudo systemctl stop sts-grid-run.service`; queued scenes still run, and the page offers Continue run once the heartbeat goes stale. `grid_scan batch --since <ISO start>` still resumes a batch by hand. A known-pairs run (the cells around the cells with pairs) starts from the arrow beside the button on the page and runs through the same timer and service (`run-pending` reads the request's mode); `python -m maritime_tip_cue.grid_neighbours plan` in the manager image prints its cells without writing. A scene that never gets a review result keeps its tile open, so the batch waits until it is stopped.
 
 ## Worker idle check
 
